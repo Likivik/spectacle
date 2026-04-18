@@ -40,7 +40,7 @@ desc: desktop, laptop, spectacle user, admin access
 desc: server user, admin access
 
 - salem
-desc: spectacle user, restricted user
+desc: spectacle user
 
 - watcher
 desc: guest user for spectacle (is it really needed? keeping for learning/testing for now)

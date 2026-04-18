@@ -10,7 +10,7 @@
     { pkgs, ... }:
     {
       packages.vm = pkgs.writeShellApplication {
-        name = "vm";
+        name = "vm-spectacle";
           # TODO make it work for other hosts?
           # or better said I want the ......spectacle.... be based on input of
           # `nix run .#vm` command !TODO: look it up
@@ -25,3 +25,4 @@
           '';
       };
     };
+}

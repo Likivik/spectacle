@@ -1,3 +1,4 @@
+# This file: pulls stuff needed for den/dendritic stuff
 { inputs, ... }:
 {
   imports = [
@@ -9,9 +10,5 @@
   flake-file.inputs = {
     den.url = "github:vic/den";
     flake-file.url = "github:vic/flake-file";
-    home-manager = {
-      url = "github:nix-community/home-manager";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
   };
 }

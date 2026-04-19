@@ -1,5 +1,5 @@
 # This file: pulls stuff needed for den/dendritic stuff
-{ inputs, ... }:
+{ inputs, den, ... }:
 {
   imports = [
     (inputs.flake-file.flakeModules.dendritic or { })

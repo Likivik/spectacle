@@ -4,12 +4,12 @@
     determinate.url = "https://flakehub.com/f/DeterminateSystems/determinate/*";
   };
 
-  imports = [ inputs.determinate.nixosModules.default ];
+  # imports = [ inputs.determinate.nixosModules.default ];
 
-  # den.aspects.determinate = {
-  #   nixos = { ... }: {
-  #     imports = [ inputs.determinate.nixosModules.default ];
-  #   };
-  # };
+  den.aspects.determinate = {
+    nixos = { ... }: {
+      imports = [ inputs.determinate.nixosModules.default ];
+    };
+  };
 
 }

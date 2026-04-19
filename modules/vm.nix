@@ -4,13 +4,13 @@
 { inputs, den, ... }:
 {
   # USER TODO: remove this tty-autologin used for the VM
-  den.aspects.spectacle.includes = [ (den.provides.tty-autologin "watcher") ];
+  # den.aspects.spectacle.includes = [ (den.provides.tty-autologin "watcher") ];
 
   perSystem =
     { pkgs, ... }:
     {
       packages.vm = pkgs.writeShellApplication {
-        name = "vm-spectacle";
+        name = "vm";
           # TODO make it work for other hosts?
           # or better said I want the ......spectacle.... be based on input of
           # `nix run .#vm` command !TODO: look it up

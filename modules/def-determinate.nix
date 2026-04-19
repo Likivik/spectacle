@@ -1,5 +1,5 @@
 
-{ inputs, determinate, ... }: 
+{ inputs, ... }: 
 {
 
   flake-file.inputs = {
@@ -9,8 +9,9 @@
   # imports = [ inputs.determinate.nixosModules.default ];
 
   den.aspects.determinate = {
-    nixos = { ... }: {
+    nixos = {
       imports = [ inputs.determinate.nixosModules.default ];
+      determinate.enable = true;
     };
   };
 

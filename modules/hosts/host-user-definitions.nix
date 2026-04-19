@@ -23,9 +23,7 @@
       likivik = { };
       watcher = { };
     };
-        nixos = { ... }: {
-      imports = [ inputs.determinate.nixosModules.default ];
-    };
+
   };
 
 

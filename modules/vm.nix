@@ -5,7 +5,7 @@
 {
   # USER TODO: remove this tty-autologin used for the VM
   den.aspects.spectacle.includes = [ 
-    (den.provides.tty-autologin "watcher")
+    # (den.provides.tty-autologin "watcher")
     den.aspects.determinate
     ];
 

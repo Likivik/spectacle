@@ -10,7 +10,7 @@
 
   den.aspects.determinate = {
     nixos = {
-      imports = [ inputs.determinate.nixosModules.default ];
+      # imports = [ inputs.determinate.nixosModules.default ];
       determinate.enable = true;
     };
   };

@@ -4,6 +4,7 @@
   imports = [
     (inputs.flake-file.flakeModules.dendritic or { })
     (inputs.den.flakeModules.dendritic or { })
+    inputs.determinate.nixosModules.default
   ];
 
   # other inputs may be defined at a module using them.
@@ -17,6 +18,6 @@
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    # determinate.url = "https://flakehub.com/f/DeterminateSystems/determinate/*";
+    determinate.url = "https://flakehub.com/f/DeterminateSystems/determinate/*";
   };
 }

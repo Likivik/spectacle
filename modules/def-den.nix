@@ -1,10 +1,10 @@
 # This file: pulls stuff needed for den/dendritic stuff
-{ inputs, den, ... }:
+{ inputs, ... }:
 {
   imports = [
     (inputs.flake-file.flakeModules.dendritic or { })
     (inputs.den.flakeModules.dendritic or { })
-    inputs.determinate.nixosModules.default
+    # inputs.determinate.nixosModules.default
   ];
 
   # other inputs may be defined at a module using them.
@@ -14,14 +14,6 @@
     determinate.url = "https://flakehub.com/f/DeterminateSystems/determinate/*";
   };
 
-  # These are functions that produce configs
-  den.default.includes = [ 
-    den.provides.define-user # Automatically create users + their homes, by just adding them to hosts
-    # TODO: ??? does this not happen automatically? ${user}.provides.${host} and ${host}.provides.${user}
-    den.provides.mutual-provider
-    # TODO: ??? this Automatically sets hostname, but isn't it already automatically set as per host schema?
-    den.provides.hostname 
 
-  ];
 
 }

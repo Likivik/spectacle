@@ -11,7 +11,7 @@
   flake-file.inputs = {
     den.url = "github:vic/den";
     flake-file.url = "github:vic/flake-file";
-    determinate.url = "github:DeterminateSystems/determinate";
+    determinate.url = "https://flakehub.com/f/DeterminateSystems/determinate/*";
   };
 
   # These are functions that produce configs

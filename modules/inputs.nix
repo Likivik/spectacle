@@ -4,7 +4,7 @@
   imports = [
     (inputs.flake-file.flakeModules.dendritic or { })
     (inputs.den.flakeModules.dendritic or { })
-    (inputs.determinate.nixosModules.default or { })
+
   ];
 
   # other inputs may be defined at a module using them.

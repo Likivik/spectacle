@@ -1,5 +1,5 @@
 # defines all hosts + users
-{ inputs, determinate, ... }:
+{ inputs, ... }:
 
 {
   den.hosts.x86_64-linux.serenity = {

@@ -1,12 +1,11 @@
 # enables `nix run .#vm`. it is very useful to have a VM
 # you can edit your config and launch the VM to test stuff
 # instead of having to reboot each time.
-{ inputs, den, determinate, ... }:
+{ inputs, den, ... }:
 {
   # USER TODO: remove this tty-autologin used for the VM
   den.aspects.spectacle.includes = [ 
-    # (den.provides.tty-autologin "watcher")
-    den.aspects.determinate
+    (den.provides.tty-autologin "watcher")
     ];
 
   perSystem =

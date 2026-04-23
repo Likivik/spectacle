@@ -17,9 +17,6 @@
     # user can provide NixOS configurations
     # to any host it is included on
     nixos = { pkgs, ... }: { 
-      # imports = [ inputs.determinate.nixosModules.default ];
-      # nix.settings.substituters = ["https://install.determinate.systems"];
-      # nix.settings.trusted-public-keys = ["cache.flakehub.com-3:hJuILl5sVK4iKm86JzgdXW12Y2Hwd5G07qKtHTOcDCM="];
 
     };
   };

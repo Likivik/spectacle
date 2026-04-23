@@ -11,6 +11,7 @@
 		"todo-tree.tree.scanMode": "workspace only",
 		"cSpell.words": [
 			"servatorium"
-		]
+		],
+		"nixEnvSelector.suggestion": false
 	}
 }

@@ -1,0 +1,92 @@
+{ pkgs, lib, inputs, config, outputs, ... }:
+
+let
+
+  plasma-manager = pkgs.fetchFromGitHub {
+    owner = "schuelermine";
+    repo = "xhmm";
+    #rev = "16c437e43a0e049b15c9bfd37295f6e978ea995";
+    #sha256 = "sha256-dOnnzfqd/PCf1K3USKq2PqSGKmIqkr/SD7zHb1yoAyw=";
+  };
+
+in{
+
+  # imports = [
+  #   <xhmm/nixos>
+  # ];
+
+  ####################################
+  # Gnome Settings
+  ####################################
+
+
+
+  home.packages = 
+  ( with pkgs; [
+    ocs-url
+  ]) 
+  ++
+  ( with pkgs.gnomeExtensions; [
+    appindicator
+    clipboard-history
+    gsconnect
+    impatience
+    keep-awake
+    open-bar
+    blur-my-shell
+    status-area-horizontal-spacing
+    tailscale-status
+    tiling-assistant
+    transcodeappsearch
+    vertical-workspaces
+    window-gestures
+    fly-pie
+    kando-integration
+  ]);
+
+  home.file.".local/share/gnome-shell/extensions/order-extensions@wa4557.github.com".source = builtins.fetchGit {
+    url = "https://github.com/andia89/order-icons.git";
+  };
+  home.file.".local/share/gnome-shell/extensions/inputmethod-shortcuts@osamu.debian.org".source = builtins.fetchGit {
+    url = "https://github.com/osamuaoki/inputmethod-shortcuts.git";
+  };
+
+  dconf =
+  {
+    enable = true;
+    settings = 
+    {
+      # Mutter Settings
+      "org/gnome/mutter" = 
+      {
+        experimental-features =
+        [
+          "variable-refresh-rate"
+          "scale-monitor-framebuffer" # Allow fractional scaling
+        ];
+      };
+
+      # Extensions Part
+      "org/gnome/shell" = 
+      {
+        disable-user-extensions = false; # enables user extensions
+        disabled-extensions = [];
+      };
+
+      #"org/gnome/shell".enabled-extensions = map (extension: extension.extensionUuid) home.packages;
+
+      # Configure individual extensions
+
+      # Configure GSConnect
+      "org/gnome/shell/extensions/gsconnect".show-indicators = true;
+
+
+    };
+  };
+
+  programs.firefox.enableGnomeExtensions = true;
+
+
+}
+
+

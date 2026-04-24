@@ -1,0 +1,79 @@
+/*#TabsToolbar { visibility: collapse !important; }*/
+
+#vertical-tabs {
+display: none !important;
+}
+
+#sidebar-panel-header {
+display: none;
+}
+
+#sidebar-main {
+display: none;
+}
+
+#sidebar-box {
+height: 100% !important;
+padding: 6px 0px 6px 6px !important;
+}
+
+
+/*makes url bar rounded*/
+#urlbar-background,#urlbar {
+border-radius: 20px !important;
+border: none !important;
+}
+
+
+
+/* to make this work - enable vertical tabs
+ * and
+ *  sidebar.revamp.round-content-area to true.
+ */
+
+
+/*#main-window > body {
+border-radius: 5px !important
+
+}
+
+:root {
+  & tabbox#tabbrowser-tabbox,
+  & #tabbrowser-tabpanels {
+    background-color: transparent !important;
+
+  }*/
+
+/*  &:not([inDOMFullscreen="true"], [sizemode="fullscreen"], [sizemode="maximized"], [chromehidden*="toolbar"], [chromehidden*="menubar"]) tabbox#tabbrowser-tabbox browser {
+    border-radius: 8px;
+    clip-path: circle(100%);
+    background-color: transparent !important;
+      margin: 6px !important;
+  }
+}*/
+
+/*browser {
+  border-radius: 10px!important;
+
+}*/
+
+
+/* Rounded Corners and margin for main content window */
+#main-window:has(#navigator-toolbox[style=""]) .browserStack>browser, :not([sizemode="fullscreen"]) .browserStack>browser{
+  border-radius: 10px !important;
+  margin: 6px  !important;
+  background: black  !important;
+}
+[inFullscreen] #tabbrowser-tabpanels, [inFullscreen] .browserStack>browser{
+  border-radius: 0 !important
+
+}
+
+
+
+
+:root {
+  --tabpanel-background-color: transparent !important;
+
+}
+

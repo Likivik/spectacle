@@ -1,0 +1,10 @@
+final: prev: {
+  mullvad-vpn = prev.mullvad-vpn.overrideAttrs {
+    version = "2025.10-beta1";
+    src = prev.fetchurl {
+      url = "https://github.com/mullvad/mullvadvpn-app/releases/download/2025.10-beta1/MullvadVPN-2025.10-beta1_amd64.deb";
+      sha256 = "sha256-+7CN87VtNXPxR3Vf3U1Qp6iYxzQB1UaDRh40qCPgbx8="; # Update with the new sha256
+    };
+ 
+  };
+}

@@ -1,13 +1,15 @@
 { inputs, den, ... }:
 {
 
-	den.aspects.fontz = {
+	den.aspects.dev-fonts = {
 
 		nixos = 
-			{ ... }:
+			{ pkgs, ... }:
 			{
+				
 				# Enable a basic set of fonts providing several styles and families and reasonable coverage of Unicode.
-				fonts.enableDefaultPackages = true;
+				# fonts.enableDefaultPackages = true; # --> MOVED TO defaults.nix
+
 				fonts.packages = with pkgs; [
 					/* ------------------------------ Dev/Markdown ------------------------------ */
 						source-code-pro

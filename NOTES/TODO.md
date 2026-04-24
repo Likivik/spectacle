@@ -52,11 +52,11 @@ desc: need to figure out the what and how.
 
 ### likivik
 
-desc: desktop, laptop, spectacle user
+desc: desktop, laptop, spectacle user, development, office work, my main
 
 ### likiviks
 
-desc: server user
+desc: server administrator, also me, but setup for server administration as opposed to gui desktop, laptop use
 
 ### salem
 
@@ -64,4 +64,4 @@ desc: spectacle user
 
 ### watcher
 
-desc: guest user for spectacle (is it really needed? keeping for learning/testing for now
+desc: guest user for spectacle (is it really needed? keeping for learning/testing for now)

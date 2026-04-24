@@ -22,3 +22,6 @@
 
 
 
+## DON'T forget to add new files to git!!!
+
+- can we automate it? should we?

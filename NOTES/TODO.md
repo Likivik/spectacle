@@ -17,7 +17,7 @@
   * [ ] videos
 
 - [ ] Barebones Hyprland on spectacle
-  - [ ] add Hyprland
+  - [x] add Hyprland
   - [ ] add gamepad control+onscreen keyboard
   - [ ] add voice control?
 

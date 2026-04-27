@@ -8,7 +8,7 @@
 
   den.aspects.spectacle = {
       includes = [
-        den.aspects.hyprland-bigscreen
+        den.aspects.gnome-desktop
     ];
 
   };

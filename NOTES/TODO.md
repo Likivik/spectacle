@@ -21,6 +21,21 @@
   - [ ] add gamepad control+onscreen keyboard
   - [ ] add voice control?
 
+decide DankShell vs Noctalia?
+
+
+
+- [ ] hyprland vs niri vs ...
+
+
+
+- [ ] control linux with voice - it does exist
+
+
+kodi
+libreElec
+
+
 
 ## Possible Hosts
 

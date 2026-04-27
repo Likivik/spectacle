@@ -25,7 +25,7 @@
 
     /* --------------------------------- Aspects -------------------------------- */
     den.aspects.determinateNix # determinate systems `nix`
-    den.aspects.defaultLocale
+    den.aspects.defaultLocale # probably the locale settings I'll need everywhere?
   ];
 
 }

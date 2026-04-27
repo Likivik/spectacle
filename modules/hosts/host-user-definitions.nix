@@ -20,7 +20,6 @@
   den.hosts.x86_64-linux.spectacle = {
     description = "Small box connected to TV to watch shows, movies and use browser";
     users = {
-      likivik = { };
       watcher = { };
     };
 

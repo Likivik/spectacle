@@ -1,9 +1,9 @@
 { den, ... }:
 {
   den.aspects.firefox = {
-    
+
     homeManager = { pkgs, ... }:{
-        programs.firefox = {
+      programs.firefox = {
         enable = true;
         package = pkgs.firefox;
         languagePacks = [
@@ -63,7 +63,5 @@
 
       };
     };
-
-  }
 
 }

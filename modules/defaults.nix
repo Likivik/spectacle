@@ -6,6 +6,7 @@
   den.default.homeManager.home.stateVersion = "25.11";
 
   den.schema.user.classes = lib.mkDefault [ "homeManager" ];
+  den.default.nixos.home-manager.backupFileExtension = "hm-backup";
 
   den.default.nixos.nixpkgs.config.allowUnfree = true;
 

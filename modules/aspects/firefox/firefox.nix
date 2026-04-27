@@ -1,5 +1,14 @@
 { den, ... }:
 {
+
+  /* ---------------------------------
+    Does this get passed to watcher???
+
+    1. See in Repl?
+    2. ask AI
+    3.   
+    ---------------------------------- */
+
   den.aspects.firefox = {
 
     homeManager = { pkgs, ... }:{
@@ -47,10 +56,10 @@
           };
         };
 
-        # profiles.likivik = {
+        # profiles.default = {
         #   id = 0;
         #   isDefault = true;
-        #   name = "likivik";
+        #   name = "defaultNix";
         #   userChrome = ./userChrome.css;
           # extensions = {
           #   settings = {

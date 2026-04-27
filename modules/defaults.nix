@@ -1,12 +1,13 @@
 # This file: nixos default stuffs
-{ inputs, den, lib, ... }:
+{ inputs, den, lib, pkgs, ... }:
 {
+  den.ctx.user.includes = [ den._.mutual-provider ];
+  den.ctx.host.includes = [ den._.mutual-provider ];
 
   den.default.nixos.system.stateVersion = "25.11";
   den.default.homeManager.home.stateVersion = "25.11";
 
   den.schema.user.classes = lib.mkDefault [ "homeManager" ];
-  den.default.nixos.home-manager.backupFileExtension = "hm-backup";
 
   den.default.nixos.nixpkgs.config.allowUnfree = true;
 

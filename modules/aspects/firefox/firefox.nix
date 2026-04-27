@@ -12,6 +12,8 @@
   den.aspects.firefox = {
 
     homeManager = { pkgs, ... }:{
+    home.packages = [ pkgs.blackbox-terminal ];
+
       programs.firefox = {
         enable = true;
         package = pkgs.firefox;

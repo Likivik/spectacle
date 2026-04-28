@@ -1,21 +1,29 @@
 
 
-{ inputs, den, ... }:
+{ inputs, den, devshell, ... }:
+
+flake-file.inputs = {
+  devshell.url = "github:numtide/devshell";
+};
+
 {
 
   perSystem =
-    { pkgs, ... }:
-    {
-      packages.vm = pkgs.writeShellApplication {
-        name = "vm";
+    { pkgs, self', ... }:
 
-        text =
-          let
-            host = inputs.self.nixosConfigurations.spectacle.config;
-          in
-          ''
-            ${host.system.build.vm}/bin/run-${host.networking.hostName}-vm "$@"
+    {
+
+      devShells = {
+        just = pkgs.mkShell {
+          buildInputs = [ pkgs.just ];
+          shellHook = ''
+            export JUST_CONFIG="$PWD/justfile"
+            PS1="(just) $PS1"
+            echo "Entering devShell with just on PATH"
           '';
+        };
+
       };
+
     };
 }

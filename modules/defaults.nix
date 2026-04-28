@@ -2,7 +2,7 @@
 { inputs, den, lib, pkgs, ... }:
 {
 
-  flake.den = den;  # remove after debugging
+
   
 
   den.ctx.user.includes = [ den._.mutual-provider ];

@@ -3,8 +3,6 @@
 
   den.aspects.spectacle = {
 
-  # Define the actual host 'spectacle'
-    den.hosts.spectacle = { # Changed from den.aspects.spectacle to den.hosts.spectacle
       includes = [
 
         den.aspects.gnome-desktop
@@ -12,7 +10,15 @@
       
       ];
 
-    };
+      nixos = {
+        boot.loader.systemd-boot.enable = true;
+        boot.loader.efi.canTouchEfiVariables = true;
+        fileSystems."/" = {
+          device = "tmpfs";
+          fsType = "tmpfs";
+          options = [ "mode=0755" ];
+        };
+      };
 
   };
 

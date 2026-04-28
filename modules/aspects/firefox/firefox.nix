@@ -1,11 +1,11 @@
-{ den, ... }:
+{ den, config, ... }:
 {
 
   /* ---------------------------------
     Does this get passed to watcher???
 
-    1. See in Repl?
-    2. ask AI
+    1. See in Repl? - failed...
+    2. ask AI - failed...
     3.   
     ---------------------------------- */
 
@@ -17,6 +17,7 @@
       programs.firefox = {
         enable = true;
         package = pkgs.firefox;
+        # configPath = "${config.xdg.configHome}/mozilla/firefox";
         languagePacks = [
           "ru_RU"
           "en-US"

@@ -4,9 +4,19 @@
 
 
   
-
-  den.ctx.user.includes = [ den._.mutual-provider ];
+  /* ---------------------------------------------------------------------------
+    This is the part that allowed Watcher to inherit from Spectacle's `includes`
+    specifically -> den._.host-aspects
+    ---------------------------------------------------------------------------- */
+  den.ctx.user.includes = [ den._.mutual-provider den._.host-aspects];
   den.ctx.host.includes = [ den._.mutual-provider ];
+  # den.stages.home.includes = [ den._.mutual-provider ];
+  # den.stages.host.includes = [ den._.mutual-provider ];
+
+  den.ctx.hm-host = {
+    home-manager.useGlobalPkgs = true; 
+    home-manager.useUserPackages = true;
+  };
 
   den.default.nixos.system.stateVersion = "25.11";
   den.default.homeManager.home.stateVersion = "25.11";

@@ -1,16 +1,13 @@
 
+{ inputs, ... }:
 
-{ inputs, den, devshell, ... }:
-
-flake-file.inputs = {
-  devshell.url = "github:numtide/devshell";
-};
+  flake-file.inputs = {
+    devshell.url = "github:numtide/devshell";
+  };
 
 {
-
   perSystem =
-    { pkgs, self', ... }:
-
+    { pkgs, ... }:
     {
 
       devShells = {
@@ -24,6 +21,5 @@ flake-file.inputs = {
         };
 
       };
-
     };
 }

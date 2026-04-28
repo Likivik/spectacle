@@ -1,6 +1,10 @@
 # This file: nixos default stuffs
 { inputs, den, lib, pkgs, ... }:
 {
+
+  flake.den = den;  # remove after debugging
+  
+
   den.ctx.user.includes = [ den._.mutual-provider ];
   den.ctx.host.includes = [ den._.mutual-provider ];
 

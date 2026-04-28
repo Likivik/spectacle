@@ -12,6 +12,7 @@
 		"cSpell.words": [
 			"servatorium"
 		],
-		"nixEnvSelector.suggestion": false
+		"nixEnvSelector.suggestion": false,
+		"nixEnvSelector.nixFile": "${workspaceFolder}/flake.nix"
 	}
 }

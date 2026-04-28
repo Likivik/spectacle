@@ -7,7 +7,8 @@
 
         den.aspects.gnome-desktop
         den.aspects.firefox
-      
+        den.aspects.peripherals-base
+
       ];
 
       nixos = {

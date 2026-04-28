@@ -1,5 +1,8 @@
 # Peripherals
 { config, pkgs, ... }:
+
+
+
 {
   # Bluetooth ----------------------------------------------------------------
   # Enable Bluetooth
@@ -28,11 +31,14 @@
       		    options bluetooth disable_ertm=Y
       		  '';
     # connect xbox controller
+
   };
 
-  # Audio --------------------------------------------------------------------
-  services.pulseaudio.enable = false;
-  # security.rtkit.enable = false; # temporary :TODO disabled bc of this https://github.com/NixOS/nixpkgs/issues/392992#issuecomment-2799867278
+/* ---------------------------------------------------------------------------
+                                     Audio
+  ---------------------------------------------------------------------------- */
+
+  # security.rtkit.enable = true; # temporary :TODO disabled bc of this https://github.com/NixOS/nixpkgs/issues/392992#issuecomment-2799867278
 
   services.pipewire = {
     enable = true;
@@ -42,16 +48,23 @@
     jack.enable = true; # If you want to use JACK applications, uncomment this
   };
 
-  # Touchpad ------------------------------------------------------------------
-  services.libinput = {
-    enable = true; # enable touchpad support
-    #additionalOptions = '' Option "libinput Tapping Drag Lock Enabled" 0 ''; # disable drag lock option
-    # Relevant links:
-    # https://wayland.freedesktop.org/libinput/doc/latest/tapping.html#tap-and-drag (official documentation)
-    # https://wiki.archlinux.org/index.php/Libinput#Via_xinput (howto figure out commands)
-    # https://nixos.org/nixos/options.html#libinput (example of additionalOptions)
-  };
-  # Printing ------------------------------------------------------------------
+
+  /* --------------------------------------------------------------------------------
+    Touchpad - Prolly not needed, since gets auto enabled when there is a gui session
+    --------------------------------------------------------------------------------- */
+
+  # services.libinput = {
+  #   enable = true; # enable touchpad support
+  #   # additionalOptions = '' Option "libinput Tapping Drag Lock Enabled" 0 ''; # disable drag lock option
+  #   # Relevant links:
+  #   # https://wayland.freedesktop.org/libinput/doc/latest/tapping.html#tap-and-drag (official documentation)
+  #   # https://wiki.archlinux.org/index.php/Libinput#Via_xinput (howto figure out commands)
+  #   # https://nixos.org/nixos/options.html#libinput (example of additionalOptions)
+  # };
+
+  /* ------------------------------------------------------------------------ */
+  /*                                 Printing                                 */
+  /* ------------------------------------------------------------------------ */
   services.printing = {
     enable = true; # Enable CUPS backend
     drivers = with pkgs; [
@@ -67,9 +80,9 @@
       # brgenml1lpr
       # brgenml1cupswrapper
       # cnijfilter2
-      cups-bjnp
-      canon-capt
-      canon-cups-ufr2
+      # cups-bjnp
+      # canon-capt
+      # canon-cups-ufr2
       # epson-escpr2
       # epson-escpr
 
@@ -79,15 +92,17 @@
     ];
   };
 
-
-  services.avahi = {
+  services.avahi = { # Find network printers (mDNS/DNS-SD protocol suite)
     enable = true;
-    nssmdns4 = true; # enable mDNS for IPv4 (.local)
+    nssmdns4 = true; # prioritize mDNS through IPv4 (.local) - faster discovery
     openFirewall = true; # opens UDP/5353 if using NixOS firewall
   };
 
-  # Scanning ------------------------------------------------------------------
+  /* ------------------------------------------------------------------------ */
+  /*                                 Scanning                                 */
+  /* ------------------------------------------------------------------------ */
   hardware.sane.enable = true; # Enable support for SANE scanners.
+  services.saned.enable = true; # Enable saned network daemon for remote connection to scanners.
   # if the scanner is connected by USB, also set the following option:
   services.ipp-usb.enable = true;
 
@@ -95,24 +110,21 @@
     pkgs.hplipWithPlugin
     pkgs.sane-airscan
   ];
-  services.saned.enable = true; # Enable saned network daemon for remote connection to scanners.
   environment.systemPackages = with pkgs; [
     simple-scan # main
-    kdePackages.skanpage # backup
-
-
-
-
-
   ];
 
-  #services.input-remapper.enable = true;
 
+  /* ------------------------------------------------------------------------ */
+  /*                            QMK Keyboard / Via                            */
+  /* ------------------------------------------------------------------------ */
 
-  # Keyboard ------------------------------------------------------------------
   hardware.keyboard.qmk.enable = true;
   services.udev.packages = with pkgs; [ via ];
 
+  /* ------------------------------------------------------------------------ */
+  /*                         Solaar/Logitech MX Master                        */
+  /* ------------------------------------------------------------------------ */
 
    services.udev.extraRules = ''
 # This rule was added by Solaar.
@@ -147,5 +159,5 @@ TAG+="uaccess"
 LABEL="solaar_end"
 # vim: ft=udevrules
     '';
-  
+
 }

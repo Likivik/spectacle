@@ -25,6 +25,7 @@
             host = inputs.self.nixosConfigurations.spectacle.config;
           in
           ''
+            export QEMU_OPTS="-m 8192 ''${QEMU_OPTS:-}"
             ${host.system.build.vm}/bin/run-${host.networking.hostName}-vm "$@"
           '';
       };

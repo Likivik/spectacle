@@ -17,18 +17,23 @@
       services.gnome.games.enable = false;
       environment.gnome.excludePackages = with pkgs; [ gnome-tour gnome-user-docs ];
 
-
+      services.gnome.gnome-browser-connector.enable = true; 
 
       services.sysprof.enable = true;
+      programs.dconf.enable = true;
     };
 
     homeManager = 
-    { pkgs, ... }:{
+    { pkgs, lib, ... }:{
 
       home.packages = 
       ( with pkgs; 
         [
+          gnome-tweaks # extra settings for GNOME
+          refine # maybe better than tweaks
           ocs-url
+          ibus-engines.typing-booster # autocompletion!!! https://github.com/mike-fabian/ibus-typing-booster
+
         ]
       ) 
       ++
@@ -36,7 +41,7 @@
         appindicator
         clipboard-history
         gsconnect
-        impatience
+        # impatience
         keep-awake
         open-bar
         blur-my-shell
@@ -46,10 +51,11 @@
         transcodeappsearch
         vertical-workspaces
         window-gestures
-        fly-pie
+        # fly-pie
         kando-integration
         just-perfection
-        arc-menu
+        arc-menu 
+        gjs-osk # better on-screen-keyboard
       ]);
 
       # home.file.".local/share/gnome-shell/extensions/order-extensions@wa4557.github.com".source = builtins.fetchGit {
@@ -61,7 +67,7 @@
 
       dconf =
       {
-        enable = true;
+        # enable = true; # I think it doesn't exist lol
         settings = 
         {
           # Mutter Settings
@@ -75,6 +81,14 @@
               "autoclose-xwayland" # automatically terminates Xwayland if all relevant X11 clients are gone
             ];
           };
+
+          "org/gnome/desktop/input-sources" = {
+            sources = [
+              (lib.hm.gvariant.mkTuple [ "xkb" "us" ])
+              (lib.hm.gvariant.mkTuple [ "xkb" "ru" ])
+            ];
+          };
+
 
           # Extensions Part
           "org/gnome/shell" = 

@@ -7,6 +7,11 @@
   };
 
   den.aspects.torrserver = {
+    user = { user, ... }: {
+      nixos.users.users.${user.userName}.extraGroups = [ "torrserver" ];
+      nixos.services.torrserver.torrentsDir = "/home/${user.userName}/Torrents";
+    };
+
     nixos =
       { config, ... }:
       {

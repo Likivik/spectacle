@@ -6,18 +6,18 @@
 
     1. See in Repl? - failed...
     2. ask AI - failed...
-    3.   
+    3.
     ---------------------------------- */
 
   den.aspects.firefox = {
 
-    homeManager = { pkgs, ... }:{
+    homeManager = { pkgs, config, ... }:{
       home.packages = [ pkgs.blackbox-terminal ];
 
       programs.firefox = {
         enable = true;
         package = pkgs.firefox;
-        # configPath = "${config.xdg.configHome}/mozilla/firefox";
+        configPath = "${config.xdg.configHome}/mozilla/firefox";
         languagePacks = [
           "ru_RU"
           "en-US"

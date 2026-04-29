@@ -1,15 +1,16 @@
 # Peripherals
 { den, ... }:
 
-
 {
-  den.aspects.peripherals-base =
+  den.aspects.peripherals-base = {
     nixos =
-      { ... }:
+      { config, ... }:
       {
-      /* ------------------------------------------------------------------------
-                                        Bluetooth
-        ------------------------------------------------------------------------- */
+        /*
+          ------------------------------------------------------------------------
+                                          Bluetooth
+          -------------------------------------------------------------------------
+        */
 
         # Enable Bluetooth
         hardware.bluetooth = {
@@ -34,16 +35,17 @@
         boot = {
           extraModulePackages = with config.boot.kernelPackages; [ xpadneo ];
           extraModprobeConfig = ''
-                    options bluetooth disable_ertm=Y
-                  '';
+            options bluetooth disable_ertm=Y
+          '';
           # connect xbox controller
 
         };
 
-
-      /* ---------------------------------------------------------------------------
-                                          Audio
-        ---------------------------------------------------------------------------- */
+        /*
+          ---------------------------------------------------------------------------
+                                            Audio
+          ----------------------------------------------------------------------------
+        */
 
         # security.rtkit.enable = true; # temporary :TODO disabled bc of this https://github.com/NixOS/nixpkgs/issues/392992#issuecomment-2799867278
 
@@ -55,10 +57,11 @@
           jack.enable = true; # If you want to use JACK applications, uncomment this
         };
 
-
-      /* ------------------------------------------------------------------------
-                                        Touchpad
-        ------------------------------------------------------------------------- */
+        /*
+          ------------------------------------------------------------------------
+                                          Touchpad
+          -------------------------------------------------------------------------
+        */
 
         # Prolly not needed, since gets auto enabled when there is a gui session
 
@@ -72,5 +75,5 @@
         # };
 
       };
-
+  };
 }

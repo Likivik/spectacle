@@ -4,7 +4,7 @@
   outputs = inputs: inputs.flake-parts.lib.mkFlake { inherit inputs; } (inputs.import-tree ./modules);
 
   inputs = {
-    den.url = "github:denful/den";
+    den.url = "github:vic/den/feat/fx-pipeline";
     determinate.url = "https://flakehub.com/f/DeterminateSystems/determinate/*";
     devshell.url = "github:numtide/devshell";
     flake-file.url = "github:vic/flake-file";

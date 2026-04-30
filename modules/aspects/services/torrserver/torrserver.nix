@@ -1,5 +1,5 @@
 # Peripherals
-{ den, ... }:
+{ den, inputs, ... }:
 
 {
   flake-file.inputs = {
@@ -15,6 +15,7 @@
     nixos =
       { config, ... }:
       {
+        imports = [ inputs.torrserver.nixosModules.default ]; # import torrserver flake, so that config options become available!
         # "https://github.com/YouROK/TorrServer/blob/master/nix/modules/nixos.nix"
         services.torrserver = {
           enable = true;

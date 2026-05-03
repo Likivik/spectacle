@@ -30,11 +30,9 @@ in
     extra-substituters = [ "https://microvm.cachix.org" ];
     extra-trusted-public-keys = [ "microvm.cachix.org-1:oXnBc6hRE3eX5rSYdRyMYXnfzcCxC7yKPTbZXALsqys=" ];
   };
-  inputs.microvm = {
+  flake-file.inputs.microvm = {
     url = "github:microvm-nix/microvm.nix";
-    inputs.nixpkgs.follows = "nixpkgs";
   };
-
 
   config.flake.packages = lib.mkMerge microvmRunners;
 }

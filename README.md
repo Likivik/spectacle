@@ -1,14 +1,13 @@
 
 
-```bash
-nix flake update den
-```
 
 ```bash
+nix run .#write-flake
+
+nix flake update
+
+nix build .#vm --dry-run
+
 nix run .#vm
 ```
-
-`nix run .#write-flake` to regenerate the flake.nix
-
-
 

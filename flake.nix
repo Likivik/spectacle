@@ -21,6 +21,7 @@
     hyprland.url = "github:hyprwm/Hyprland/v0.52.0";
     hyprland-plugins.url = "github:hyprwm/hyprland-plugins/v0.52.0";
     import-tree.url = "github:vic/import-tree";
+    microvm.url = "github:microvm-nix/microvm.nix";
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     torrserver.url = "github:YouROK/TorrServer";
   };

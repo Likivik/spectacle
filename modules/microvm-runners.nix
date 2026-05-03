@@ -5,6 +5,7 @@
   lib,
   config,
   inputs,
+  # flake-file,
   ...
 }:
 let
@@ -26,13 +27,12 @@ let
 in
 {
 
-  nixConfig = {
+  flake-file.inputs.microvm.url = "github:microvm-nix/microvm.nix";
+
+  flake.nixConfig = {
     extra-substituters = [ "https://microvm.cachix.org" ];
     extra-trusted-public-keys = [ "microvm.cachix.org-1:oXnBc6hRE3eX5rSYdRyMYXnfzcCxC7yKPTbZXALsqys=" ];
   };
-  flake-file.inputs.microvm = {
-    url = "github:microvm-nix/microvm.nix";
-  };
 
-  config.flake.packages = lib.mkMerge microvmRunners;
+  flake.packages = lib.mkMerge microvmRunners;
 }

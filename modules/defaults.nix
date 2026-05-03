@@ -3,18 +3,18 @@
 {
 
 
-  
+
   /* ---------------------------------------------------------------------------
     This is the part that allowed Watcher to inherit from Spectacle's `includes`
     specifically -> den._.host-aspects
     ---------------------------------------------------------------------------- */
-  den.ctx.user.includes = [ den._.mutual-provider den._.host-aspects];
-  den.ctx.host.includes = [ den._.mutual-provider ];
+  # den.schema.user.includes = [ den._.mutual-provider den._.host-aspects];
+  # den.schema.host.includes = [ den._.mutual-provider ];
   # den.stages.home.includes = [ den._.mutual-provider ];
   # den.stages.host.includes = [ den._.mutual-provider ];
 
   den.ctx.hm-host = {
-    home-manager.useGlobalPkgs = true; 
+    home-manager.useGlobalPkgs = true;
     home-manager.useUserPackages = true;
   };
 
@@ -29,15 +29,15 @@
   den.default.nixos.fonts.enableDefaultPackages = true;
 
 
-  den.default.includes = [     
-    
+  den.default.includes = [
+
     /* ------------------------------ Den Batteries ----------------------------- */
     den.provides.define-user # Automatically create users + their homes, by just adding them to hosts
-    
+
     # TODO: ??? Learn why this is useful ${user}.provides.${host} and ${host}.provides.${user}
     den.provides.mutual-provider
     # TODO: ??? this Automatically sets hostname, but isn't it already automatically set as per host schema?
-    den.provides.hostname 
+    den.provides.hostname
 
     /* --------------------------------- Aspects -------------------------------- */
     den.aspects.determinateNix # determinate systems `nix`

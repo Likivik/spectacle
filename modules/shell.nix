@@ -8,30 +8,29 @@
     devshell.url = "github:numtide/devshell";
   };
 
-  # flake.den = den;  # remove after debugging
-
   perSystem =
     { pkgs, den, ... }:
-    let
-      host = inputs.self.nixosConfigurations.spectacle.config;
-    in
+
     {
 
       devShells.default = pkgs.mkShell {
-        buildInputs = [ pkgs.just ];
+        buildInputs = with pkgs; [
+          nodejs
+          just
+        ];
         shellHook = ''
-          export JUST_CONFIG="$PWD/justfile"
-          PS1="(just) $PS1"
-          echo "Entering devShell with just on PATH"
-          nix repl --expr '
-          let
-            flake = builtins.getFlake (toString ./.);
-          in
-            flake // {
-              lib = flake.inputs.nixpkgs.lib;
 
-               }
-            '
+          PS1="(just, nodejs) $PS1"
+
+          # nix repl --expr '
+          # let
+          #   flake = builtins.getFlake (toString ./.);
+          # in
+          #   flake // {
+          #     lib = flake.inputs.nixpkgs.lib;
+
+          #      }
+          #   '
         '';
       };
     };

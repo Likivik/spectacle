@@ -13,6 +13,6 @@
 			"servatorium"
 		],
 		"nixEnvSelector.suggestion": false,
-		"nixEnvSelector.nixFile": "${workspaceFolder}/flake.nix"
+		"nixEnvSelector.nixFile": "${workspaceFolder}/test.nix"
 	}
 }

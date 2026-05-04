@@ -1,20 +1,11 @@
-# Peripherals
-{ config, pkgs, ... }:
+{ inputs, den, ... }:
 {
+  den.aspects.peripheralsExtra = {
+    nixos = { config, pkgs, ... }: {
+      hardware.keyboard.qmk.enable = true;
+      services.udev.packages = with pkgs; [ via ];
 
-
-  /* ------------------------------------------------------------------------ */
-  /*                            QMK Keyboard / Via                            */
-  /* ------------------------------------------------------------------------ */
-
-  hardware.keyboard.qmk.enable = true;
-  services.udev.packages = with pkgs; [ via ];
-
-  /* ------------------------------------------------------------------------ */
-  /*                         Solaar/Logitech MX Master                        */
-  /* ------------------------------------------------------------------------ */
-
-   services.udev.extraRules = ''
+      services.udev.extraRules = ''
 # This rule was added by Solaar.
 #
 # Allows non-root users to have raw access to Logitech devices.
@@ -47,5 +38,6 @@ TAG+="uaccess"
 LABEL="solaar_end"
 # vim: ft=udevrules
     '';
-
+    };
+  };
 }

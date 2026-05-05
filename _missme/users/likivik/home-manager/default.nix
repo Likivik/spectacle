@@ -9,12 +9,7 @@
 
 {
 
-  home = {
-    username = "likivik";
-    homeDirectory = "/home/${config.home.username}";
-    stateVersion = "23.11";
-    sessionVariables.NIXOS_OZONE_WL = "1";
-  };
+  home.sessionVariables.NIXOS_OZONE_WL = "1";
 
   home.packages = with pkgs; [
     #Tastings
@@ -38,13 +33,9 @@
     # Browser --------------------------------------------------------------------------------
     typora
     obsidian
-zettlr
+    zettlr
 
-joplin-desktop
-
-
-
-
+    joplin-desktop
 
 
     # Browser Add-ons
@@ -113,7 +104,7 @@ joplin-desktop
     nix-index
 
     # Code Editors
-   
+
 
     micro
     nixfmt
@@ -122,7 +113,7 @@ joplin-desktop
     # Terminal
     (blackbox-terminal.overrideAttrs { sixelSupport = true; })
     # blackbox-terminal
- 
+
 
     # Other
     steam-run
@@ -141,7 +132,7 @@ joplin-desktop
 
 
 
-  programs.ssh.extraConfig = 
+  programs.ssh.extraConfig =
 ''
 Host *
   AddKeysToAgent yes
@@ -161,94 +152,10 @@ Host *
 
   ### Firefox #####################
 
-  programs.firefox = {
-    enable = true;
-    package = pkgs.firefox;
-    languagePacks = [
-      "en-US"
-      "ru_RU"
-    ];
-    nativeMessagingHosts = [
-      pkgs.firefoxpwa
-      pkgs.kdePackages.plasma-browser-integration
-    ];
-    # pkcs11Modules = [  ];
-    policies = {
-      # Updates & Background Services
-      AppAutoUpdate = false;
-      BackgroundAppUpdate = false;
 
-      # Feature Disabling
-      DisableProfileImport = true;
-      DisablePocket = true;
-      NoDefaultBookmarks = true;
-      OfferToSaveLoginsDefault = false;
 
-      # # UI and Behavior
-      DontCheckDefaultBrowser = true;
-      HardwareAcceleration = true;
-      OfferToSaveLogins = false;
-      SecurityDevices = true;
 
-      ShowHomeButton = false;
-      FirefoxHome = {
-        Search = true;
-        TopSites = false;
-        SponsoredTopSites = false;
-        Highlights = false;
-        Pocket = false;
-        Stories = false;
-        SponsoredPocket = false;
-        SponsoredStories = false;
-        Snippets = false;
-        Locked = false;
-      };
-    };
 
-    profiles.likivik = {
-      id = 0;
-      isDefault = true;
-      name = "likivik";
-      userChrome = ./userChrome.css;
-      # extensions = {
-      #   settings = {
-      #     sidebery.settings = {
-      #       sidebarCSS = "#root.root {--frame-fg: #813d9cff;}";
-      #     };
-      #   };
-      # };
-    };
-
-    profiles.test = {
-      id = 1;
-      isDefault = false;
-      name = "test";
-      userChrome = ./userChrome.css;
-      extensions = {
-        force = true;
-        packages = with pkgs.nur.repos.rycee.firefox-addons; [
-          sidebery
-        ];
-        settings = {
-          "{3c078156-979c-498b-8990-85f7987dd929}".settings = {
-            sidebarCSS = "#root.root {--frame-fg: #813d9cff;}";
-          };
-        };
-      };
-    };
-
-  };
-
-  home.sessionVariables = {
-    MOZ_USE_XINPUT2 = "1";
-  };
-
-  programs.direnv = {
-    enable = true;
-    enableZshIntegration = true;
-    enableBashIntegration = true; # see note on other shells below
-    nix-direnv.enable = true;
-  };
 
   programs.zsh = {
     enable = true;
@@ -308,30 +215,6 @@ Host *
 
 
 
-  ###############################################
-  # services.darkman = {
-  #   enable = true;
 
-  #   darkModeScripts = {
-  #     kde-dark = ''
-  #       lookandfeeltool -platform offscreen --apply org.kde.breezedark.desktop
-  #       dbus-send --session --dest=org.kde.GtkConfig --type=method_call /GtkConfig org.kde.GtkConfig.setGtkTheme "string:Breeze"
-  #       notify-send --app-name="darkman" --urgency=low --icon=weather-clear-night "switching to dark mode"
-  #     '';
-  #   };
-
-  #   lightModeScripts = {
-  #     kde-light = ''
-  #       lookandfeeltool -platform offscreen --apply org.kde.breezetwilight.desktop
-  #       dbus-send --session --dest=org.kde.GtkConfig --type=method_call /GtkConfig org.kde.GtkConfig.setGtkTheme "string:Breeze"
-  #       notify-send --app-name="darkman" --urgency=low --icon=weather-clear-night "switching to light mode"
-  #     '';
-  #   };
-  #   settings = {
-
-  #     lat = 59.9;
-  #     lng = 30.3;
-  #   };
-  # };
 
 }

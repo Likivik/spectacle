@@ -1,20 +1,19 @@
-{
-  inputs,
+{ inputs,
   den,
   lib,
-  modulesPath,
   config,
+  pkgs,
   ...
 }:
 {
 
-  den.aspects.spectacle = {
+  den.aspects.serenity = {
 
     includes = [
 
     ];
 
-    nixos = {
+    nixos = { modulesPath, ... }: {
 
       imports = [
         # provides basic hardware detection/drivers

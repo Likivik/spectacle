@@ -8,14 +8,14 @@
 }:
 {
 
-  den.aspects.spectacle = {
+  den.aspects.traversal = {
 
     includes = [
 
     ];
 
     nixos = {
-      
+
     };
 
   };

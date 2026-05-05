@@ -2,5 +2,16 @@
     "todo-tree.tree.showCountsInTree": true,
     "todo-tree.tree.disableCompactFolders": true,
     "todo-tree.tree.showBadges": true,
-    "todo-tree.tree.scanMode": "workspace"
+    "todo-tree.tree.scanMode": "workspace",
+    "files.exclude": {
+        ".vscode": true,
+        ".github": true,
+        ".gemini": true,
+        ".envrc": true,
+        ".gitignore": true,
+        "spectacle.qcow2": true,
+        "AGENTS.md": true,
+        "NOTES": true,
+        "README.md": true
+    }
 }

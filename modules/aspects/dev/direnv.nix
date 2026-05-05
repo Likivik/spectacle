@@ -15,7 +15,7 @@
         nix-direnv.enable = true;
       };
 
-    }
+    };
 
-  }
+  };
 }

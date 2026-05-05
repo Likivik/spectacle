@@ -2,16 +2,15 @@
 { inputs, ... }:
 
 {
-  # den.hosts.x86_64-linux.serenity = {
-  #   description = "Main Desktop";
-  #   users = {
-  #     likivik = { };
-  #     salem = { };
-  #   };
-  # };
-  
+  den.hosts.x86_64-linux.serenity = {
+    description = "Desktop";
+    users = {
+      likivik = { };
+    };
+  };
+
   # den.hosts.x86_64-linux.traversal = {
-  #   description = "Main Laptop";
+  #   description = "Laptop";
   #   users = {
   #     likivik = { };
   #   };

@@ -1,9 +1,14 @@
 { inputs, den, ... }:
 {
   den.aspects.kde = {
+    includes = [
+      den.aspects.kdeExtras
+    ];
     nixos =
       { config, pkgs, ... }:
       {
+        # Enable new kde login manager
+        services.displayManager.plasma-login-manager.enable = true;
         # KDE PLASMA
         services.desktopManager.plasma6 = {
           enable = true;

@@ -2,40 +2,54 @@
 # enables `nix run .#hostname` (e.g. nix run .#spectacle).
 # instead of having to reboot each time.
 
-{ inputs, den, ... }:
+{
+  inputs,
+  den,
+  pkgs,
+  ...
+}:
 {
   # Dynamically configure tty-autologin for all hosts, but ONLY when running as a VM.
   # This prevents your real hardware from automatically logging in without a password!
-  den.default.nixos = { config, lib, ... }: {
-    virtualisation.vmVariant = {
-      # We log into root first, then dynamically pivot to the requested user at runtime!
-      services.getty.autologinUser = lib.mkForce "root";
+  den.default.nixos =
+    { config, lib, ... }:
+    {
+      virtualisation.vmVariant = {
+        # We log into root first, then dynamically pivot to the requested user at runtime!
+        services.getty.autologinUser = lib.mkForce "root";
 
-      programs.bash.loginShellInit = ''
-        if [ "$USER" = "root" ]; then
-          for arg in $(cat /proc/cmdline 2>/dev/null || true); do
-            if [[ "$arg" == autologin=* ]]; then
-              target_user="''${arg#*=}"
-              if [ -n "$target_user" ] && [ "$target_user" != "root" ]; then
-                echo "🚀 Auto-switching to requested user: $target_user..."
-                exec su - "$target_user"
+        programs.bash.loginShellInit = ''
+          if [ "$USER" = "root" ]; then
+            for arg in $(cat /proc/cmdline 2>/dev/null || true); do
+              if [[ "$arg" == autologin=* ]]; then
+                target_user="''${arg#*=}"
+                if [ -n "$target_user" ] && [ "$target_user" != "root" ]; then
+                  echo "🚀 Auto-switching to requested user: $target_user..."
+                  exec su - "$target_user"
+                fi
               fi
-            fi
-          done
-        fi
-      '';
+            done
+          fi
+        '';
+      };
     };
-  };
 
   perSystem =
-    { pkgs, lib, stdenv, ... }:
+    {
+      pkgs,
+      lib,
+      ...
+    }:
     let
       # Filter NixOS configurations that match the current system architecture
-      hostsForSystem = lib.filterAttrs (_: conf: conf.pkgs.stdenv.hostPlatform.system == stdenv.hostPlatform.system) (inputs.self.nixosConfigurations or { });
+      hostsForSystem = lib.filterAttrs (
+        _: conf: conf.pkgs.stdenv.hostPlatform.system == pkgs.stdenv.hostPlatform.system
+      ) (inputs.self.nixosConfigurations or { });
     in
     {
       # Create a VM runner package for each matching host
-      packages = lib.mapAttrs (name: conf:
+      packages = lib.mapAttrs (
+        name: conf:
         let
           normalUsers = lib.filterAttrs (n: v: v.isNormalUser) conf.config.users.users;
           userNames = lib.attrNames normalUsers;
@@ -103,9 +117,9 @@
 
             # Launch the VM safely handling any extra QEMU arguments
             if [ ''${#EXTRA_QEMU_ARGS[@]} -gt 0 ]; then
-              ${conf.config.stdenv.hostPlatform.system.build.vm}/bin/run-${conf.config.networking.hostName}-vm "''${EXTRA_QEMU_ARGS[@]}"
+              ${conf.config.system.build.vm}/bin/run-${conf.config.networking.hostName}-vm "''${EXTRA_QEMU_ARGS[@]}"
             else
-              ${conf.config.stdenv.hostPlatform.system.build.vm}/bin/run-${conf.config.networking.hostName}-vm
+              ${conf.config.system.build.vm}/bin/run-${conf.config.networking.hostName}-vm
             fi
           '';
         }
@@ -113,7 +127,8 @@
     };
 }
 
-/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/*
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
   How to use your new command:
   To see the help menu:
@@ -129,4 +144,5 @@
 
   nix run .#spectacle
 
-  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+*/

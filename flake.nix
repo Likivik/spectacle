@@ -6,7 +6,6 @@
   inputs = {
     den.url = "github:vic/den/feat/fx-pipeline";
     determinate.url = "https://flakehub.com/f/DeterminateSystems/determinate/*";
-    devshell.url = "github:numtide/devshell";
     flake-file.url = "github:vic/flake-file";
     flake-parts = {
       url = "github:hercules-ci/flake-parts";
@@ -21,7 +20,6 @@
     hyprland.url = "github:hyprwm/Hyprland/v0.52.0";
     hyprland-plugins.url = "github:hyprwm/hyprland-plugins/v0.52.0";
     import-tree.url = "github:vic/import-tree";
-    microvm.url = "github:microvm-nix/microvm.nix";
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     torrserver.url = "github:YouROK/TorrServer";
   };

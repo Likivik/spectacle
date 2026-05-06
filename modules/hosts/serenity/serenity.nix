@@ -1,10 +1,11 @@
-{ den, ... }:
+{ den, common-core, ... }:
 {
 
   den.aspects.serenity = {
 
     includes = [
-
+      den.aspects.kde
+      den.ful.common-core
     ];
 
     nixos =

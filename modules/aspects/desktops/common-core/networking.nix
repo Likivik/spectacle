@@ -11,9 +11,6 @@
           ];
         };
 
-        networking.firewall = {
-          enable = true;
-        };
       };
   };
 }

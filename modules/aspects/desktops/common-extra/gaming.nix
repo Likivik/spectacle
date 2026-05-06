@@ -4,7 +4,7 @@
     nixos =
       { config, pkgs, ... }:
       {
-        hardware.graphics.enable32Bit = true;
+        # hardware.graphics.enable32Bit = true;
 
         environment.systemPackages = with pkgs; [
           bottles

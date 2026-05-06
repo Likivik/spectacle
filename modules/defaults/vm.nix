@@ -28,10 +28,10 @@
   };
 
   perSystem =
-    { pkgs, lib, system, ... }:
+    { pkgs, lib, stdenv, ... }:
     let
       # Filter NixOS configurations that match the current system architecture
-      hostsForSystem = lib.filterAttrs (_: conf: conf.pkgs.system == system) (inputs.self.nixosConfigurations or { });
+      hostsForSystem = lib.filterAttrs (_: conf: conf.pkgs.stdenv.hostPlatform.system == stdenv.hostPlatform.system) (inputs.self.nixosConfigurations or { });
     in
     {
       # Create a VM runner package for each matching host
@@ -103,9 +103,9 @@
 
             # Launch the VM safely handling any extra QEMU arguments
             if [ ''${#EXTRA_QEMU_ARGS[@]} -gt 0 ]; then
-              ${conf.config.system.build.vm}/bin/run-${conf.config.networking.hostName}-vm "''${EXTRA_QEMU_ARGS[@]}"
+              ${conf.config.stdenv.hostPlatform.system.build.vm}/bin/run-${conf.config.networking.hostName}-vm "''${EXTRA_QEMU_ARGS[@]}"
             else
-              ${conf.config.system.build.vm}/bin/run-${conf.config.networking.hostName}-vm
+              ${conf.config.stdenv.hostPlatform.system.build.vm}/bin/run-${conf.config.networking.hostName}-vm
             fi
           '';
         }
@@ -117,7 +117,7 @@
 
   How to use your new command:
   To see the help menu:
-  
+
   nix run .#spectacle -- --help
   To discover which users are available for a specific host:
 

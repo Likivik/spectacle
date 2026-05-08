@@ -11,7 +11,7 @@
         ".gitignore": true,
         "spectacle.qcow2": true,
         "AGENTS.md": true,
-        "NOTES": true,
+        "NOTES": false,
         "README.md": true
     }
 }

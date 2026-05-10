@@ -12,6 +12,6 @@
         "spectacle.qcow2": true,
         "AGENTS.md": true,
         "NOTES": false,
-        "README.md": true
+        "README.md": false
     }
 }

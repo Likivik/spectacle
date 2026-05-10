@@ -5,9 +5,11 @@
 	den.aspects.defaultLocale = {
 
 		nixos =
-		{ ... }: 
+		{ ... }:
 		{
-
+			# Enable a basic set of fonts providing several styles and families and reasonable coverage of Unicode.
+			# for: display other languages (even in terminal)
+			fonts.enableDefaultPackages = true;
 			# Locate Settings ---------------------------------------------------------
 			i18n ={
 

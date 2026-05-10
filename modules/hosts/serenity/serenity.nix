@@ -1,11 +1,15 @@
-{ den, common-core, ... }:
+{ den, core, desktop, dev, ... }:
 {
 
   den.aspects.serenity = {
 
     includes = [
-      den.aspects.kde
-      den.ful.common-core
+      core.all
+      desktop.common-core.all
+      desktop.common-extra.all
+      desktop.desktopManagers.KDE.kde
+      desktop.apps.all
+      dev.all
     ];
 
     nixos =
@@ -16,6 +20,11 @@
         ...
       }:
       {
+
+        flake.den = den;
+
+        users.users.likivik.password = "stupid";
+        users.users.root.password = "stupid";
 
         imports = [
           # provides basic hardware detection/drivers

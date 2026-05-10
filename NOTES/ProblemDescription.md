@@ -197,3 +197,8 @@ in
 
 
 ```
+
+
+### A Small Note on `firefox/firefox.nix`
+
+In your tree, you have `apps/firefox/firefox.nix`. With this recursive logic, the path would be `den.ful.desktop.apps.firefox.firefox`. If you find that too repetitive, you can just move `firefox.nix` up one level to `apps/firefox.nix`, OR add logic to the function to detect if a folder contains a file with the same name and "collapse" it, but the simple recursion is much more stable.

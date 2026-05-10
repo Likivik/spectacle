@@ -1,28 +1,6 @@
 # This file: nixos default stuffs
 { inputs, den, lib, pkgs, ... }:
 {
-
-
-
-  /* ---------------------------------------------------------------------------
-    This is the part that allowed Watcher to inherit from Spectacle's `includes`
-    specifically -> den._.host-aspects, apparently was a bug fixed in fx-effects branch
-    ---------------------------------------------------------------------------- */
-  # den.schema.user.includes = [ den._.mutual-provider den._.host-aspects];
-  # den.schema.host.includes = [ den._.mutual-provider ];
-  # den.stages.home.includes = [ den._.mutual-provider ];
-  # den.stages.host.includes = [ den._.mutual-provider ];
-
-  /* ------------------------------------------------------------------------
-                                  Home manager
-    ------------------------------------------------------------------------- */
-  den.schema.user.classes = lib.mkDefault [ "homeManager" ]; # enable HM for every user by default
-  den.default.homeManager.home.stateVersion = "25.11"; # Set HM version with which you started, never change for proper backward compatability
-  den.ctx.hm-host = {
-    home-manager.useGlobalPkgs = true; # TODO: ???
-    home-manager.useUserPackages = true; # TODO: ???
-  };
-
   /* ------------------------------------------------------------------------
                                       NixOS
     ------------------------------------------------------------------------- */

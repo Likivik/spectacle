@@ -15,8 +15,8 @@
     # den.url = "github:vic/den";
     den = {
       # url = "github:denful/den?rev=8101ec865c0bf4027d40b9fd8951e3e435a86d64";
-      # url = "github:denful/den";
-      url = "github:vic/den/feat/fx-pipeline";
+      url = "github:denful/den";
+      # url = "github:vic/den/feat/fx-pipeline";
     };
     flake-file.url = "github:vic/flake-file";
     home-manager = {

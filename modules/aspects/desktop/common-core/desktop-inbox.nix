@@ -31,7 +31,7 @@
     nixos =
       { pkgs, ... }:
       {
-        fonts.enableDefaultPackages = true; # Enable a basic set of fonts providing several styles and families and reasonable coverage of Unicode.
+        
         services.tarsnap.enable = true;
         programs.thunderbird.enable = true;
 

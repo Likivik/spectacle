@@ -16,6 +16,12 @@
       lib,
       ...
     }:
+    let
+      # Filter NixOS configurations that match the current system architecture
+      hostsForSystem = lib.filterAttrs (
+        _: conf: conf.pkgs.stdenv.hostPlatform.system == pkgs.stdenv.hostPlatform.system
+      ) (inputs.self.nixosConfigurations or { });
+    in
     {
       # we take `packages` in `perSystem` and define them as a function
       # that takes name: and conf: as arguments
@@ -32,6 +38,6 @@
               ${conf.config.system.build.vm}/bin/run-${conf.config.networking.hostName}-vm "$@"
             '';
           }
-        ) inputs.self.nixosConfigurations;
+        ) hostsForSystem;
     };
 }

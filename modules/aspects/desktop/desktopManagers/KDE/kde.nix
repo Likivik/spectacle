@@ -2,7 +2,7 @@
 {
   den.aspects.kde = {
     includes = [
-      den.aspects.kdeExtras
+      den.aspects.kde-extras
     ];
     nixos =
       { config, pkgs, ... }:

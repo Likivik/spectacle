@@ -1,16 +1,6 @@
 { den, config, ... }:
 {
 
-  /*
-    ---------------------------------
-    Does this get passed to watcher???
-
-    1. See in Repl? - failed...
-    2. ask AI - failed...
-    3.
-    ----------------------------------
-  */
-
   den.aspects.firefox = {
 
     homeManager =

@@ -1,15 +1,15 @@
-{ den, core, desktop, dev, inputs, ... }:
+{ den, inputs, ... }:
 {
 
   den.aspects.serenity = {
 
     includes = [
-      den.ful.core.all
-      den.ful.desktop.common-core.all
-      den.ful.desktop.common-extra.all
-      den.ful.desktop.desktopManagers.KDE.kde
-      den.ful.desktop.apps.all
-      den.ful.dev.all
+      den.aspects.core.all
+      den.aspects.desktop.common-core.all
+      den.aspects.desktop.common-extra.all
+      den.aspects.desktop.desktopManagers.KDE.kde
+      den.aspects.desktop.apps.all
+      den.aspects.dev.all
     ];
 
     nixos =

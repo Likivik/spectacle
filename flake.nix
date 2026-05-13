@@ -6,6 +6,7 @@
   inputs = {
     den.url = "github:denful/den";
     determinate.url = "https://flakehub.com/f/DeterminateSystems/determinate/*";
+    devshell.url = "github:numtide/devshell";
     flake-file.url = "github:vic/flake-file";
     flake-parts = {
       url = "github:hercules-ci/flake-parts";

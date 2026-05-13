@@ -1,4 +1,67 @@
-is it possible to create namespace "provides" programmatically based on folder structure somehow?
+This one is way outside of what den is meant to do, but maybe someone has a guess, that I can go investigate:
+
+Question:
+Is it possible to write a function that automatically creates `namespace` or `aspect` "`provides`" (or sub-aspects) programmatically based on folder structure/file names somehow? (or maybe I can hook into some `den` process along the pipeline to get the directory of the aspect being processed and auto create sub-aspects there?)
+
+To try to show what I mean:
+```in namespaces.nix
+{ inputs, den, lib, ... }:
+let
+  magicalFunction = path: ??? <- This is my question:)
+in
+{
+  imports = [
+    (inputs.den.namespace "core" false)
+    (inputs.den.namespace "desktop" false)
+  ];
+
+  # Dynamically map the folder structure to the den namespaces
+  den.ful.core = magicalFunction ../aspects/core;
+  den.ful.desktop = magicalFunction ../aspects/desktop;
+}
+```
+To then use in, say, host aspect:
+```
+den.aspects.host1 = {
+  includes = [
+    den.ful.core.all # <- since core is a namespace, .all would need to be an aspect created in a 'magicalFunction' i think.
+                     # The idea is to import every aspect from that folder
+
+    den.ful.desktop.common-core.all # <- sub aspects would be groupped/created automatically by folder as well :)
+  ];
+}
+```
+
+In each file there is a corresponding den.aspects.{filename}
+ 📁 modules
+├── 📁 aspects
+│   ├── 📁 core
+│   │   ├── 📄 bootloader.nix
+│   │   ├── 📄 determinate.nix
+│   │   ├── 📄 home-manager.nix
+│   │   ├── 📄 locale.nix
+│   │   └── 📄 nix.nix
+│   └── 📁 desktop
+│       ├── 📁 desktop-core
+│       │   ├── 📄 desktop-inbox.nix
+│       │   ├── 📄 filesystems-support.nix
+│       │   ├── 📄 networking.nix
+│       │   ├── 📄 package-sources.nix
+│       │   ├── 📄 peripherals-base.nix
+│       │   ├── 📄 printers-scanners.nix
+│       │   ├── 📄 remote-desktops.nix
+│       │   └── 📄 vpn.nix
+│       ├── 📁 desktop-extra
+│       │   ├── 📄 gaming.nix
+│       │   └── 📄 peripherals-extra.nix
+│
+└── 📄 namespaces.nix
+└── 📄 hosts.nix
+└── 📄 users.nix
+
+
+
+
 here is my file-tree:
 ```
 ├── 📁 .gemini

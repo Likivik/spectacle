@@ -1,7 +1,7 @@
 This one is way outside of what den is meant to do, but maybe someone has a guess, that I can go investigate:
 
 Question:
-Is it possible to write a function that automatically creates `namespace` or `aspect` "`provides`" (or sub-aspects) programmatically based on folder structure/file names somehow? (or maybe I can hook into some `den` process along the pipeline to get the directory of the aspect being processed and auto create sub-aspects there?)
+Is it possible to write a function that automatically creates `aspect` "`provides`" (sub-aspects) programmatically based on folder structure/file names somehow? (or maybe I can hook into some `den` process along the pipeline to get the directory of the aspect being processed and auto create sub-aspects there?)
 
 To try to show what I mean:
 ```in namespaces.nix

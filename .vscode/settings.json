@@ -7,6 +7,12 @@
         ".gemini": true,
         ".github": true,
         ".vscode": true,
-        ".envrc": true
+        ".envrc": true,
+        "README.md": true,
+        "serenity.qcow2": true,
+        "spectacle.qcow2": true,
+        "AGENTS.md": true,
+        ".gitignore": true,
+        "NOTES": true
     }
 }

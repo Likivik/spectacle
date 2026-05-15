@@ -1,6 +1,6 @@
 { inputs, den, ... }:
 {
-  den.aspects.nix = {
+  den.aspects.core.nix = {
     nixos = { config, pkgs, ... }: {
       system.stateVersion = "25.11"; # set Nixpkgs version you start with, never change for proper backward compatability
       nixpkgs.config.allowUnfree = true; # allow unfree packages

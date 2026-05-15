@@ -1,7 +1,7 @@
 { den, inputs, ... }:
 {
 
-  den.default.includes = [ den._.inputs' ];
+  den.default.desktop.desktopManagers.includes = [ den._.inputs' ];
 
   flake-file.inputs = {
     hyprland.url = "github:hyprwm/Hyprland/v0.52.0";
@@ -11,7 +11,7 @@
   };
 
   den.aspects.hyprland-bigscreen = {
-    nixos = { pkgs, ... }: 
+    nixos = { pkgs, ... }:
     {
 
       nix.settings = { # TODO: ???
@@ -28,7 +28,7 @@
           Starts appropriate targets like graphical-session.target,
           uses dbus-broker
           -------------------------------------------------------- */
-        withUWSM = true; 
+        withUWSM = true;
 
         xwayland.enable = true; # TODO: ???
         package = pkgs.hyprland;  # TODO: ???
@@ -52,7 +52,7 @@
         settings = {
           # Optimized for TV/Large Screen
           monitor = ", preferred, auto, 1.5"; # Adjust scaling as needed for TV
-          
+
           general = {
             gaps_in = 10;
             gaps_out = 20;

@@ -1,6 +1,6 @@
 { inputs, den, ... }:
 {
-  den.aspects.bootloader = {
+  den.aspects.core.bootloader = {
     nixos =
       { config, pkgs, ... }:
       {

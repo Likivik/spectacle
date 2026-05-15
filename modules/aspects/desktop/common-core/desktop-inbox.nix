@@ -1,7 +1,7 @@
 { den, ... }:
 {
   # user aspect
-  den.aspects.desktop-inbox = {
+  den.aspects.desktop.common-core.desktop-inbox = {
     includes = [
 
     ];
@@ -31,7 +31,7 @@
     nixos =
       { pkgs, ... }:
       {
-        
+
         services.tarsnap.enable = true;
         programs.thunderbird.enable = true;
 

@@ -1,6 +1,6 @@
 { inputs, den, ... }:
 {
-  den.aspects.printersScanners = {
+  den.aspects.desktop.common-core.printersScanners = {
     nixos = { config, pkgs, ... }: {
 
       services.printing = {

@@ -1,13 +1,14 @@
-{ den, inputs, core, desktop, dev, ... }:
+{ den, inputs, ... }:
 {
 
   den.aspects.serenity = {
 
-    includes = [
-      core.all                   # Includes every file in aspects/core/
-      desktop.common-core.all    # Includes every file in aspects/desktop/common-core/
-      desktop.apps.all           # Includes every file in aspects/desktop/apps/
-      dev.all
+    includes = with den.apects; [
+      core._                  # ._ --> Includes every sub-aspect (1st level only)
+      desktop.common-core._
+      desktop.common-extra._
+      desktop.desktopManagers.kde
+      desktop.apps._
     ];
 
     nixos =

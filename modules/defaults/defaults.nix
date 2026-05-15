@@ -5,7 +5,7 @@
                                       NixOS
     ------------------------------------------------------------------------- */
   den.default.networking.firewall.enable = true; # enable firewall everywhere
-
+	flake.den = den;
   den.default.includes = [
 
     /* ------------------------------ Den Batteries ----------------------------- */

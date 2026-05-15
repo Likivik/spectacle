@@ -1,6 +1,6 @@
 { inputs, den, ... }:
 {
-  den.aspects.kde = {
+  den.aspects.desktop.desktopManagers.kde = {
     includes = [
       den.aspects.kde-extras
     ];

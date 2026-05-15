@@ -1,6 +1,6 @@
 { inputs, den, ... }:
 {
-  den.aspects.packageSources = {
+  den.aspects.desktop.common-core.packageSources = {
     nixos = { config, pkgs, ... }: {
       nixpkgs.config = { allowUnfree = true; };
 

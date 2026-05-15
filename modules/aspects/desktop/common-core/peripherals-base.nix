@@ -2,7 +2,7 @@
 { den, ... }:
 
 {
-  den.aspects.peripherals-base = {
+  den.aspects.desktop.common-core.peripherals-base = {
     nixos =
       { config, ... }:
       {

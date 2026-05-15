@@ -1,6 +1,6 @@
 { den, ... }:
 {
-  den.aspects.gnome-desktop = {
+  den.aspects.desktop.desktopManagers.gnome-desktop = {
 
     nixos =
       { pkgs, lib, ... }:

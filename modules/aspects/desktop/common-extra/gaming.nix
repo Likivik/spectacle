@@ -1,6 +1,6 @@
 { inputs, den, ... }:
 {
-  den.aspects.gaming = {
+  den.aspects.desktop.common-extra.gaming = {
     nixos =
       { config, pkgs, ... }:
       {

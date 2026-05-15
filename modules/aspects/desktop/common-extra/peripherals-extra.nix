@@ -1,6 +1,6 @@
 { inputs, den, ... }:
 {
-  den.aspects.peripheralsExtra = {
+  den.aspects.desktop.common-extra.peripheralsExtra = {
     nixos =
       { config, pkgs, ... }:
       {

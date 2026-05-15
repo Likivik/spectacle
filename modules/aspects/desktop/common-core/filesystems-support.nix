@@ -1,6 +1,6 @@
 { inputs, den, ... }:
 {
-  den.aspects.filesystemsSupport = {
+  den.aspects.desktop.common-core.filesystemsSupport = {
     nixos =
       { config, pkgs, ... }:
       {

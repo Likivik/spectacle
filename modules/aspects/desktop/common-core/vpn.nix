@@ -1,6 +1,6 @@
 { inputs, den, ... }:
 {
-  den.aspects.vpn = {
+  den.aspects.desktop.common-core.vpn = {
     nixos =
       { config, pkgs, lib, ... }:
       {

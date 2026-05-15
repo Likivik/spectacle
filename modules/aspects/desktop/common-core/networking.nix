@@ -1,6 +1,6 @@
 { inputs, den, ... }:
 {
-  den.aspects.networking = {
+  den.aspects.desktop.common-core.networking = {
     nixos =
       { config, pkgs, ... }:
       {

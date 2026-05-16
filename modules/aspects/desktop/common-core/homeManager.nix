@@ -1,6 +1,8 @@
 # Home Manager Settings
+{den, ...}:{
 
-den.aspects.homeManager = {
-  home-manager.useGlobalPkgs = true; # TODO: ???
-  home-manager.useUserPackages = true; # TODO: ???
+  den.aspects.desktop.common-core.homeManager = {
+    home-manager.useGlobalPkgs = true; # TODO: ???
+    home-manager.useUserPackages = true; # TODO: ???
+  };
 }

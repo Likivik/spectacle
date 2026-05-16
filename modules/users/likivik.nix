@@ -8,11 +8,11 @@
       den.aspects.firefox
     ];
 
-    homeManager =
-      { pkgs, ... }:
-      {
+    # homeManager =
+    #   { pkgs, ... }:
+    #   {
 
-      };
+    #   };
 
     # user can provide NixOS configurations
     # to any host it is included on

@@ -4,7 +4,7 @@
   den.aspects.firefox = {
 
     homeManager =
-      { pkgs, config, ... }:
+      { pkgs, config, user, ... }:
       {
 
         programs.firefox = {

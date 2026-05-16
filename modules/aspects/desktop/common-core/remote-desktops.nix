@@ -7,6 +7,7 @@
         environment.systemPackages = with pkgs; [
           anydesk
           remmina
+          kdePackages.krdp
         ];
       };
   };

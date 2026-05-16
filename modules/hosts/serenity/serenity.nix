@@ -6,9 +6,10 @@
     includes =
        [den.aspects.core._]
     ++ [den.aspects.desktop.common-core._]
-    ++ [den.aspects.desktop.common-extra.peripherals-extra]
+    ++ [den.aspects.desktop.common-extra.peripheralsExtra]
     ++ [den.aspects.desktop.desktopManagers.kde]
-    ++ [den.aspects.desktop.apps._]
+    ++ [den.aspects.firefox]
+    ++ [den.aspects.dev-fonts]
     ;
 
     nixos =

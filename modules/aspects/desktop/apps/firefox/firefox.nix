@@ -1,7 +1,7 @@
 { den, config, ... }:
 {
 
-  den.aspects.desktop.apps.firefox = {
+  den.aspects.firefox = {
 
     homeManager =
       { pkgs, config, ... }:

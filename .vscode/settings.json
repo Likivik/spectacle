@@ -13,6 +13,6 @@
         "spectacle.qcow2": true,
         "AGENTS.md": true,
         ".gitignore": true,
-        "NOTES": true
+        "NOTES": false
     }
 }

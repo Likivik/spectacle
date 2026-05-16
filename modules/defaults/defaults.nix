@@ -4,6 +4,7 @@
   /* ------------------------------------------------------------------------
                                       NixOS
     ------------------------------------------------------------------------- */
+  den.default.nixos.system.stateVersion = "25.11"; # set Nixpkgs version you start with, never change for proper backward compatability
   den.default.networking.firewall.enable = true; # enable firewall everywhere
 	flake.den = den;
   den.default.includes = [
@@ -14,10 +15,7 @@
 
     den.provides.mutual-provider  # TODO: ??? Learn why this is useful ${user}.provides.${host} and ${host}.provides.${user}
     /* --------------------------------- Aspects -------------------------------- */
-    den.aspects.determinateNix # determinate systems `nix`
-    den.aspects.defaultLocale # the locale settings I'll probably need everywhere?
-    den.aspects.nix
-    den.aspects.bootloader
+
 
   ];
 

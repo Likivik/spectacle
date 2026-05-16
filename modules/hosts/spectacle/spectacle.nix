@@ -5,9 +5,9 @@
 
       includes = [
 
-        den.aspects.gnome-desktop
-        den.aspects.firefox
-        den.aspects.peripherals-base
+        den.aspects.desktop.desktopManagers.gnome
+        den.aspects.desktop.apps.firefox
+        den.aspects.desktop.common-core.peripherals-base
         den.aspects.torrserver
 
       ];

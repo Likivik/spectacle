@@ -3,13 +3,14 @@
 
   den.aspects.serenity = {
 
-    includes = with den.apects; [
-      core._                  # ._ --> Includes every sub-aspect (1st level only)
-      desktop.common-core._
-      desktop.common-extra._
-      desktop.desktopManagers.kde
-      desktop.apps._
-    ];
+    includes = [
+      den.aspects.core._
+      # den.aspects.desktop.common-core._
+      # den.aspects.desktop.common-extra._
+      # den.aspects.desktop.desktopManagers.kde
+      # den.aspects.desktop.apps._
+    ]
+    ;
 
     nixos =
       {

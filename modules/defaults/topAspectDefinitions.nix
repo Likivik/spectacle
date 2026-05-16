@@ -1,16 +1,16 @@
 { inputs, den, lib, ... }:
 {
   imports = [
-  ]
+  ];
 
-  den.apects.core = {};
+  den.aspects.core = {};
 
-  den.apects.desktop = {};
-  den.apects.desktop.apps = {};
-  den.apects.desktop.common-core = {};
-  den.apects.desktop.common-extra = {};
-  den.apects.desktop.desktopManagers = {};
+  den.aspects.desktop = {};
+  den.aspects.desktop.apps = {};
+  den.aspects.desktop.common-core = {};
+  den.aspects.desktop.common-extra = {};
+  den.aspects.desktop.desktopManagers = {};
 
-  den.apects.dev = {};
+  den.aspects.dev = {};
 
 }

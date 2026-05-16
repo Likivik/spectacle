@@ -6,7 +6,8 @@
       den.provides.primary-user
       (den.provides.user-shell "bash")
     ];
-
+    home-manager.useGlobalPkgs = true; # TODO: ???
+    home-manager.useUserPackages = true; # TODO: ???
     # homeManager =
     #   { pkgs, ... }:
     #   {

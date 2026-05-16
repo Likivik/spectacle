@@ -7,8 +7,22 @@
   den.default.nixos.system.stateVersion = "25.11"; # set Nixpkgs version you start with, never change for proper backward compatability
   den.default.networking.firewall.enable = true; # enable firewall everywhere
 	flake.den = den;
-  den.default.includes = [
 
+  /* ------------------------------------------------------------------------
+                                  Home manager
+    ------------------------------------------------------------------------- */
+
+  den.default.homeManager.home.stateVersion = "25.11"; # Set HM version with which you started, never change for proper backward compatability
+
+  den.schema.user.classes = lib.mkDefault [ "homeManager" ]; # enable HM for every user by default
+  den.schema.hm-host = {
+    home-manager.useGlobalPkgs = true; # TODO: ???
+    home-manager.useUserPackages = true; # TODO: ???
+  };
+
+
+
+  den.default.includes = [
     /* ------------------------------ Den Batteries ----------------------------- */
     den.provides.hostname # TODO: ??? this Automatically sets hostname, but isn't it already automatically set as per host schema?
     den.provides.define-user # Automatically create users + their homes, by just adding them to hosts

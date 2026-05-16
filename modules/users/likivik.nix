@@ -5,6 +5,7 @@
     includes = [
       den.provides.primary-user
       (den.provides.user-shell "bash")
+      den.aspects.firefox
     ];
 
     homeManager =
@@ -16,6 +17,13 @@
     # user can provide NixOS configurations
     # to any host it is included on
     nixos = { pkgs, user, ... }: {
+
+
+      environment.systemPackages = with pkgs; [
+        opencode-desktop
+        opencode
+      ];
+
       users.users.${user.userName}.extraGroups = [
         "wheel" # to use `sudo`
         "networkmanager" # ethernet/wifi access

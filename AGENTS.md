@@ -63,6 +63,10 @@ nh os boot .#hostname   # staged for next reboot
 - Default user class: `homeManager` (via `den.schema.user.classes`) — TODO: doesn't actually work, needs debug
 - Firewall enabled globally
 
+## Skill upkeep
+- When `nix flake update den` bumps the input, refresh `.opencode/skills/den-framework/SKILL.md` with the new source.
+- Run the refresh command documented in the skill header.
+
 ## Workflow
 - If ambiguous about next steps, stop and ask — do NOT decide alone.
 

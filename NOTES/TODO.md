@@ -9,31 +9,26 @@
 * [x] **reading through documentation for den** - useful part
 * [x] **roaming through other people’s configs** - also really useful
 
-### More
+### Big Goals
 
-* [ ] reading through documentation for dendritic
-* [ ] understand how flake-file works
-  * [ ] rtfm
-  * [ ] videos
+#### Deployment
 
-- [ ] Barebones Hyprland on spectacle
-  - [x] add Hyprland
-  - [ ] add gamepad control+onscreen keyboard
-  - [ ] add voice control?
-
-decide DankShell vs Noctalia?
+What do we want:
+- Build on strontg box, push to weak box
+- Autoupdate
+- Change config from remote box (Desktop)
 
 
 
-- [ ] hyprland vs niri vs ...
 
+### Streaming Box:
 
+#### Control linux with voice - it does exist
+- [ ] Where do we start?
+- [ ]
 
-- [ ] control linux with voice - it does exist
-
-
-kodi
-libreElec
+#### Stremio
+- [ ] Where do we start?
 
 
 

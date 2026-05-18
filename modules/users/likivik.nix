@@ -25,9 +25,6 @@
     # user can provide NixOS configurations
     # to any host it is included on
     nixos = { pkgs, user, ... }: {
-      home-manager.useGlobalPkgs = true;
-      home-manager.useUserPackages = true;
-
       environment.systemPackages = with pkgs; [
         opencode-desktop
       ];

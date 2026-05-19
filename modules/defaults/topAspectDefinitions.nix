@@ -6,8 +6,8 @@
   den.aspects.core = {
     includes = lib.mkDefault [
       den.aspects.core.bootloader
-      den.aspects.core.determinate
-      den.aspects.core.locale
+      den.aspects.core.determinateNix
+      den.aspects.core.defaultLocale
       den.aspects.core.nix
     ];
   };

@@ -6,18 +6,18 @@
     includes =
        # core aspects (was den.aspects.core._)
        [ den.aspects.core.bootloader
-         den.aspects.core.determinate
-         den.aspects.core.locale
+         den.aspects.core.determinateNix
+         den.aspects.core.defaultLocale
          den.aspects.core.nix
        ]
     ++ # desktop common-core (was den.aspects.desktop.common-core._)
        [ den.aspects.desktop.common-core.desktopInbox
          den.aspects.desktop.common-core.filesystemsSupport
          den.aspects.desktop.common-core.networking
-         den.aspects.desktop.common-core.package-sources
+         den.aspects.desktop.common-core.packageSources
          den.aspects.desktop.common-core.peripherals-base
-         den.aspects.desktop.common-core.printers-scanners
-         den.aspects.desktop.common-core.remote-desktops
+         den.aspects.desktop.common-core.printersScanners
+         den.aspects.desktop.common-core.remoteDesktops
          den.aspects.desktop.common-core.vpn
        ]
     ++ [ den.aspects.desktop.common-extra.peripheralsExtra ]

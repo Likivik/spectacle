@@ -3,7 +3,7 @@
 
   # I think defining your own aspects goes like this:
 
-  den.aspects.core.determinateNix = {
+  den.aspects.core.determinate-nix = {
     nixos =
       { ... }:
       {

@@ -2,7 +2,7 @@
 {
 
 
-	den.aspects.core.defaultLocale = {
+	den.aspects.core.default-locale = {
 
 		nixos =
 		{ ... }:

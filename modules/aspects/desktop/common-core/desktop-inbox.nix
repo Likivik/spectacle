@@ -1,7 +1,7 @@
 { den, ... }:
 {
   # user aspect
-  den.aspects.desktop.common-core.desktopInbox = {
+  den.aspects.desktop.common-core.desktop-inbox = {
     includes = [
 
     ];

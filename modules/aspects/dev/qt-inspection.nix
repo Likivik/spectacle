@@ -1,6 +1,6 @@
 { inputs, den, ... }:
 {
-  den.aspects.qtInspection = {
+  den.aspects.qt-inspection = {
     nixos =
       { config, pkgs, ... }:
       {

@@ -4,23 +4,9 @@
   den.aspects.serenity = {
 
     includes =
-       # core aspects (was den.aspects.core._)
-       [ den.aspects.core.bootloader
-         den.aspects.core.determinateNix
-         den.aspects.core.defaultLocale
-         den.aspects.core.nix
-       ]
-    ++ # desktop common-core (was den.aspects.desktop.common-core._)
-       [ den.aspects.desktop.common-core.desktopInbox
-         den.aspects.desktop.common-core.filesystemsSupport
-         den.aspects.desktop.common-core.networking
-         den.aspects.desktop.common-core.packageSources
-         den.aspects.desktop.common-core.peripherals-base
-         den.aspects.desktop.common-core.printersScanners
-         den.aspects.desktop.common-core.remoteDesktops
-         den.aspects.desktop.common-core.vpn
-       ]
-    ++ [ den.aspects.desktop.common-extra.peripheralsExtra ]
+       [ den.aspects.core ]
+    ++ [ den.aspects.desktop.common-core ]
+    ++ [ den.aspects.desktop.common-extra.peripherals-extra ]
     ++ [ den.aspects.desktop.desktopManagers.kde ]
     ++ [ den.aspects.firefox ]
     ++ [ den.aspects.dev-fonts ]

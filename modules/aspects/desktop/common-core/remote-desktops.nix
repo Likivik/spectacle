@@ -1,6 +1,6 @@
 { inputs, den, ... }:
 {
-  den.aspects.desktop.common-core.remoteDesktops = {
+  den.aspects.desktop.common-core.remote-desktops = {
     nixos =
       { config, pkgs, ... }:
       {

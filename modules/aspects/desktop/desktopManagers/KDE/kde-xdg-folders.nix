@@ -1,6 +1,6 @@
 { inputs, den, ... }:
 {
-  den.aspects.kde-xdgFolders = {
+  den.aspects.kde-xdg-folders = {
     nixos = { config, pkgs, lib, ... }: {
       nixpkgs.overlays = [
         (final: prev: {

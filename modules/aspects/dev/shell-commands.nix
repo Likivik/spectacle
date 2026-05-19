@@ -1,6 +1,6 @@
 { inputs, den, ... }:
 {
-  den.aspects.shellCommands = {
+  den.aspects.shell-commands = {
     nixos = { config, pkgs, ... }: {
       environment.systemPackages = with pkgs; [
         killall

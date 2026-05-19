@@ -1,6 +1,6 @@
 { inputs, den, ... }:
 {
-  den.aspects.flatpakBuild = {
+  den.aspects.flatpak-build = {
     nixos = { config, pkgs, lib, ... }: {
       environment.systemPackages = [ pkgs.flatpak-builder ];
     };

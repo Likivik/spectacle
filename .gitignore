@@ -1,2 +1,6 @@
 *.qcow2
 result
+node_modules
+package.json
+package-lock.json
+bun.lock

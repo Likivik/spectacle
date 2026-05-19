@@ -82,7 +82,6 @@ den.policies.desktop-core = {
 ---
 
 
-Here is a concrete structural blueprint mapping your specific fleet—combining your daily drivers, servers, and HTPC appliances—into a multi-file layout using Den's modern API design patterns.
 
 ---
 
@@ -108,65 +107,6 @@ To keep your configuration clean, isolate your structural data from your functio
 
 ---
 
-### 2. `flake.nix`: The Central Inventory & Policy Registry
-
-This serves as your pure inventory dataset. You define your hosts and users, then group them into operational environments using **Policies**.
-
-```nix
-{
-  inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
-    home-manager.url = "github:nix-community/home-manager";
-
-    # Target Den Framework
-    den.url = "github:denful/den";
-  };
-
-  outputs = { self, nixpkgs, den, ... }@inputs:
-    den.lib.engine {
-      inherit inputs;
-
-      # Define your machine inventory
-      den.hosts.x86_64-linux = {
-        serenity            = { includes = [ ./aspects/hardware/serenity.nix ./aspects/profiles/workstation.nix ]; };
-        traversal           = { includes = [ ./aspects/profiles/workstation.nix ]; };
-        spectacle           = { includes = [ ./aspects/profiles/htpc.nix ]; };
-        homelab01-poweredge = { includes = [ ./aspects/hardware/poweredge.nix ./aspects/profiles/storage-server.nix ]; };
-        devbox01            = { includes = [ ./aspects/profiles/sandbox.nix ]; };
-        nixosrouter         = { includes = [ ./aspects/profiles/router.nix ]; };
-        salembox            = { includes = [ ./aspects/profiles/workstation.nix ]; };
-      };
-
-      # Define human/appliance identities
-      den.users = {
-        likivik = { includes = [ ./aspects/identities/likivik.nix ]; };
-        salem   = { includes = [ ./aspects/identities/salem.nix ]; };
-        watcher = { includes = [ ./aspects/identities/watcher.nix ]; };
-      };
-
-      # Policies bind infrastructure configurations together dynamically
-      den.policies = {
-        daily-drivers = {
-          hosts = [ "serenity" "traversal" ];
-          users = [ "likivik" ];
-        };
-        server-fleet = {
-          hosts = [ "homelab01-poweredge" "devbox01" "nixosrouter" ];
-          users = [ "likivik" ]; # Single user profile used for server management
-        };
-        kiosk-appliances = {
-          hosts = [ "spectacle" ];
-          users = [ "watcher" "likivik" ]; # watcher handles media, likivik can SSH
-        };
-        shared-desktops = {
-          hosts = [ "salembox" ];
-          users = [ "salem" "likivik" ];
-        };
-      };
-    };
-}
-
-```
 
 ---
 

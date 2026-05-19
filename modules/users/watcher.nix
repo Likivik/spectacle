@@ -18,8 +18,6 @@
     # to any host it is included on
     nixos = { pkgs, ... }: { 
       users.users.watcher.password = "stupid";
-      home-manager.useGlobalPkgs = true;
-      home-manager.useUserPackages = true;
       environment.systemPackages = [ pkgs.trash-cli ];
       home-manager.backupCommand = "${pkgs.trash-cli}/bin/trash";
       home-manager.backupFileExtension = "hm-backup";

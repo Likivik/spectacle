@@ -32,7 +32,9 @@ What do we want:
 
 
 
-## Possible Hosts
+## Possible hosts
+
+### serenity
 
 desc: Main Desktop PC.
 
@@ -44,19 +46,21 @@ desc: Main Laptop
 
 desc: small box connected to TV to watch shows, movies and use browser from.
 
-### unnamed main box for hosted servers and zfs backups
+### homelab01-poweredge
 
 desc: Backups aggregator from all other machines, has probably mirrored zfs pool (which does bit-rot prevention) and sends backups off-site.
 
-### unnamed test/development box
+###  devbox01
 
 desc: to mess with and host stuffs like local torrent server (for .iso files ofc), media server, Nextcloud, Notes, and every other thing I wanna try that has a server component, after messing with it here can be moved to “prod” server.
 
-### nixos based router + wifi
+### nixosrouter
 
-desc: need to figure out the what and how.
+desc: nixos based router + wifi, nftables based (probably)
 
+### salembox
 
+desc: desktop for salem user
 
 ## Possible Users
 
@@ -66,12 +70,12 @@ desc: desktop, laptop, spectacle user, development, office work, my main
 
 ### likiviks
 
-desc: server administrator, also me, but setup for server administration as opposed to gui desktop, laptop use
+desc: server administrator, also me, but setup for server administration as opposed to gui desktop, laptop use (better to combine with likivik, configured based on host)
 
 ### salem
 
-desc: spectacle user
+desc: desktop user on
 
 ### watcher
 
-desc: guest user for spectacle (is it really needed? keeping for learning/testing for now)
+desc: default user for spectacle

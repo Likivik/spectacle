@@ -15,15 +15,16 @@
   den.default.homeManager.home.stateVersion = "25.11"; # Set HM version with which you started, never change for proper backward compatability
   den.schema.user.classes = lib.mkDefault [ "homeManager" ]; # enable HM class for every user by default
 
-  # TODO: THIS DOES NOT WORK!
-  # den.schema.hm-host = {
-  #   home-manager.useGlobalPkgs = true; # TODO: ???
-  #   home-manager.useUserPackages = true; # TODO: ???
-  # };
-  # ? maybe this does? - yes it does, as expected, so issue with hm-host maybe?
-  # And why do none of the HM packages get included if this is turned off?
-  # den.default.nixos.home-manager.useGlobalPkgs = true; # TODO: ???
-  # den.default.nixos.home-manager.useUserPackages = true; # TODO: ???
+  # hm-host schema: includes are resolved as aspects for any host with HM users.
+  # nixos blocks here apply system-wide to all HM-enabled hosts.
+  den.schema.hm-host.includes = [
+    {
+      nixos = {
+        home-manager.useGlobalPkgs = true;
+        home-manager.useUserPackages = true;
+      };
+    }
+  ];
 
 
   den.default.includes = [

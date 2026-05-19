@@ -1,12 +1,12 @@
 This is a NixOS configuration repository
 It uses dendritric pattern
-It uses Den framework (main branch)
+It uses Den framework
 User still learning how things work
 
 Den repository:
 https://github.com/denful/den
 Documentation:
-https://den.denful.com/
+https://den.denful.dev/
 
 
 https://github.com/denful/flake-file

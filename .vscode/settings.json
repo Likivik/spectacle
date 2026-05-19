@@ -4,14 +4,14 @@
     "todo-tree.tree.showBadges": true,
     "todo-tree.tree.scanMode": "workspace",
     "files.exclude": {
-        ".gemini": true,
-        ".github": true,
-        ".vscode": true,
-        ".envrc": true,
-        "README.md": true,
+        ".gemini": false,
+        ".github": false,
+        ".vscode": false,
+        ".envrc": false,
+        "README.md": false,
         "serenity.qcow2": true,
-        "spectacle.qcow2": true,
-        "AGENTS.md": true,
+        "spectacle.qcow2": false,
+        "AGENTS.md": false,
         ".gitignore": false,
         "NOTES": false
     }

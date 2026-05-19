@@ -1,11 +1,10 @@
-# Den Framework Skill (pinned rev aee486b)
+# Den Framework Skill
 
-Aspect-oriented, context-driven Dendritic Nix configurations. Ref: github:denful/den
+Aspect-oriented, context-driven Dendritic Nix configurations.
+Repo: github:denful/den
+Documentation: den.denful.dev
 
-## Quick Update
-```bash
-rev=$(nix eval '.#den.sourceInfo.rev' 2>/dev/null | jq -r '.rev') && rm -rf /tmp/den-pinned && git clone --depth 1 https://github.com/denful/den /tmp/den-pinned && cd /tmp/den-pinned && git fetch --depth 1 origin "$rev" && git checkout "$rev"
-```
+
 
 ## Core Concepts
 - **Aspects** (`den.aspects.<name>`): Reusable config units returning modules per class (`nixos`, `homeManager`, `darwin`, etc.).
@@ -82,7 +81,7 @@ aspect = den.lib.aspects.resolve "nixos"
 nixosConfigurations.my-laptop = lib.nixosSystem { modules = [ aspect ]; };
 ```
 
-## Key Source Paths (rev aee486b)
+## Key Source Paths
 - `nix/lib/policy-*.nix` — Policy effect constructors
 - `nix/lib/aspects/policy-type.nix` — Policy type definitions
 - `nix/lib/aspects/fx/handlers/policy.nix` — Effect handlers

@@ -28,8 +28,9 @@ nh os boot .#hostname   # staged for next reboot
 - New file → immediately `git add` ; `nix run .#write-flake` only needed for inputs changes
 
 ## Workflow
-- ALWAYS ask user before next steps!
+- ALWAYS ask user before next steps or sub-steps!
 - stop and ask — do NOT decide alone.
+- ALWAYS ask to confirm a commit message.
 
 ## Response style (IMPORTANT!!!)
 - Terse, technical, no fluff. Fragments OK. Arrows for causality (X → Y).

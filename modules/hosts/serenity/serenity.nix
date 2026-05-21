@@ -7,7 +7,7 @@
        [ den.aspects.core ]
     ++ [ den.aspects.desktop.common-core ]
     ++ [ den.aspects.desktop.common-extra.peripherals-extra ]
-    ++ [ den.aspects.desktop.desktopManagers.kde ]
+    ++ [ den.aspects.desktop.desktopManagers.noctalia ]
     ++ [ den.aspects.firefox ]
     ++ [ den.aspects.dev-fonts ]
     ;

@@ -6,6 +6,7 @@ Flake uses `github:denful/den`. Docs: https://den.denful.com/
 
 
 ## Workflow
+- Create plan -> ask user
 - Never invent new steps without confirming with user.
 - never take new direction without confirming with user.
 - ALWAYS ask user before next steps or sub-steps!
@@ -39,7 +40,8 @@ nh os boot .#hostname   # staged for next reboot
 - Special case: modules/defaults/topAspectDefinitions.nix - don't include new sub aspects into .desktopManager.includes (they are always used only one at a time)
 
 ## Commit messages
-- feat: add noctalia desktop shell aspect, replace KDE on serenity
-- fix: ...
-- or suggest new words before :
+- Examples (always ask user to confirm)
+  - feat: add noctalia desktop shell aspect, replace KDE on serenity
+  - fix: ...
+  - or suggest new words before :
 

@@ -1,0 +1,62 @@
+// Rounded corners
+window-rule {
+  geometry-corner-radius 20
+  clip-to-geometry true
+}
+
+// Noctalia settings window floats
+window-rule {
+  match app-id="dev.noctalia.Noctalia.Settings"
+  open-floating true
+  default-column-width { fixed 1080; }
+  default-window-height { fixed 920; }
+}
+
+// Debug: allow Noctalia notification actions and window activation
+debug {
+  honor-xdg-activation-with-invalid-serial
+}
+
+// Noctalia blurred overview backdrop
+layer-rule {
+  match namespace="^noctalia-backdrop"
+  place-within-backdrop true
+}
+
+// Blur behind windows
+window-rule {
+  background-effect {
+    blur true
+    xray false
+  }
+}
+
+layer-rule {
+  match namespace="^noctalia-(bar-[^\"]+|notification|dock|panel)$"
+  background-effect {
+    xray false
+  }
+}
+
+blur {
+  passes 2
+  offset 3.0
+  noise 0.03
+  saturation 1.0
+}
+
+// Noctalia keybinds
+binds {
+  Mod+Space { spawn-sh "noctalia msg panel-toggle launcher"; }
+  Mod+S { spawn-sh "noctalia msg panel-toggle control-center"; }
+  Mod+Comma { spawn-sh "noctalia msg settings-toggle"; }
+
+  XF86AudioRaiseVolume { spawn "noctalia" "msg" "volume-up"; }
+  XF86AudioLowerVolume { spawn "noctalia" "msg" "volume-down"; }
+  XF86AudioMute { spawn "noctalia" "msg" "volume-mute"; }
+  XF86MonBrightnessUp { spawn "noctalia" "msg" "brightness-up"; }
+  XF86MonBrightnessDown { spawn "noctalia" "msg" "brightness-down"; }
+}
+
+// Autostart Noctalia
+spawn-at-startup "noctalia"

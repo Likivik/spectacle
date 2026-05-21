@@ -1,13 +1,4 @@
-{
-  inputs,
-  den,
-  lib,
-  modulesPath,
-  config,
-  ...
-}:
-{
-
+{ den, inputs, ... }: {
   den.aspects.traversal = {
 
     includes = [
@@ -56,5 +47,4 @@
       
 
   };
-
 }

@@ -24,6 +24,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     determinate.url = "https://flakehub.com/f/DeterminateSystems/determinate/*";
+    nix-maid.url = "github:viperML/nix-maid";
 
   };
 }

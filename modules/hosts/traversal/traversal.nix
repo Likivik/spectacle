@@ -11,10 +11,14 @@
   den.aspects.traversal = {
 
     includes = [
-
+      den.aspects.core
+      den.aspects.desktop.common-core
+      den.aspects.desktop.desktopManagers.kde
+      den.aspects.firefox
+      den.aspects.dev-fonts
     ];
 
-    nixos = {
+    nixos = {config, modulesPath, ... }: {
       imports = [ (modulesPath + "/installer/scan/not-detected.nix")];
 
       boot.initrd.availableKernelModules = [ "nvme" "xhci_pci" "thunderbolt" "usb_storage" "sd_mod" "sdhci_pci" ];

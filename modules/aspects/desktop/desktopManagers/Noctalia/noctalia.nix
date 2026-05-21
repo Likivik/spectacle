@@ -23,7 +23,9 @@
 
     maid = { user, ... }: {
       file.xdg_config."noctalia".source =
-        "{{home}}/nixos-config/homes/${user.userName}/dotfiles/noctalia";
+        "{{home}}/nixos-config/modules/users/likivik/dotfiles/noctalia";
+      file.xdg_config."niri".source =
+        "{{home}}/nixos-config/modules/users/likivik/dotfiles/niri";
     };
   };
 }

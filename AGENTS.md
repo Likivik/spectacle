@@ -31,6 +31,7 @@ nh os boot .#hostname   # staged for next reboot
 - ALWAYS ask user before next steps or sub-steps!
 - stop and ask — do NOT decide alone.
 - ALWAYS ask to confirm a commit message.
+- Never commit without explicit permission
 
 ## Response style (IMPORTANT!!!)
 - Terse, technical, no fluff. Fragments OK. Arrows for causality (X → Y).

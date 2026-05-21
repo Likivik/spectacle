@@ -20,13 +20,8 @@
   };
   den.aspects.desktop.common-core = {
     includes = lib.mkDefault [
-<<<<<<< HEAD
       den.aspects.desktop.common-core.desktop-inbox
       den.aspects.desktop.common-core.filesystems-support
-=======
-      den.aspects.desktop.common-core.desktopInbox
-      den.aspects.desktop.common-core.filesystemsSupport
->>>>>>> explore
       den.aspects.desktop.common-core.networking
       den.aspects.desktop.common-core.package-sources
       den.aspects.desktop.common-core.peripherals-base
@@ -38,11 +33,7 @@
   den.aspects.desktop.common-extra = {
     includes = lib.mkDefault [
       den.aspects.desktop.common-extra.gaming
-<<<<<<< HEAD
       den.aspects.desktop.common-extra.peripherals-extra
-=======
-      den.aspects.desktop.common-extra.peripheralsExtra
->>>>>>> explore
     ];
   };
   den.aspects.desktop.desktopManagers = {
@@ -56,11 +47,7 @@
 
   den.aspects.dev = {
     includes = lib.mkDefault [
-<<<<<<< HEAD
       den.aspects.dev.flatpak-build
-=======
-      den.aspects.dev.Flatpak-build
->>>>>>> explore
       den.aspects.dev.android
       den.aspects.dev.audiobookshelf
       den.aspects.dev.dev-fonts

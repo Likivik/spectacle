@@ -5,10 +5,16 @@
   ],
   "permission": {
     "NOTES/": "ask",
-    "git *": "ask",
-    "rm *": "ask",
+    "bash": {
+      "*": "ask",
+      "git *": "ask",
+      "grep *": "allow"
+    },
+    "edit": {
+   	  "*" : "ask"
+    }
   },
   "rules": [
-    "Never commit without explicit user confirmation"
+    ""
   ]
 }

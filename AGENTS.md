@@ -38,10 +38,25 @@ nh os boot .#hostname   # staged for next reboot
 ## Conventions
 - New file → immediately `git add`;
 - Special case: modules/defaults/topAspectDefinitions.nix - don't include new sub aspects into .desktopManager.includes (they are always used only one at a time)
+- user dotfiles live in modules/users/{username}/dotfiles/{program-name}/
 
-## Commit messages
-- Examples (always ask user to confirm)
-  - feat: add noctalia desktop shell aspect, replace KDE on serenity
-  - fix: ...
-  - or suggest new words before :
+## Commit = create a commit message and ask user to confirm it.
+- Commit Prefixes (new prefix = new line):
+  - feat:
+  - fix:
+  - chore: Routine tasks, maintenance
+  - docs: documentation, READMEs, comments, notes
+  - refactor: Rewriting or restructuring code without changing its external behavior (neither fixing a bug nor adding a feature).
+  - style: Formatting changes that don't affect logic (whitespace, indentation, Nix formatting).
+  - perf: improving performance.
+  - tests: Adding or updating tests
+  - ci: Changes to CI/CD configuration files and scripts
+  - revert:	Undoing a previous commit.
+  - bump: updating dependencies or flake locks.
+  - sync: pushing live-edited dotfiles
+  - WIP: — when need to push code to save it or move it to another machine, but it's broken or unfinished.
+  - init: — Used when establishing a brand new module, project, or aspect for the first time.
+- You can combine prefixes with scopes in parentheses to show exactly what part of your infrastructure the commit affects.
+  - For example: feat(spectacle): add stremio to auto-start or fix(noctalia): correct padding on status bar.
+
 

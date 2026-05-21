@@ -36,11 +36,10 @@ nh os boot .#hostname   # staged for next reboot
 ```
 
 ## Conventions
-- New file → immediately `git add`;
 - Special case: modules/defaults/topAspectDefinitions.nix - don't include new sub aspects into .desktopManager.includes (they are always used only one at a time)
 - user dotfiles live in modules/users/{username}/dotfiles/{program-name}/
 
-## Commit = create a commit message and ask user to confirm it.
+## Commit = consider what to add, create a commit message and ask user to confirm it.
 - Commit Prefixes (new prefix = new line):
   - feat:
   - fix:
@@ -58,5 +57,11 @@ nh os boot .#hostname   # staged for next reboot
   - init: — Used when establishing a brand new module, project, or aspect for the first time.
 - You can combine prefixes with scopes in parentheses to show exactly what part of your infrastructure the commit affects.
   - For example: feat(spectacle): add stremio to auto-start or fix(noctalia): correct padding on status bar.
+- Commit example:
+  ```
+  fix: add nix-maid input to flake
+  fix: add tmpfs filesystem configs to empty hosts
+  chore(serenity): clean up serenity host (remove nvidia config, add portal, consolidate includes)
+  ```
 
 

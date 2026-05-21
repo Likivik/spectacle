@@ -21,7 +21,9 @@
     hyprland.url = "github:hyprwm/Hyprland/v0.52.0";
     hyprland-plugins.url = "github:hyprwm/hyprland-plugins/v0.52.0";
     import-tree.url = "github:vic/import-tree";
+    nix-maid.url = "github:viperML/nix-maid";
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+    noctalia.url = "github:noctalia-dev/noctalia-shell/v5";
     torrserver.url = "github:YouROK/TorrServer";
   };
 }

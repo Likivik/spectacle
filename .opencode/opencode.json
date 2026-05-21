@@ -4,6 +4,11 @@
     "AGENTS.md"
   ],
   "permission": {
-    "NOTES/": "ask"
-  }
+    "NOTES/": "ask",
+    "git *": "ask",
+    "rm *": "ask",
+  },
+  "rules": [
+    "Never commit without explicit user confirmation"
+  ]
 }

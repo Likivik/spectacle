@@ -13,5 +13,31 @@
     "edit": {
    	  "*" : "ask"
     }
+  },
+  "mcp": {
+    "nixos": {
+      "type": "local",
+      "enabled": true,
+      "command": [
+        "nix",
+        "run",
+        "github:utensils/mcp-nixos",
+        "--"
+      ]
+    },
+    "github": {
+      "type": "local",
+      "enabled": true,
+      "command": [
+        "nix",
+        "shell",
+        "nixpkgs#nodejs",
+        "-c",
+        "npx",
+        "-y",
+        "@modelcontextprotocol/server-github"
+      ]
+    }
   }
+  
 }

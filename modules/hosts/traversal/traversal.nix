@@ -1,10 +1,10 @@
-{ den, inputs, ... }: {
+{ den, lib, inputs, ... }: {
   den.aspects.traversal = {
 
     includes = [
       den.aspects.core
       den.aspects.desktop.common-core
-      den.aspects.desktop.desktopManagers.kde
+      den.aspects.desktop.desktopManagers.noctalia
       den.aspects.firefox
       den.aspects.dev-fonts
     ];

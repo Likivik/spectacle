@@ -14,11 +14,24 @@
         extra-trusted-public-keys = [
           "noctalia.cachix.org-1:pCOR47nnMEo5thcxNDtzWpOxNFQsBRglJzxWPp3dkU4="
         ];
+
+
+        # Noctalia asks to make sure these are enabled
+        networking.networkmanager.enable = true;
+        hardware.bluetooth.enable = true;
+        services.tuned.enable = true;
+        services.upower.enable = true;
       };
 
       environment.systemPackages = [
         inputs.noctalia.packages.${pkgs.stdenv.hostPlatform.system}.default
       ];
+
+      /* --------------------------- Screensharing -------------------------- */
+      xdg.portal = {
+        enable = true;
+        extraPortals = with pkgs; [ xdg-desktop-portal-wlr xdg-desktop-portal-termfilechooser ];
+      };
     };
 
     maid = { user, ... }: {

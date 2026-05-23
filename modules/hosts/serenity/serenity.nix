@@ -24,7 +24,7 @@
       }:
       {
 
-        users.users.likivik.password = "stupid";
+        # users.users.likivik.password = "stupid";
 
         imports = [
           # provides basic hardware detection/drivers
@@ -98,7 +98,7 @@
             "nouveau"
             #"i915"
           ];
-          kernelParams = [ "nomodeset" ];
+          kernelParams = [ "nvidia_drm.modeset=1" ];
 
         };
       };

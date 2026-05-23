@@ -6,8 +6,7 @@
   "permission": {
     "NOTES/": "ask",
     "bash": {
-      "*": "ask",
-      "git *": "ask",
+      "git commit *": "ask",
       "grep *": "allow"
     },
     "edit": {
@@ -20,9 +19,10 @@
       "enabled": true,
       "command": [
         "nix",
-        "run",
+        "shell",
         "github:utensils/mcp-nixos",
-        "--"
+        "-c",
+        "mcp-nixos"
       ]
     },
     "github": {

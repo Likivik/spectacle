@@ -1,18 +1,2 @@
-[theme]
-mode = "dark"
-source = "builtin"
-builtin = "Catppuccin"
-
-[wallpaper]
-enabled = true
-
-[bar.main]
-position = "top"
-start = ["launcher", "workspaces"]
-center = ["clock"]
-end = ["media", "tray", "notifications", "network", "bluetooth", "volume", "battery", "control-center", "session"]
-
-[backdrop]
-enabled = true
-blur_intensity = 0.5
-tint_intensity = 0.3
+[wallpaper.default]
+path = "~/.config/noctalia/wallpapers/keybinds.png"

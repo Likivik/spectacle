@@ -1,9 +1,10 @@
-{ den, inputs, pkgs, ... }:
+{ den, inputs, lib, pkgs, ... }:
 
 {
   flake-file.inputs = {
     noctalia = {
       url = "github:noctalia-dev/noctalia-shell/v5";
+      inputs.nixpkgs.follows = "nixpkgs";
     };
   };
 
@@ -14,24 +15,33 @@
         extra-trusted-public-keys = [
           "noctalia.cachix.org-1:pCOR47nnMEo5thcxNDtzWpOxNFQsBRglJzxWPp3dkU4="
         ];
-
-
-        # Noctalia asks to make sure these are enabled
-        networking.networkmanager.enable = true;
-        hardware.bluetooth.enable = true;
-        services.tuned.enable = true;
-        services.upower.enable = true;
       };
-
       environment.systemPackages = [
         inputs.noctalia.packages.${pkgs.stdenv.hostPlatform.system}.default
       ];
+      
+      programs.niri.enable = true;
 
       /* --------------------------- Screensharing -------------------------- */
       xdg.portal = {
         enable = true;
         extraPortals = with pkgs; [ xdg-desktop-portal-wlr xdg-desktop-portal-termfilechooser ];
       };
+      
+      # Noctalia asks to make sure these are enabled
+      networking.networkmanager.enable = lib.mkDefault true;
+      hardware.bluetooth.enable = lib.mkDefault true;
+      services.tuned.enable = lib.mkDefault true;
+      services.upower.enable = lib.mkDefault true;
+
+      services.displayManager.gdm = {
+        enable = true;
+        wayland = true;
+      };
+      services.displayManager.defaultSession = "niri";
+
+      # Enable polkit for password/privilege elevation
+      security.polkit.enable = true;
     };
 
     maid = { user, ... }: {

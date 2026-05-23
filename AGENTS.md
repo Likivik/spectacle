@@ -19,6 +19,11 @@ Flake uses `github:denful/den`. Docs: https://den.denful.com/
 - Terse, technical, no fluff. Fragments OK. Arrows for causality (X → Y).
 - Conserve tokens, answer shortly, laconically.
 
+## Noctalia keybind wallpaper
+- Wallpaper lives at `modules/users/likivik/dotfiles/noctalia/wallpapers/keybinds.png`
+- Generated from `config.kdl` by `modules/users/likivik/dotfiles/noctalia/gen-keybind-wallpaper.sh`
+- After changing keybinds, regenerate: `nix-shell -p imagemagick iosevka --run "FONT_PATH=\$(nix-build -E '(import <nixpkgs> {}).iosevka' --no-out-link 2>/dev/null)/share/fonts/truetype/Iosevka-Regular.ttf bash modules/users/likivik/dotfiles/noctalia/gen-keybind-wallpaper.sh"`
+
 ## After making changes
 ```bash
 

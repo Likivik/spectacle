@@ -17,6 +17,7 @@
       users = {
         likivik = { };
       };
+      "nix-maid".enable = true;
     };
 
     spectacle = {

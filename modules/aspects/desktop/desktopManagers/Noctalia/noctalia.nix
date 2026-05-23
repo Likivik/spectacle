@@ -25,7 +25,7 @@
       /* --------------------------- Screensharing -------------------------- */
       xdg.portal = {
         enable = true;
-        extraPortals = with pkgs; [ xdg-desktop-portal-wlr xdg-desktop-portal-termfilechooser ];
+        extraPortals = with pkgs; [ xdg-desktop-portal-gtk xdg-desktop-portal-gnome xdg-desktop-portal-wlr xdg-desktop-portal-termfilechooser ];
       };
       
       # Noctalia asks to make sure these are enabled
@@ -36,9 +36,10 @@
 
       services.displayManager.gdm = {
         enable = true;
-        wayland = true;
       };
       services.displayManager.defaultSession = "niri";
+
+      services.gnome.gnome-keyring.enable = true;
 
       # Enable polkit for password/privilege elevation
       security.polkit.enable = true;

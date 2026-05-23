@@ -13,7 +13,7 @@
     ------------------------------------------------------------------------- */
 
   den.default.homeManager.home.stateVersion = "25.11"; # Set HM version with which you started, never change for proper backward compatability
-  den.schema.user.classes = lib.mkDefault [ "homeManager" "maid" ]; # enable HM class for every user by default
+  den.schema.user.classes = lib.mkDefault [ "maid" "homeManager" ]; # enable HM class for every user by default
 
   # hm-host schema: includes are resolved as aspects for any host with HM users.
   # nixos blocks here apply system-wide to all HM-enabled hosts.

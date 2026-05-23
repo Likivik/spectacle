@@ -33,8 +33,9 @@
               # Display message when starting VM
               echo "💻 Starting VM for ${hostname}"
 
-              # Set QEMU options to allocate 8GB RAM and launch the VM
-              export QEMU_OPTS="-m 8192"
+              # Set QEMU options to allocate 8GB RAM and forward SSH port
+              export QEMU_NET_OPTS="hostfwd=tcp::2222-:22"
+              export QEMU_OPTS="-m 8192 -device virtio-gpu"
               ${conf.config.system.build.vm}/bin/run-${conf.config.networking.hostName}-vm "$@"
             '';
           }

@@ -6,6 +6,7 @@ Flake uses `github:denful/den`. Docs: https://den.denful.com/
 
 
 ## Workflow
+- Delegate as much as possible
 - Create plan -> ask user
 - Never invent new steps without confirming with user.
 - never take new direction without confirming with user.

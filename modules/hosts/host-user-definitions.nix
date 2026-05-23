@@ -15,9 +15,12 @@
     traversal = {
       description = "Likivik's Laptop";
       users = {
-        likivik = { };
+        likivik = {
+          
+        };
       };
-      "nix-maid".enable = true;
+      home-manager.enable = true;
+      maid.enable = true;
     };
 
     spectacle = {

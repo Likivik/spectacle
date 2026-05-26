@@ -1,12 +1,12 @@
 { den, inputs, lib, pkgs, ... }:
 
 {
-  flake-file.inputs = {
-    noctalia = {
-      url = "github:noctalia-dev/noctalia-shell/v5";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-  };
+  # flake-file.inputs = {
+  #   noctalia = {
+  #     url = "github:noctalia-dev/noctalia-shell/v5";
+  #     inputs.nixpkgs.follows = "nixpkgs";
+  #   };
+  # };
 
   den.aspects.desktop.desktopManagers.noctalia = {
     nixos = { config, pkgs, ... }: {

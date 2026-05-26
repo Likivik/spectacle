@@ -15,7 +15,7 @@
           enable = true;
           enableMcpIntegration = true;
           settings = {
-            model = "anthropic/claude-sonnet-4-20250514";
+            model = "";
             autoshare = false;
             autoupdate = false; # managed by flake
             compaction = {

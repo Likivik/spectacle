@@ -4,6 +4,9 @@
     nixos =
       { config, pkgs, lib, ... }:
       {
+
+        programs.amnezia-vpn.enable = true;
+
         services.mullvad-vpn.enable = true;
         services.mullvad-vpn.enableExcludeWrapper = true;
         services.mullvad-vpn.package = pkgs.mullvad-vpn;
@@ -12,25 +15,24 @@
         services.tailscale.useRoutingFeatures = "both";
         services.tailscale.extraUpFlags = [
           "--operator=$USER"
-          "--accept-routes=false"
+          "--accept-routes=true"
         ];
 
         environment.systemPackages = with pkgs; [
           ktailctl
-          mullvad-compass
         ];
 
-        boot.kernel.sysctl = {
-          "net.ipv4.conf.all.forwarding" = true;
-          "net.ipv6.conf.all.forwarding" = true;
-        };
+        # boot.kernel.sysctl = {
+        #   "net.ipv4.conf.all.forwarding" = true;
+        #   "net.ipv6.conf.all.forwarding" = true;
+        # };
 
-        # Exclude Tailscale traffic from Mullvad to prevent routing loops
-        systemd.services.mullvad-vpn.postStart = ''
-          sleep 2
-          ${pkgs.mullvad-vpn}/bin/mullvad exclude add 100.64.0.0/10
-          ${pkgs.mullvad-vpn}/bin/mullvad exclude add 41641/udp
-        '';
+        # # Exclude Tailscale traffic from Mullvad to prevent routing loops
+        # systemd.services.mullvad-vpn.postStart = ''
+        #   sleep 2
+        #   ${pkgs.mullvad-vpn}/bin/mullvad exclude add 100.64.0.0/10
+        #   ${pkgs.mullvad-vpn}/bin/mullvad exclude add 41641/udp
+        # '';
       };
   };
 }

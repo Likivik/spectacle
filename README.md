@@ -115,3 +115,8 @@ You can start by writing a simple version for just a single host:
 }
 ```
 
+## Latest Blocakages fix (as of 31.05.2026)
+```nix
+sudo nixos-rebuild switch --flake .#serenity --option substituters "https://mirror.sjtu.edu.cn/nix-channels/store https://mirrors.tuna.tsinghua.edu.cn/nix-channels/store"
+```
+

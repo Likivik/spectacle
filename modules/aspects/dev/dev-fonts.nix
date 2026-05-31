@@ -3,10 +3,10 @@
 
 	den.aspects.dev-fonts = {
 
-		nixos = 
+		nixos =
 			{ pkgs, ... }:
 			{
-				
+
 				# Enable a basic set of fonts providing several styles and families and reasonable coverage of Unicode.
 				# fonts.enableDefaultPackages = true; # --> MOVED TO defaults.nix
 
@@ -14,7 +14,7 @@
 					/* ------------------------------ Dev/Markdown ------------------------------ */
 						source-code-pro
 						monaspace
-						input-fonts
+						# input-fonts
 						maple-mono.NF
 						camingo-code
 						cascadia-code # https://github.com/microsoft/cascadia-code

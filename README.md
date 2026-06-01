@@ -120,3 +120,8 @@ You can start by writing a simple version for just a single host:
 sudo nixos-rebuild switch --flake .#serenity --option substituters "https://mirror.sjtu.edu.cn/nix-channels/store https://mirrors.tuna.tsinghua.edu.cn/nix-channels/store"
 ```
 
+## quick test
+```
+nix eval --json .#nixosConfigurations.serenity.config.users.users.likivik.maid.file.home
+```
+should now contain .nix-maid-test (proving host-aspects projected the host's maid block to the user)

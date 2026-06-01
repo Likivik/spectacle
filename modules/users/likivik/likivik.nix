@@ -8,14 +8,6 @@
       den.aspects.firefox
     ];
 
-    maid = {
-      file.home.".nix-maid-test".text = ''
-        Hello from nix-maid!
-        This was generated on: {{date}}
-        My home directory is: {{home}}
-      '';
-    };
-
     homeManager =
       { pkgs, ... }:
       {

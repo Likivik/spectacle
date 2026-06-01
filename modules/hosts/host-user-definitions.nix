@@ -12,16 +12,14 @@
       };
     };
 
-    traversal = {
-      description = "Likivik's Laptop";
-      users = {
-        likivik = {
-          
-        };
-      };
-      home-manager.enable = true;
-      maid.enable = true;
-    };
+     traversal = {
+       description = "Likivik's Laptop";
+       users = {
+         likivik = {
+           
+         };
+       };
+     };
 
     spectacle = {
       description = "Small box connected to TV to watch shows, movies and use browser";

@@ -13,6 +13,7 @@
    	  "*" : "ask"
     }
   },
+  "lsp": {},
   "mcp": {
     "nixos": {
       "type": "local",

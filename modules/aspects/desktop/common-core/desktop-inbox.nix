@@ -128,6 +128,7 @@
           micro
           nixfmt
           nil
+          nixd
 
           # Terminal
           (blackbox-terminal.overrideAttrs { sixelSupport = true; })

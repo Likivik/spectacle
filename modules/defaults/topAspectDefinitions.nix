@@ -47,20 +47,20 @@
 
   den.aspects.dev = {
     includes = lib.mkDefault [
-      den.aspects.dev.flatpak-build
-      den.aspects.dev.android
-      den.aspects.dev.audiobookshelf
-      den.aspects.dev.dev-fonts
-      den.aspects.dev.direnv
-      den.aspects.dev.docker
-      den.aspects.dev.qt-inspection
-      den.aspects.dev.shell-commands
-      den.aspects.dev.shells.bash
-      den.aspects.dev.shells.elvish
-      den.aspects.dev.shells.zsh
-      den.aspects.dev.ssh
-      den.aspects.dev.stash
-      den.aspects.dev.virtualization
+      den.aspects.flatpak-build
+      den.aspects.android
+      den.aspects.audiobookshelf
+      den.aspects.dev-fonts
+      den.aspects.direnv
+      den.aspects.docker
+      den.aspects.qt-inspection
+      den.aspects.shell-commands
+      den.aspects.bash
+      # den.aspects.elvish
+      # den.aspects.zsh
+      den.aspects.ssh
+      den.aspects.stash
+      den.aspects.virtualization
     ];
   };
 

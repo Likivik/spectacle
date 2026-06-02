@@ -18,13 +18,14 @@
     }:
     let
       # Filter NixOS configurations that match the current system architecture
+      # TODO: add an explainer of why you need to use conf.pkgs instead of just pkgs
       hostsForSystem = lib.filterAttrs (
         _: conf: conf.pkgs.stdenv.hostPlatform.system == pkgs.stdenv.hostPlatform.system
       ) (inputs.self.nixosConfigurations or { });
     in
     {
       # we take `packages` in `perSystem` and define them as a function
-      # that takes name: and conf: as arguments
+      # that takes hostname: and conf: as arguments
       packages = lib.mapAttrs ( hostname: conf:
           pkgs.writeShellApplication {
             name = hostname;
@@ -33,9 +34,8 @@
               # Display message when starting VM
               echo "💻 Starting VM for ${hostname}"
 
-              # Set QEMU options to allocate 8GB RAM and forward SSH port
-              export QEMU_NET_OPTS="hostfwd=tcp::2222-:22"
-              export QEMU_OPTS="-m 8192 -device virtio-gpu"
+              export QEMU_NET_OPTS="hostfwd=tcp::2222-:22" # forward SSH port locally
+              export QEMU_OPTS="-m 8192 -device virtio-gpu" # allocate 8GB, use virtio-gpu (kde for example didn't render without it 0_o)
               ${conf.config.system.build.vm}/bin/run-${conf.config.networking.hostName}-vm "$@"
             '';
           }

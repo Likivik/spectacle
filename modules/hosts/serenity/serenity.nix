@@ -29,8 +29,6 @@
       }:
       {
 
-        # users.users.likivik.password = "stupid";
-
         imports = [
           # provides basic hardware detection/drivers
           (modulesPath + "/installer/scan/not-detected.nix")

@@ -125,3 +125,7 @@ sudo nixos-rebuild switch --flake .#serenity --option substituters "https://mirr
 nix eval --json .#nixosConfigurations.serenity.config.users.users.likivik.maid.file.home
 ```
 should now contain .nix-maid-test (proving host-aspects projected the host's maid block to the user)
+
+
+## If you change initial password - vm needs to be recreated
+(because initial password was set to previous value on first creation, so you need to delete the .qcow2 file and nix run .#hostname again)

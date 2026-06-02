@@ -16,8 +16,8 @@
 
     # user can provide NixOS configurations
     # to any host it is included on
-    nixos = { pkgs, ... }: { 
-      users.users.watcher.password = "stupid";
+    nixos = { pkgs, ... }: {
+      users.users.watcher.initialPassword = "vm";
       environment.systemPackages = [ pkgs.trash-cli ];
       home-manager.backupCommand = "${pkgs.trash-cli}/bin/trash";
       home-manager.backupFileExtension = "hm-backup";

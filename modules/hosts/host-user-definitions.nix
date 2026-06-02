@@ -16,7 +16,6 @@
        description = "Likivik's Laptop";
        users = {
          likivik = {
-           
          };
        };
      };
@@ -25,6 +24,7 @@
       description = "Small box connected to TV to watch shows, movies and use browser";
       users = {
         watcher = { };
+        likivik = { };
       };
     };
 

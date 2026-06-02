@@ -14,8 +14,6 @@
 
       # services.openssh.enable = true;
 
-      users.users.likivik.initialPassword = "vm";
-
       boot.initrd.availableKernelModules = [ "nvme" "xhci_pci" "thunderbolt" "usb_storage" "sd_mod" "sdhci_pci" ];
       boot.initrd.kernelModules = [ ];
       boot.kernelModules = [ "kvm-amd" ];
@@ -46,9 +44,9 @@
 
       nixpkgs.hostPlatform = lib.mkDefault "x86_64-linux";
       hardware.cpu.amd.updateMicrocode = lib.mkDefault config.hardware.enableRedistributableFirmware;
-    
+
     };
-      
+
 
   };
 }

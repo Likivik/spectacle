@@ -1,4 +1,4 @@
-{ den, ... }:
+{ den, inputs, ... }:
 {
   # user aspect
   den.aspects.desktop.common-core.desktop-inbox = {
@@ -126,7 +126,7 @@
           # Code Editors
 
           micro
-          nixfmt
+          inputs.nixfmt-rs.packages.${pkgs.stdenv.hostPlatform.system}.default
           nil
           nixd
           jq

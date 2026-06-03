@@ -9,6 +9,7 @@
       den.aspects.core.determinate-nix
       den.aspects.core.default-locale
       den.aspects.core.nix
+      den.aspects.core.ncro
     ];
   };
 

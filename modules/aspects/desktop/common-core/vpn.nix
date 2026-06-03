@@ -2,7 +2,12 @@
 {
   den.aspects.desktop.common-core.vpn = {
     nixos =
-      { config, pkgs, lib, ... }:
+      {
+        config,
+        pkgs,
+        lib,
+        ...
+      }:
       {
 
         programs.amnezia-vpn.enable = true;
@@ -19,8 +24,22 @@
         ];
 
         environment.systemPackages = with pkgs; [
+          mullvad-compass
+
           ktailctl
+
+          calyx-vpn
+          riseup-vpn
+          mozillavpn
+          proton-vpn
+
         ];
+
+         services.v2raya = {
+            enable = true;
+            # in case of error in browsers this was reported to help:
+            # cliPackage = pkgs.v2ray;
+         };
 
         # boot.kernel.sysctl = {
         #   "net.ipv4.conf.all.forwarding" = true;
@@ -37,7 +56,8 @@
   };
 }
 
-/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/*
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   Testing dual VPN (Mullvad + Tailscale) on NixOS:
 
   1. Rebuild & apply config
@@ -80,4 +100,5 @@
      ```bash
      curl -s https://ifconfig.co
      # IP should belong
-  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+*/

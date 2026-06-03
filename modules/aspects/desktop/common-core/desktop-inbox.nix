@@ -129,6 +129,9 @@
           nixfmt
           nil
           nixd
+          jq
+          nvd
+          nix-output-monitor
 
           # Terminal
           (blackbox-terminal.overrideAttrs { sixelSupport = true; })

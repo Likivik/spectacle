@@ -7,9 +7,12 @@
       den.aspects.core
       den.aspects.desktop.common-core
       den.aspects.desktop.common-extra.peripherals-extra
+
       den.aspects.desktop.desktopManagers.kde
+
+      den.aspects.dev
+
       den.aspects.firefox
-      den.aspects.dev-fonts
     ];
 
     maid = {

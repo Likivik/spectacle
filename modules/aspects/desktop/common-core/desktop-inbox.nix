@@ -59,7 +59,7 @@
           joplin-desktop
 
           # Browser Add-ons
-          firefoxpwa # pwa for firefox based browser (needs extension also)
+          firefoxpwa-unwrapped # pwa for firefox based browser (needs extension also)
 
           # Password Management --------------------------------------------------------------------------------
           #bitwarden-desktop

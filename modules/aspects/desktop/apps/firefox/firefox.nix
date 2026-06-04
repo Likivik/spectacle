@@ -15,7 +15,7 @@
           "en-US"
         ];
         nativeMessagingHosts = [
-          pkgs.firefoxpwa
+          pkgs.firefoxpwa-unwrapped
           pkgs.kdePackages.plasma-browser-integration
         ];
         # pkcs11Modules = [  ];

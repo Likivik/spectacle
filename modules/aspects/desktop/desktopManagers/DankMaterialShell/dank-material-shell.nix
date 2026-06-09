@@ -77,7 +77,7 @@
     maid =
       { user, ... }:
       {
-        file.xdg_config."DankMaterialShell".source = ./../../../../../users/likivik/dotfiles/dms;
+        file.xdg_config."DankMaterialShell".source = ./../../../../../modules/users/likivik/dotfiles/dms;
       };
   };
 }

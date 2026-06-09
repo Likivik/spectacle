@@ -21,7 +21,7 @@
     };
 
     maid = { user, ... }: {
-      file.xdg_config."niri".source = ./../../../../../users/likivik/dotfiles/niri;
+      file.xdg_config."niri".source = ./../../../../../modules/users/likivik/dotfiles/niri;
     };
   };
 }

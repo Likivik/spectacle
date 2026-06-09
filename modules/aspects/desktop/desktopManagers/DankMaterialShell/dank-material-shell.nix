@@ -41,6 +41,24 @@
           enableDynamicTheming = true; # Wallpaper-based theming (matugen)
           enableCalendarEvents = true; # Calendar integration (khal)
           enableClipboardPaste = true; # Pasting from the clipboard history (wtype)
+
+          plugins = {
+            quickTote.enable = true;
+            vscodeLauncher.enable = true;
+            folderView.enable = true;
+            dankKDEConnect.enable = true;
+            dankBatteryAlerts.enable = true;
+            dankLauncherKeys.enable = true;
+            emojiLauncher.enable = true;
+            commandRunner.enable = true;
+            ocrScanner.enable = true;
+            caffeine.enable = true;
+            niriDS.enable = true;
+            bongoCat.enable = true;
+            githubInbox.enable = true;
+            dankDiskUsage.enable = true;
+            dankCalendar.enable = true;
+          };
         };
       };
 

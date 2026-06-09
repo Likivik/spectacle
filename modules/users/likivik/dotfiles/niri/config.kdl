@@ -1,30 +1,58 @@
-binds {
-    // Launcher
-    Super+Super_L { spawn-sh "noctalia msg panel-toggle launcher"; }
-    // Control Center (overrides niri default Super+S screenshot)
-    Super+S { spawn-sh "noctalia msg panel-toggle control-center"; }
-    // Settings
-    Super+Comma { spawn-sh "noctalia msg settings-toggle"; }
-    // Lock screen
-    Super+Escape { spawn-sh "noctalia msg screen-lock"; }
-    // Theme toggle
-    Super+T { spawn-sh "noctalia msg theme-mode-toggle"; }
-    // Clipboard history
-    Super+V { spawn-sh "noctalia msg panel-toggle clipboard"; }
-    // Dock toggle
-    Super+D { spawn-sh "noctalia msg dock-toggle"; }
-    // Do Not Disturb
-    Super+N { spawn-sh "noctalia msg notification-dnd-toggle"; }
-    // Session menu
-    Super+X { spawn-sh "noctalia msg panel-toggle session"; }
-
-    // Media keys
-    XF86AudioRaiseVolume { spawn "noctalia" "msg" "volume-up"; }
-    XF86AudioLowerVolume { spawn "noctalia" "msg" "volume-down"; }
-    XF86AudioMute { spawn "noctalia" "msg" "volume-mute"; }
-    XF86MonBrightnessUp { spawn "noctalia" "msg" "brightness-up"; }
-    XF86MonBrightnessDown { spawn "noctalia" "msg" "brightness-down"; }
+layout {
+    gaps 5
+    background-color "transparent"
 }
 
-// Autostart Noctalia
-spawn-at-startup "noctalia"
+layer-rule {
+    match namespace="^quickshell$"
+    place-within-backdrop true
+}
+
+layer-rule {
+    match namespace="dms:blurwallpaper"
+    place-within-backdrop true
+}
+
+environment {
+    XDG_CURRENT_DESKTOP "niri"
+    QT_QPA_PLATFORM "wayland"
+    ELECTRON_OZONE_PLATFORM_HINT "auto"
+    QT_QPA_PLATFORMTHEME "gtk3"
+    QT_QPA_PLATFORMTHEME_QT6 "gtk3"
+}
+
+window-rule {
+    match app-id=r#"^org\.gnome\."#
+    draw-border-with-background false
+    geometry-corner-radius 12
+    clip-to-geometry true
+}
+
+window-rule {
+    match app-id=r#"^org\.wezfurlong\.wezterm$"#
+    match app-id="Alacritty"
+    match app-id="zen"
+    match app-id="com.mitchellh.ghostty"
+    match app-id="kitty"
+    draw-border-with-background false
+}
+
+window-rule {
+    match is-active=false
+    opacity 0.9
+}
+
+window-rule {
+    geometry-corner-radius 12
+    clip-to-geometry true
+}
+
+window-rule {
+    match app-id=r#"org.quickshell$"#
+    open-floating true
+}
+
+include "dms/colors.kdl"
+include "dms/layout.kdl"
+include "dms/alttab.kdl"
+include "dms/binds.kdl"

@@ -5,7 +5,7 @@
       den.aspects.core
       den.aspects.desktop.common-core
 
-      den.aspects.desktop.desktopManagers.noctalia
+      den.aspects.desktop.desktopManagers.dank-material-shell
 
       den.aspects.dev
       

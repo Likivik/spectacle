@@ -43,21 +43,33 @@
           enableClipboardPaste = true; # Pasting from the clipboard history (wtype)
 
           plugins = {
-            quickTote.enable = true;
-            vscodeLauncher.enable = true;
-            folderView.enable = true;
-            dankKDEConnect.enable = true;
-            dankBatteryAlerts.enable = true;
-            dankLauncherKeys.enable = true;
-            emojiLauncher.enable = true;
-            commandRunner.enable = true;
-            ocrScanner.enable = true;
-            caffeine.enable = true;
-            niriDS.enable = true;
             bongoCat.enable = true;
-            githubInbox.enable = true;
-            dankDiskUsage.enable = true;
+            caffeine.enable = true;
+            clipboardPlus.enable = true;
+            commandRunner.enable = true;
+            dankActions.enable = true;
+            dankBatteryAlerts.enable = true;
+            dankBitwarden.enable = true;
             dankCalendar.enable = true;
+            dankDiskUsage.enable = true;
+            dankHooks.enable = true;
+            dankKDEConnect.enable = true;
+            dankLauncherKeys.enable = true;
+            displayManager.enable = true;
+            emojiLauncher.enable = true;
+            folderView.enable = true;
+            githubInbox.enable = true;
+            keybindingCheatSheet.enable = true;
+            niriDS.enable = true;
+            nixMonitor.enable = true;
+            nixPackageRunner.enable = true;
+            ocrScanner.enable = true;
+            qcalCalendar.enable = true;
+            quickTote.enable = true;
+            tailscale.enable = true;
+            unifiedTaskbar.enable = true;
+            vscodeLauncher.enable = true;
+            wallpaperDiscovery.enable = true;
           };
         };
       };

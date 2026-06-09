@@ -1,23 +1,28 @@
 { den, inputs, lib, pkgs, ... }:
 
 {
-  # flake-file.inputs = {
-  #   noctalia = {
-  #     url = "github:noctalia-dev/noctalia-shell/v5";
-  #     inputs.nixpkgs.follows = "nixpkgs";
-  #   };
-  # };
+  flake-file.inputs = {
+    noctalia = {
+      url = "github:noctalia-dev/noctalia-shell/v5";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    nirimod = {
+      url = "github:srinivasr/nirimod";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+  };
 
   den.aspects.desktop.desktopManagers.noctalia = {
     nixos = { config, pkgs, ... }: {
       nix.settings = {
-        extra-substituters = [ "https://noctalia.cachix.org" ];
-        extra-trusted-public-keys = [
-          "noctalia.cachix.org-1:pCOR47nnMEo5thcxNDtzWpOxNFQsBRglJzxWPp3dkU4="
-        ];
+        # extra-substituters = [ "https://noctalia.cachix.org" ];
+        # extra-trusted-public-keys = [
+        #   "noctalia.cachix.org-1:pCOR47nnMEo5thcxNDtzWpOxNFQsBRglJzxWPp3dkU4="
+        # ];
       };
       environment.systemPackages = [
         inputs.noctalia.packages.${pkgs.stdenv.hostPlatform.system}.default
+        inputs.nirimod.packages.${pkgs.stdenv.hostPlatform.system}.default
       ];
       
       programs.niri.enable = true;
@@ -46,10 +51,8 @@
     };
 
     maid = { user, ... }: {
-      file.xdg_config."noctalia".source =
-        "{{home}}/nixos-config/modules/users/likivik/dotfiles/noctalia";
-      file.xdg_config."niri".source =
-        "{{home}}/nixos-config/modules/users/likivik/dotfiles/niri";
+      file.xdg_config."noctalia".source = ./../../../../../modules/users/likivik/dotfiles/noctalia;
+      file.xdg_config."niri".source = ./../../../../../modules/users/likivik/dotfiles/niri;
     };
   };
 }

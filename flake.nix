@@ -22,9 +22,17 @@
     hyprland-plugins.url = "github:hyprwm/hyprland-plugins/v0.52.0";
     import-tree.url = "github:vic/import-tree";
     ncro.url = "github:feel-co/ncro";
+    nirimod = {
+      url = "github:srinivasr/nirimod";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     nix-maid.url = "github:viperML/nix-maid";
     nixfmt-rs.url = "github:Mic92/nixfmt-rs";
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+    noctalia = {
+      url = "github:noctalia-dev/noctalia-shell/v5";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     torrserver.url = "github:YouROK/TorrServer";
   };
 }

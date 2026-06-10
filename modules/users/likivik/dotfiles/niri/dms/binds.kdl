@@ -1,0 +1,4 @@
+binds {
+    Super+D { spawn "dms" "ipc" "call" "launcher" "toggle"; }
+    Super+0 { spawn "dms" "ipc" "call" "launcher" "toggle"; }
+}

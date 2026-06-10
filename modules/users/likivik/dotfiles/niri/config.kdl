@@ -52,6 +52,10 @@ window-rule {
     open-floating true
 }
 
+binds {
+    Super_L { spawn "dms" "ipc" "call" "launcher" "toggle"; }
+}
+
 include "dms/colors.kdl"
 include "dms/layout.kdl"
 include "dms/alttab.kdl"

@@ -31,7 +31,7 @@
     };
 
     maid = { user, ... }: {
-      file.xdg_config."noctalia".source = ./../../../../../modules/users/likivik/dotfiles/noctalia;
+      file.xdg_config."noctalia".source = "./../../../../../modules/users/likivik/dotfiles/noctalia";
     };
   };
 }

@@ -10,6 +10,10 @@
     nixos = { config, pkgs, ... }: {
       programs.niri.enable = true;
 
+      services.keyd.enable = true;
+      environment.etc."keyd/default.conf".source =
+        ../../../../../modules/users/likivik/dotfiles/keyd/default.conf;
+
       xdg.portal = {
         enable = true;
         extraPortals = with pkgs; [ xdg-desktop-portal-gtk xdg-desktop-portal-gnome xdg-desktop-portal-wlr xdg-desktop-portal-termfilechooser ];
@@ -21,7 +25,7 @@
     };
 
     maid = { user, ... }: {
-      file.xdg_config."niri".source = ./../../../../../modules/users/likivik/dotfiles/niri;
+      file.xdg_config."niri".source = "./../../../../../modules/users/likivik/dotfiles/niri";
     };
   };
 }

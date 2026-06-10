@@ -13,6 +13,16 @@
         settings = {
           # Listen port - use non-standard to avoid conflicts
           server.listen = ":5496";
+          server.read_timeout = "10s";
+          server.write_timeout = "10s";
+
+          # Sequential: try one upstream at a time by priority, don't race all
+          cache.mass_query.max_concurrent_races = 1;
+          # Faster recovery after failure
+          cache.mass_query.upstream_cooldown = "5s";
+          # Brief in-memory negative cache to avoid repeat failures
+          cache.mass_query.in_memory_negative_ttl = "2s";
+
           upstreams = [
             # Primary upstream - lowest priority wins on latency ties
             {

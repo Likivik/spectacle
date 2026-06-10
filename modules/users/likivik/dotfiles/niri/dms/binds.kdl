@@ -1,4 +1,7 @@
 binds {
     Super+D { spawn "dms" "ipc" "call" "launcher" "toggle"; }
     Super+0 { spawn "dms" "ipc" "call" "launcher" "toggle"; }
+
+    Ctrl+Space { switch-layout "0"; }
+    Super+Space { switch-layout "1"; }
 }

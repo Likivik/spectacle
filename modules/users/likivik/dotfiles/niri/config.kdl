@@ -21,6 +21,23 @@ environment {
     QT_QPA_PLATFORMTHEME_QT6 "gtk3"
 }
 
+input {
+    keyboard {
+        xkb {
+            layout "us,ru"
+            options "ctrl:swap_lalt_lctl"
+        }
+        track-layout "global"
+    }
+
+    touchpad {
+        tap
+        natural-scroll
+        scroll-method "two-finger"
+        scroll-factor horizontal=0.1 vertical=2.0
+    }
+}
+
 window-rule {
     match app-id=r#"^org\.gnome\."#
     draw-border-with-background false

@@ -25,7 +25,7 @@
     };
 
     maid = { user, ... }: {
-      file.xdg_config."niri".source = "./../../../../../modules/users/likivik/dotfiles/niri";
+      file.xdg_config."niri".source = "/Storage/Git/spectacle/modules/users/likivik/dotfiles/niri";
     };
   };
 }

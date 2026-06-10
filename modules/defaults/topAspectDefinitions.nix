@@ -60,7 +60,7 @@
       # den.aspects.elvish
       # den.aspects.zsh
       den.aspects.ssh
-      den.aspects.stash
+      # den.aspects.stash
       den.aspects.virtualization
     ];
   };

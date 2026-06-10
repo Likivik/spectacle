@@ -72,12 +72,14 @@
             wallpaperDiscovery.enable = true;
           };
         };
+
+        services.upower.enable = true;
       };
 
     maid =
       { user, ... }:
       {
-        file.xdg_config."DankMaterialShell".source = "./../../../../../modules/users/likivik/dotfiles/dms";
+        file.xdg_config."DankMaterialShell".source = "/Storage/Git/spectacle/modules/users/likivik/dotfiles/dms";
       };
   };
 }

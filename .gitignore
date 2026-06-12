@@ -1,6 +1,13 @@
+# VM disk images
 *.qcow2
+# Build outputs (nix build, nixos-rebuild)
 result
+# Node.js packages
 node_modules
 package.json
 package-lock.json
+# Bun lockfile
 bun.lock
+# DMS auto-generated files
+modules/users/*/dotfiles/dms/.changelog*
+modules/users/*/dotfiles/dms/.firstlaunch

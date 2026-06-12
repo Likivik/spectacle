@@ -48,6 +48,8 @@
       nixpkgs.hostPlatform = lib.mkDefault "x86_64-linux";
       hardware.cpu.amd.updateMicrocode = lib.mkDefault config.hardware.enableRedistributableFirmware;
 
+      systemd.user.services.dms.environment.RADV_PERFTEST = lib.mkIf config.programs.dms-shell.enable "cswt";
+
     };
 
 

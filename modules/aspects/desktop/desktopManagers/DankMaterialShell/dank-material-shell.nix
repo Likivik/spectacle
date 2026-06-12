@@ -20,6 +20,16 @@
 
     nixos =
       { pkgs, ... }:
+      let
+        cursorPkgs = import ./cursors.nix {
+          inherit lib;
+          stdenv = pkgs.stdenv;
+          fetchFromGitHub = pkgs.fetchFromGitHub;
+          fetchzip = pkgs.fetchzip;
+          fetchurl = pkgs.fetchurl;
+          zstd = pkgs.zstd;
+        };
+      in
       {
         imports = [ inputs.dms-plugin-registry.nixosModules.default ];
 
@@ -78,7 +88,12 @@
           capitaine-cursors
           catppuccin-cursors
           i2c-tools
-        ];
+        ] ++ (with cursorPkgs; [
+          arcAurora
+          afterglow
+          aosp
+          pixelfun2
+        ]);
 
         services.upower.enable = true;
       };

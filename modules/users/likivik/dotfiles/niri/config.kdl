@@ -34,7 +34,16 @@ input {
         tap
         natural-scroll
         scroll-method "two-finger"
-        scroll-factor horizontal=0.1 vertical=2.0
+        scroll-factor horizontal=2.0 vertical=1.0
+        accel-speed 0.2
+        // accel-profile "flat"
+    }
+}
+
+// Disable the hot corners.
+gestures {
+    hot-corners {
+        off
     }
 }
 
@@ -77,3 +86,5 @@ include "dms/colors.kdl"
 include "dms/layout.kdl"
 include "dms/alttab.kdl"
 include "dms/binds.kdl"
+
+include "dms/cursor.kdl"

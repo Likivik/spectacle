@@ -73,6 +73,12 @@
           };
         };
 
+        environment.systemPackages = with pkgs; [
+          bibata-cursors
+          capitaine-cursors
+          catppuccin-cursors
+        ];
+
         services.upower.enable = true;
       };
 

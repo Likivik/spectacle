@@ -441,10 +441,11 @@
           "id": "controlCenterButton",
           "enabled": true,
           "showAudioIcon": true,
-          "showAudioPercent": true,
+          "showAudioPercent": false,
           "showBrightnessIcon": true,
           "showBrightnessPercent": true,
           "showMicIcon": true,
+          "showMicPercent": false,
           "showBatteryIcon": false,
           "showPrinterIcon": true
         },

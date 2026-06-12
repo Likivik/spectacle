@@ -19,7 +19,7 @@
     ];
 
     nixos =
-      { ... }:
+      { pkgs, ... }:
       {
         imports = [ inputs.dms-plugin-registry.nixosModules.default ];
 
@@ -77,6 +77,7 @@
           bibata-cursors
           capitaine-cursors
           catppuccin-cursors
+          i2c-tools
         ];
 
         services.upower.enable = true;

@@ -27,6 +27,7 @@
               "scanner"
               "lp"
               "pipewire"
+              "video"
             ];
           };
       };

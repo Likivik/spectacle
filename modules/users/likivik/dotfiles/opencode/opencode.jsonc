@@ -1,0 +1,11 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "",
+  "autoshare": false,
+  "autoupdate": false,
+  "compaction": {
+    "auto": false,
+    "prune": true
+  },
+  "mcp": {}
+}

@@ -54,6 +54,7 @@
       den.aspects.dev-fonts
       den.aspects.direnv
       den.aspects.docker
+      den.aspects.opencode
       den.aspects.qt-inspection
       den.aspects.shell-commands
       den.aspects.bash

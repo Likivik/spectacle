@@ -4,5 +4,6 @@
 // ! PLACE YOUR CUSTOM CONFIGURATION ELSEWHERE !
 
 cursor {
-    xcursor-size 40
+    xcursor-theme "Simp1e"
+    xcursor-size 24
 }

@@ -16,6 +16,7 @@
             common = {
               default = [ "kde" ];
               "org.freedesktop.impl.portal.Settings" = [ "kde;gtk" ];
+              "org.freedesktop.impl.portal.Secret" = [ "gnome-keyring" ];
             };
           };
           xdgOpenUsePortal = true;

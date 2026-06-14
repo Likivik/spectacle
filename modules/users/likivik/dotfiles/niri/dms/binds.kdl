@@ -79,9 +79,9 @@ binds {
     Super+Shift+E { quit; }
     Super+Shift+O { power-off-monitors; }
 
-    // ── Screenshots (niri-native) ──
-    Print { screenshot; }
-    Alt+Print { screenshot-window; }
+    // ── Screenshots ──
+    Print { spawn "dms" "screenshot"; }
+    Alt+Print { spawn "dms" "screenshot" "full"; }
 
     // ── Audio ──
     XF86AudioRaiseVolume   { spawn "dms" "ipc" "call" "audio" "increment" "5"; }

@@ -42,7 +42,7 @@
   "blurBorderColor": "outline",
   "blurBorderCustomColor": "#ffffff",
   "blurBorderOpacity": 0.35,
-  "wallpaperFillMode": "Fill",
+  "wallpaperFillMode": "Fit",
   "blurredWallpaperLayer": false,
   "blurWallpaperOnOverview": false,
   "showLauncherButton": true,
@@ -207,10 +207,10 @@
   "useAutoLocation": false,
   "weatherEnabled": true,
   "networkPreference": "wifi",
-  "iconTheme": "Fluent",
+  "iconTheme": "Nordzy-catppuccin-frappe-peach",
   "cursorSettings": {
-    "theme": "System Default",
-    "size": 40,
+    "theme": "Simp1e",
+    "size": 24,
     "niri": {
       "hideWhenTyping": false,
       "hideAfterInactiveMs": 0
@@ -269,8 +269,8 @@
   "bluetoothDevicePins": {},
   "audioInputDevicePins": {},
   "audioOutputDevicePins": {},
-  "gtkThemingEnabled": false,
-  "qtThemingEnabled": false,
+  "gtkThemingEnabled": true,
+  "qtThemingEnabled": true,
   "syncModeWithPortal": true,
   "terminalsAlwaysDark": false,
   "muxType": "tmux",

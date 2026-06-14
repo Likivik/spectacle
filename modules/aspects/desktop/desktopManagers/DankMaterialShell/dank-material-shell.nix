@@ -21,20 +21,6 @@
     nixos =
       { pkgs, ... }:
       let
-        arcAurora = pkgs.stdenv.mkDerivation {
-          name = "arc-aurora-cursors";
-          src = pkgs.fetchFromGitHub {
-            owner = "yeyushengfan258";
-            repo = "ArcAurora-Cursors";
-            rev = "9689e49487818bface315f8cf1d2c4f860f050a7";
-            hash = "sha256-u/x8aEeOskv6R8uCB4ojn9tXxTxflejWACxgp03o9PI=";
-          };
-          installPhase = ''
-            mkdir -p $out/share/icons/ArcAurora
-            cp -r dist/* $out/share/icons/ArcAurora/
-          '';
-        };
-
         afterglow = pkgs.stdenv.mkDerivation {
           name = "afterglow-cursors";
           src = pkgs.fetchFromGitHub {
@@ -61,33 +47,6 @@
           '';
         };
 
-        catppuccin-latte-mauve-src = pkgs.fetchzip {
-          url = "https://github.com/catppuccin/cursors/releases/download/v2.0.0/catppuccin-latte-mauve-cursors.zip";
-          hash = "sha256-fQrLyF9fnkbahrC/7UFWhS8hh/8PVvuDp33eKItM9Io=";
-        };
-        catppuccin-frappe-mauve-src = pkgs.fetchzip {
-          url = "https://github.com/catppuccin/cursors/releases/download/v2.0.0/catppuccin-frappe-mauve-cursors.zip";
-          hash = "sha256-02m1wBAF82DeehYScBzf2ARQjX0oZbRfq0wiIizlh74=";
-        };
-        catppuccin-macchiato-mauve-src = pkgs.fetchzip {
-          url = "https://github.com/catppuccin/cursors/releases/download/v2.0.0/catppuccin-macchiato-mauve-cursors.zip";
-          hash = "sha256-LtEMo9jK6zbvgI2p+iXUfmuRreBbR79gdRP+C/Vg5eU=";
-        };
-        catppuccin-mocha-mauve-src = pkgs.fetchzip {
-          url = "https://github.com/catppuccin/cursors/releases/download/v2.0.0/catppuccin-mocha-mauve-cursors.zip";
-          hash = "sha256-F6kKWVLO+xxSnJp/cdIUZuplb2NZJTZJSjJ6IWyYRV4=";
-        };
-        catppuccin-mauve = pkgs.stdenv.mkDerivation {
-          name = "catppuccin-mauve-cursors";
-          phases = [ "installPhase" ];
-          installPhase = ''
-            mkdir -p $out/share/icons
-            cp -r ${catppuccin-latte-mauve-src} $out/share/icons/Catppuccin-Latte-Mauve
-            cp -r ${catppuccin-frappe-mauve-src} $out/share/icons/Catppuccin-Frappe-Mauve
-            cp -r ${catppuccin-macchiato-mauve-src} $out/share/icons/Catppuccin-Macchiato-Mauve
-            cp -r ${catppuccin-mocha-mauve-src} $out/share/icons/Catppuccin-Mocha-Mauve
-          '';
-        };
       in
       {
         imports = [ inputs.dms-plugin-registry.nixosModules.default ];
@@ -146,14 +105,30 @@
           capitaine-cursors
           i2c-tools
           pcmanfm
+          papirus-icon-theme
+          tela-icon-theme
+          kdePackages.breeze-icons
+          kdePackages.qt6ct
+          kitty
+          ghostty
+          wezterm
+          adw-gtk3
+          seahorse
         ] ++ [
-          arcAurora
           afterglow
           aosp
-          catppuccin-mauve
+          pkgs.catppuccin-cursors.latteDark
+          pkgs.catppuccin-cursors.latteLight
+          pkgs.phinger-cursors
+          pkgs.oreo-cursors-plus
+          pkgs.simp1e-cursors
+          pkgs.graphite-cursors
+          pkgs.nordzy-cursor-theme
+          pkgs.posy-cursors
         ];
 
         services.gnome.gnome-keyring.enable = true;
+        security.pam.services.dms-greeter.enableGnomeKeyring = true;
         services.upower.enable = true;
       };
 
@@ -161,6 +136,13 @@
       { user, ... }:
       {
         file.xdg_config."DankMaterialShell".source = "/Storage/Git/spectacle/modules/users/likivik/dotfiles/DankMaterialShell";
+        file.xdg_config."qt6ct/qt6ct.conf".text = ''
+          [Appearance]
+          icon_theme=Tela
+        '';
+        file.xdg_config."ghostty/config".source = "/Storage/Git/spectacle/modules/users/likivik/dotfiles/ghostty/config";
+        file.xdg_config."kitty/kitty.conf".source = "/Storage/Git/spectacle/modules/users/likivik/dotfiles/kitty/kitty.conf";
+        file.xdg_config."wezterm/wezterm.lua".source = "/Storage/Git/spectacle/modules/users/likivik/dotfiles/wezterm/wezterm.lua";
       };
   };
 }

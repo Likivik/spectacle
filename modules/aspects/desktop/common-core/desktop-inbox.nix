@@ -37,10 +37,14 @@
 
         environment.systemPackages = with pkgs; [
 
-          # FileSync ---------------------------------------------------------------------------------------
-          nextcloud-client
+  # FileSync ---------------------------------------------------------------------------------------
+  nextcloud-client
 
-          # Office/basic files manipulation --------------------------------------------------------------------------------
+  # File managers ----------------------------------------------------------------------------------
+  dolphin
+  nemo-with-extensions
+
+  # Office/basic files manipulation --------------------------------------------------------------------------------
           libreoffice-qt6-fresh # office suite
           hunspell # spellcheck engine
           hyphenDicts.ru_RU

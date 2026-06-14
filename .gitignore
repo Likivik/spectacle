@@ -8,6 +8,9 @@ package.json
 package-lock.json
 # Bun lockfile
 bun.lock
+# niri config backup (nh creates this during switch)
+config.kdl.backup*
+
 # DMS auto-generated files
 modules/users/*/dotfiles/DankMaterialShell/.changelog*
 modules/users/*/dotfiles/DankMaterialShell/.firstlaunch

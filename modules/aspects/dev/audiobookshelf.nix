@@ -9,7 +9,7 @@
         group = "users";
       };
 
-      systemd.user.services.tailscale_serve_audiobookshelf = {
+      systemd.services.tailscale_serve_audiobookshelf = {
         enable = true;
         restartIfChanged = true;
         description = "tailscale_serve_audiobookshelf";
@@ -17,6 +17,10 @@
           tailscale serve 8234
         '';
         wantedBy = [ "multi-user.target" ];
+        serviceConfig = {
+          Type = "oneshot";
+          RemainAfterExit = true;
+        };
       };
     };
   };

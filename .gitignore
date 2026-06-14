@@ -9,5 +9,5 @@ package-lock.json
 # Bun lockfile
 bun.lock
 # DMS auto-generated files
-modules/users/*/dotfiles/dms/.changelog*
-modules/users/*/dotfiles/dms/.firstlaunch
+modules/users/*/dotfiles/DankMaterialShell/.changelog*
+modules/users/*/dotfiles/DankMaterialShell/.firstlaunch

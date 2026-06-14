@@ -4,4 +4,14 @@ binds {
 
     Ctrl+Space { switch-layout "0"; }
     Super+Space { switch-layout "1"; }
+
+    XF86AudioRaiseVolume   { spawn "dms" "ipc" "call" "audio" "increment" "5"; }
+    XF86AudioLowerVolume   { spawn "dms" "ipc" "call" "audio" "decrement" "5"; }
+    XF86AudioMute          { spawn "dms" "ipc" "call" "audio" "mute"; }
+    XF86AudioMicMute       { spawn "dms" "ipc" "call" "audio" "micmute"; }
+    XF86MonBrightnessUp    { spawn "dms" "ipc" "call" "brightness" "increment" "5" ""; }
+    XF86MonBrightnessDown  { spawn "dms" "ipc" "call" "brightness" "decrement" "5" ""; }
+    XF86AudioPlay          { spawn "dms" "ipc" "call" "mpris" "playPause"; }
+    XF86AudioNext          { spawn "dms" "ipc" "call" "mpris" "next"; }
+    XF86AudioPrev          { spawn "dms" "ipc" "call" "mpris" "previous"; }
 }

@@ -37,12 +37,16 @@ describe() {
         *"theme-mode-toggle")            echo "Toggle Theme" ;;
         *"dock-toggle")                  echo "Toggle Dock" ;;
         *"notification-dnd-toggle")      echo "Do Not Disturb" ;;
-        *"volume-up")                    echo "Volume Up" ;;
-        *"volume-down")                  echo "Volume Down" ;;
-        *"volume-mute")                  echo "Mute" ;;
-        *"brightness-up")                echo "Brightness Up" ;;
-        *"brightness-down")              echo "Brightness Down" ;;
-        *)                               echo "$1" ;;
+        *"audio increment")       echo "Volume Up" ;;
+        *"audio decrement")       echo "Volume Down" ;;
+        *"audio mute")            echo "Mute" ;;
+        *"audio micmute")         echo "Mic Mute" ;;
+        *"brightness increment")  echo "Brightness Up" ;;
+        *"brightness decrement")  echo "Brightness Down" ;;
+        *"mpris playPause")       echo "Play/Pause" ;;
+        *"mpris next")            echo "Next Track" ;;
+        *"mpris previous")        echo "Previous Track" ;;
+        *)                         echo "$1" ;;
     esac
 }
 
@@ -88,6 +92,6 @@ while IFS= read -r line; do
         annotate 340 "$yc" "$FG_DESC" 18 "$desc"
         yc=$((yc + 36))
     fi
-done < "$KDL"
+done < <(cat "$KDL" "$HERE/../niri/dms/binds.kdl")
 
 magick "${args[@]}" "$OUTPUT"

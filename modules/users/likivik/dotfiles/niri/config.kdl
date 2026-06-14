@@ -15,6 +15,7 @@ layer-rule {
 
 environment {
     XDG_CURRENT_DESKTOP "niri"
+    RADV_PERFTEST "cswt"
     QT_QPA_PLATFORM "wayland"
     ELECTRON_OZONE_PLATFORM_HINT "auto"
     QT_QPA_PLATFORMTHEME "gtk3"

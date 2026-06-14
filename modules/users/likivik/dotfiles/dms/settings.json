@@ -178,7 +178,7 @@
   "runningAppsCurrentMonitor": false,
   "appIdSubstitutions": [],
   "centeringMode": "index",
-  "clockDateFormat": "",
+  "clockDateFormat": "ddd d MMMM",
   "lockDateFormat": "",
   "greeterRememberLastSession": true,
   "greeterRememberLastUser": true,
@@ -209,8 +209,8 @@
   "networkPreference": "wifi",
   "iconTheme": "Fluent",
   "cursorSettings": {
-    "theme": "WhiteSur-cursors",
-    "size": 24,
+    "theme": "System Default",
+    "size": 40,
     "niri": {
       "hideWhenTyping": false,
       "hideAfterInactiveMs": 0
@@ -567,7 +567,11 @@
   "desktopWidgetGridSettings": {},
   "desktopWidgetInstances": [],
   "desktopWidgetGroups": [],
-  "builtInPluginSettings": {},
+  "builtInPluginSettings": {
+    "dms_settings_search": {
+      "trigger": "?"
+    }
+  },
   "clipboardEnterToPaste": false,
   "launcherPluginVisibility": {},
   "launcherPluginOrder": [],

@@ -30,8 +30,8 @@
             hash = "sha256-u/x8aEeOskv6R8uCB4ojn9tXxTxflejWACxgp03o9PI=";
           };
           installPhase = ''
-            mkdir -p $out/share/icons
-            cp -r dist/* $out/share/icons/
+            mkdir -p $out/share/icons/ArcAurora
+            cp -r dist/* $out/share/icons/ArcAurora/
           '';
         };
 
@@ -44,8 +44,8 @@
             hash = "sha256-Kv4/MyuZXicM0rT89lZZd7AUwxb55bq0lYEetSybFTk=";
           };
           installPhase = ''
-            mkdir -p $out/share/icons
-            cp -r dist/* $out/share/icons/
+            mkdir -p $out/share/icons/Afterglow
+            cp -r dist/* $out/share/icons/Afterglow/
           '';
         };
 
@@ -56,24 +56,36 @@
             hash = "sha256-zLUd7ZZHIE1AiFw9GaeU2E6mjd6okKrxEG8Jt5z6ltA=";
           };
           installPhase = ''
-            mkdir -p $out/share/icons
-            cp -r * $out/share/icons/
+            mkdir -p $out/share/icons/AOSP-Cursors
+            cp -r * $out/share/icons/AOSP-Cursors/
           '';
         };
 
-        pixelfun2 = pkgs.stdenv.mkDerivation {
-          name = "pixelfun2-cursors";
-          src = pkgs.fetchurl {
-            url = "https://aur.archlinux.org/cgit/aur.git/plain/xcur-pixelfun-all-merge.tar.zst?h=xcursor-pixelfun-all";
-            hash = "sha256-BRz1Osw2a5D937icfPeGd4NP5kD4J08Ch0qhMigflrc=";
-          };
-          nativeBuildInputs = [ pkgs.zstd ];
-          unpackPhase = ''
-            zstd -d < $src | tar xf -
-          '';
+        catppuccin-latte-mauve-src = pkgs.fetchzip {
+          url = "https://github.com/catppuccin/cursors/releases/download/v2.0.0/catppuccin-latte-mauve-cursors.zip";
+          hash = "sha256-fQrLyF9fnkbahrC/7UFWhS8hh/8PVvuDp33eKItM9Io=";
+        };
+        catppuccin-frappe-mauve-src = pkgs.fetchzip {
+          url = "https://github.com/catppuccin/cursors/releases/download/v2.0.0/catppuccin-frappe-mauve-cursors.zip";
+          hash = "sha256-02m1wBAF82DeehYScBzf2ARQjX0oZbRfq0wiIizlh74=";
+        };
+        catppuccin-macchiato-mauve-src = pkgs.fetchzip {
+          url = "https://github.com/catppuccin/cursors/releases/download/v2.0.0/catppuccin-macchiato-mauve-cursors.zip";
+          hash = "sha256-LtEMo9jK6zbvgI2p+iXUfmuRreBbR79gdRP+C/Vg5eU=";
+        };
+        catppuccin-mocha-mauve-src = pkgs.fetchzip {
+          url = "https://github.com/catppuccin/cursors/releases/download/v2.0.0/catppuccin-mocha-mauve-cursors.zip";
+          hash = "sha256-F6kKWVLO+xxSnJp/cdIUZuplb2NZJTZJSjJ6IWyYRV4=";
+        };
+        catppuccin-mauve = pkgs.stdenv.mkDerivation {
+          name = "catppuccin-mauve-cursors";
+          phases = [ "installPhase" ];
           installPhase = ''
             mkdir -p $out/share/icons
-            cp -r ./* $out/share/icons/
+            cp -r ${catppuccin-latte-mauve-src} $out/share/icons/Catppuccin-Latte-Mauve
+            cp -r ${catppuccin-frappe-mauve-src} $out/share/icons/Catppuccin-Frappe-Mauve
+            cp -r ${catppuccin-macchiato-mauve-src} $out/share/icons/Catppuccin-Macchiato-Mauve
+            cp -r ${catppuccin-mocha-mauve-src} $out/share/icons/Catppuccin-Mocha-Mauve
           '';
         };
       in
@@ -131,16 +143,14 @@
         };
 
         environment.systemPackages = with pkgs; [
-          bibata-cursors
           capitaine-cursors
-          catppuccin-cursors
           i2c-tools
           pcmanfm
         ] ++ [
           arcAurora
           afterglow
           aosp
-          pixelfun2
+          catppuccin-mauve
         ];
 
         services.gnome.gnome-keyring.enable = true;

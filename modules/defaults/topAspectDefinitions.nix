@@ -50,7 +50,6 @@
     includes = lib.mkDefault [
       den.aspects.flatpak-build
       den.aspects.android
-      den.aspects.audiobookshelf
       den.aspects.dev-fonts
       den.aspects.direnv
       den.aspects.docker

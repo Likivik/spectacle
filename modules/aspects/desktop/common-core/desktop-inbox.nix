@@ -41,7 +41,7 @@
   nextcloud-client
 
   # File managers ----------------------------------------------------------------------------------
-  dolphin
+  kdePackages.dolphin
   nemo-with-extensions
 
   # Office/basic files manipulation --------------------------------------------------------------------------------

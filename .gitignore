@@ -4,8 +4,6 @@
 result
 # Node.js packages
 node_modules
-package.json
-package-lock.json
 # Bun lockfile
 bun.lock
 # niri config backup (nh creates this during switch)

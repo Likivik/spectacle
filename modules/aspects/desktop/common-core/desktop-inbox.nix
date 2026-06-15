@@ -122,8 +122,6 @@
 
           # Dev / Config / Terminal Tools --------------------------------------------------------------------------------
           # Terminal Tools
-          git
-          git-extras
           wget
           nix-index
 

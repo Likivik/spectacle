@@ -51,6 +51,7 @@
       den.aspects.flatpak-build
       den.aspects.android
       den.aspects.dev-fonts
+      den.aspects.git
       den.aspects.direnv
       den.aspects.docker
       den.aspects.gentle-ai

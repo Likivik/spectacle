@@ -1,0 +1,24 @@
+[user]
+  name = Likivik
+  email = likivik@gmail.com
+
+[init]
+  defaultBranch = main
+
+[pull]
+  rebase = true
+
+[push]
+  autoSetupRemote = true
+
+[diff]
+  algorithm = histogram
+
+[merge]
+  conflictstyle = diff3
+
+[rerere]
+  enabled = true
+
+[url "git@github.com:"]
+  insteadOf = https://github.com/

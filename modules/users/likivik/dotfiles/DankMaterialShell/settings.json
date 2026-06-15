@@ -1,6 +1,6 @@
 {
-  "currentThemeName": "purple",
-  "currentThemeCategory": "generic",
+  "currentThemeName": "custom",
+  "currentThemeCategory": "custom",
   "customThemeFile": "",
   "registryThemeVariants": {},
   "matugenScheme": "scheme-tonal-spot",
@@ -265,7 +265,11 @@
   "fadeToDpmsGracePeriod": 5,
   "launchPrefix": "",
   "brightnessDevicePins": {},
-  "wifiNetworkPins": {},
+  "wifiNetworkPins": {
+    "preferredWifi": [
+      "Lapki"
+    ]
+  },
   "bluetoothDevicePins": {},
   "audioInputDevicePins": {},
   "audioOutputDevicePins": {},
@@ -284,7 +288,7 @@
   "matugenTemplateMangowc": true,
   "matugenTemplateQt5ct": true,
   "matugenTemplateQt6ct": true,
-  "matugenTemplateFirefox": true,
+  "matugenTemplateFirefox": false,
   "matugenTemplatePywalfox": true,
   "matugenTemplateZenBrowser": true,
   "matugenTemplateVesktop": true,

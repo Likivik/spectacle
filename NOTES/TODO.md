@@ -21,6 +21,11 @@ What do we want:
 
 
 
+### OpenCode Tools
+
+- [ ] **(HIGH)** Task/project management MCP — auto-create/complete todos, wanttodos, integrated with agent
+- [ ] Context7 — library docs MCP
+
 ### Streaming Box:
 
 #### Control linux with voice - it does exist

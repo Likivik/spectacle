@@ -53,6 +53,7 @@
       den.aspects.dev-fonts
       den.aspects.direnv
       den.aspects.docker
+      den.aspects.gentle-ai
       den.aspects.opencode
       den.aspects.qt-inspection
       den.aspects.shell-commands

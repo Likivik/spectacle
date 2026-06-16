@@ -232,9 +232,9 @@
   "launcherLogoContrast": 1,
   "launcherLogoSizeOffset": 0,
   "fontFamily": "Inter Variable",
-  "monoFontFamily": "Fira Code",
+  "monoFontFamily": "Monaspace Radon NF",
   "fontWeight": 400,
-  "fontScale": 1,
+  "fontScale": 1.25,
   "notepadUseMonospace": true,
   "notepadFontFamily": "",
   "notepadFontSize": 14,
@@ -424,9 +424,38 @@
         "focusedWindow"
       ],
       "centerWidgets": [
-        "music",
-        "clock",
-        "weather"
+        {
+          "id": "music",
+          "enabled": true
+        },
+        {
+          "id": "clock",
+          "enabled": true
+        },
+        {
+          "id": "weather",
+          "enabled": true
+        },
+        {
+          "id": "cpuUsage",
+          "enabled": true,
+          "minimumWidth": true
+        },
+        {
+          "id": "memUsage",
+          "enabled": true,
+          "minimumWidth": true
+        },
+        {
+          "id": "diskUsage",
+          "enabled": true,
+          "mountPath": "/"
+        },
+        {
+          "id": "cpuTemp",
+          "enabled": true,
+          "minimumWidth": true
+        }
       ],
       "rightWidgets": [
         {

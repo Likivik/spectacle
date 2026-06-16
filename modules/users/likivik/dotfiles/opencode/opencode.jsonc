@@ -4,11 +4,9 @@
   "autoshare": false,
   "autoupdate": false,
   "compaction": {
-    "auto": false,
+    "auto": true,
     "prune": true
   },
-  "plugin": [["@vectorize-io/opencode-hindsight", {
-    "hindsightApiUrl": "http://localhost:4242"
-  }]],
+  "plugin": ["opencode-mem"],
   "mcp": {}
 }

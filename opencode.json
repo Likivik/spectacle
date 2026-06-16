@@ -11,6 +11,11 @@
     },
     "edit": {
    	  "*" : "ask"
+    },
+    "external_directory": {
+      "/nix/**": "allow",
+      "/tmp/**": "allow",
+      "~/**": "allow"
     }
   },
   "lsp": {},

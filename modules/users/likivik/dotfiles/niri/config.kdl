@@ -37,8 +37,11 @@ input {
         scroll-method "two-finger"
         scroll-factor horizontal=2.0 vertical=1.0
         accel-speed 0.2
+
+        accel-profile "adaptive"
         // accel-profile "flat"
     }
+    mouse
 }
 
 // Disable the hot corners.
@@ -49,14 +52,14 @@ gestures {
 }
 
 window-rule {
-    match app-id=r#"^org\.gnome\."#
+    match app-id=r"^org\.gnome\."
     draw-border-with-background false
     geometry-corner-radius 12
     clip-to-geometry true
 }
 
 window-rule {
-    match app-id=r#"^org\.wezfurlong\.wezterm$"#
+    match app-id=r"^org\.wezfurlong\.wezterm$"
     match app-id="Alacritty"
     match app-id="zen"
     match app-id="com.mitchellh.ghostty"
@@ -75,7 +78,7 @@ window-rule {
 }
 
 window-rule {
-    match app-id=r#"org.quickshell$"#
+    match app-id=r"org.quickshell$"
     open-floating true
 }
 
@@ -91,3 +94,31 @@ include "dms/binds.kdl"
 include "dms/cursor.kdl"
 
 include "dms/outputs.kdl"
+
+animations {
+    slowdown 1.0
+    overview-open-close {
+        off
+ curve "cubic-bezier" 0.17 0.67 0.83 0.67 ;
+    }
+    workspace-switch {
+        off
+    }
+}
+output "eDP-1" {
+    mode "2560x1600@120.001"
+
+    scale 1.25
+
+    transform "normal"
+    position x=0 y=0
+}
+prefer-no-csd
+hotkey-overlay {
+    skip-at-startup
+}
+overview {
+    workspace-shadow {
+        off
+    }
+}

@@ -2,6 +2,10 @@
 {
   den.aspects.hindsight = {
     nixos = { config, pkgs, ... }: {
+      environment.sessionVariables = {
+        HINDSIGHT_DYNAMIC_BANK_ID = "true";
+      };
+
       virtualisation.oci-containers = {
         backend = "podman";
         containers = {
@@ -41,11 +45,15 @@
         wantedBy = [ "multi-user.target" ];
         path = [ config.virtualisation.podman.package ];
         script = ''
-          if grep -q 1 /sys/class/power_supply/*/online 2>/dev/null; then
-            ${pkgs.systemd}/bin/systemctl start podman-ollama podman-hindsight
-          else
-            ${pkgs.systemd}/bin/systemctl stop podman-ollama podman-hindsight
-          fi
+          for f in /sys/class/power_supply/*/type; do
+            [ "$(cat "$f")" = "Mains" ] || continue
+            online="$(cat "$(dirname "$f")"/online)"
+            if [ "$online" = "1" ]; then
+              ${pkgs.systemd}/bin/systemctl start podman-ollama podman-hindsight
+              exit 0
+            fi
+          done
+          ${pkgs.systemd}/bin/systemctl stop podman-ollama podman-hindsight
         '';
         serviceConfig.Type = "oneshot";
       };

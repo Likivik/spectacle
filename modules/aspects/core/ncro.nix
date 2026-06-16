@@ -51,12 +51,6 @@
               url = "https://mirrors.tuna.tsinghua.edu.cn/nix-channels/store";
               priority = 32;
             }
-            # Project-specific binary caches
-            {
-              url = "https://noctalia.cachix.org";
-              priority = 40;
-              public_key = "noctalia.cachix.org-1:pCOR47nnMEo5thcxNDtzWpOxNFQsBRglJzxWPp3dkU4=";
-            }
             {
               url = "https://hyprland.cachix.org";
               priority = 50;

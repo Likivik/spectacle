@@ -23,6 +23,15 @@
         home-manager.useGlobalPkgs = true;
         home-manager.useUserPackages = true;
         home-manager.backupFileExtension = "backup";
+
+        # Provide tray.target at NixOS level so home-manager/nix-maid doesn't try
+        # to ln it into a read-only store symlink (EROFS conflict). HM creates
+        # this unconditionally; providing it here prevents the collision.
+        systemd.user.targets.tray = {
+          enable = true;
+          description = "Home Manager System Tray";
+          requires = [ "graphical-session-pre.target" ];
+        };
       };
     }
   ];

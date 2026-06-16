@@ -21,6 +21,15 @@ What do we want:
 
 
 
+### Cleanup
+
+- [x] Remove DMS wallpaper generation files (`gen-keybind-wallpaper.sh`, `keybinds.png`)
+- [x] Remove Noctalia (aspect, dotfiles, cachix upstream, flake input)
+
+### Migration off home-manager
+
+- [ ] Move remaining HM-managed items to nix-maid (tray.target fixed via NixOS level, rest needs auditing)
+
 ### OpenCode Tools
 
 - [ ] **(HIGH)** Task/project management MCP — auto-create/complete todos, wanttodos, integrated with agent

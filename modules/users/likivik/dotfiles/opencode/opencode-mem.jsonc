@@ -1,0 +1,9 @@
+{
+  "embeddingModel": "Xenova/nomic-embed-text-v1",
+  "memory": { "defaultScope": "project" },
+  "webServerEnabled": true,
+  "webServerPort": 4747,
+  "autoCaptureEnabled": true,
+  "compaction": { "enabled": true, "memoryLimit": 10 },
+  "chatMessage": { "enabled": true, "maxMemories": 3, "injectOn": "first" }
+}

@@ -29,7 +29,6 @@
     nix-maid.url = "github:viperML/nix-maid";
     nixfmt-rs.url = "github:Mic92/nixfmt-rs";
     ncro.url = "github:feel-co/ncro";
-    gentle-ai-nix.url = "github:Likivik/gentle-ai-nix";
 
   };
 }

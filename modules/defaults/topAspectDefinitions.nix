@@ -54,8 +54,7 @@
       den.aspects.git
       den.aspects.direnv
       den.aspects.docker
-      den.aspects.gentle-ai
-      den.aspects.hindsight
+      # den.aspects.hindsight
       den.aspects.opencode
       den.aspects.qt-inspection
       den.aspects.shell-commands

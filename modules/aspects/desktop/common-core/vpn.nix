@@ -41,7 +41,22 @@
             # cliPackage = pkgs.v2ray;
          };
 
-        # boot.kernel.sysctl = {
+        # Bypass route so L2TP work VPN server traffic doesn't enter Amnezia tunnel
+        networking.networkmanager.dispatcherScripts = [{
+          source = pkgs.writeText "l2tp-bypass-amnezia" ''
+            #!/bin/sh
+            case "$2" in
+              up|connectivity-change)
+                GW=$(ip route show default 0.0.0.0/0 2>/dev/null | head -1 | awk '{print $3}')
+                DEV=$(ip route show default 0.0.0.0/0 2>/dev/null | head -1 | awk '{print $5}')
+                [ -n "$GW" ] && [ -n "$DEV" ] && ip route replace 46.148.234.215/32 via "$GW" dev "$DEV" 2>/dev/null || true
+                ;;
+            esac
+          '';
+          type = "basic";
+        }];
+
+         # boot.kernel.sysctl = {
         #   "net.ipv4.conf.all.forwarding" = true;
         #   "net.ipv6.conf.all.forwarding" = true;
         # };

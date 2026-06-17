@@ -22,3 +22,9 @@
 ## `nh os switch` requires sudo
 - This command requires a sudo password and cannot be run non-interactively.
 - Agent must delegate: print the exact command for the user to copy-paste and run manually.
+
+## Memory
+
+Use **Mnemosyne** (MCP tools `mnemosyne_remember` / `mnemosyne_recall`)
+for persistent cross-session memory.
+On session start, proactively call `mnemosyne_recall` with relevant keywords.

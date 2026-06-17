@@ -1,4 +1,4 @@
-{ den, inputs, lib, pkgs, ... }:
+{ den, inputs, lib, ... }:
 {
   den.aspects.opencode = {
     maid = { user, ... }: {
@@ -7,10 +7,34 @@
 
     nixos =
       { pkgs, ... }:
-      {
+      let
+        mnemosyne-pkg = pkgs.python3Packages.buildPythonPackage rec {
+          pname = "mnemosyne-memory";
+          version = "3.8.0";
+          src = pkgs.fetchFromGitHub {
+            owner = "AxDSan";
+            repo = "mnemosyne";
+            rev = "v${version}";
+            hash = "sha256-00ccb1gsjjazvxizgy2wy6l0hmgwkm4mvz01f06z4hzv6vx4dqrz";
+          };
+          pyproject = true;
+          nativeBuildInputs = with pkgs.python3Packages; [ setuptools wheel ];
+          propagatedBuildInputs = with pkgs.python3Packages; [
+            mcp anyio fastembed sqlite-vec
+          ];
+        };
+      in {
         environment.systemPackages = with pkgs; [
           opencode
           opencode-desktop
+
+          pandoc
+          python313Packages.python-docx
+          python313Packages.openpyxl
+          python313Packages.odfpy
+          python313Packages.markitdown
+
+          mnemosyne-pkg
         ];
       };
   };

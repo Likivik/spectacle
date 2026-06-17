@@ -15,7 +15,7 @@
             owner = "AxDSan";
             repo = "mnemosyne";
             rev = "v${version}";
-            hash = "sha256-00ccb1gsjjazvxizgy2wy6l0hmgwkm4mvz01f06z4hzv6vx4dqrz";
+            hash = "sha256-P+NG+jb7Q/INcAH8XUmd/FUIqPFc+Pdj319JqV9YjAE=";
           };
           pyproject = true;
           nativeBuildInputs = with pkgs.python3Packages; [ setuptools wheel ];

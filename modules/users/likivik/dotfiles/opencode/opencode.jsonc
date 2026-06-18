@@ -16,7 +16,7 @@
         "nixpkgs#python3",
         "nixpkgs#python313Packages.pipx",
         "-c",
-        "bash -c 'export PATH=\"$HOME/.local/bin:$PATH\" && pipx install --quiet mnemosyne-memory[mcp] mnemosyne-hermes 2>/dev/null; exec mnemosyne mcp'"
+        "pipx", "run", "--spec", "mnemosyne-memory[mcp]", "mnemosyne", "mcp"
       ]
     },
     "nixos": {

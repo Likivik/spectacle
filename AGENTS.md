@@ -79,3 +79,28 @@ Default label set (five canonical roles). See `docs/agents/triage-labels.md`.
 ### Domain docs
 
 Single-context repo — no CONTEXT.md or docs/adr/ yet (created lazily). See `docs/agents/domain.md`.
+
+## Memory (Mnemosyne MCP)
+
+### On session start
+1. `mnemosyne_recall(query="spectacle nix flake den", limit=5)`
+2. `mnemosyne_recall(query="spectacle recent", limit=3)`
+
+### What to remember in this project
+- NixOS architecture decisions (e.g., how modules are split)
+- Den framework conventions learned
+- Build/test commands that worked or failed
+- flake input changes and their reasons
+- User preferences about this repo's code style
+- NOTES/*.md — decisions captured there should also be stored as memories
+
+### Scratchpad for complex Nix operations
+Before multi-step config changes:
+1. `mnemosyne_scratchpad_write(content="1. ... 2. ...")`
+2. Between steps: `mnemosyne_scratchpad_read` (check what was done/planned)
+3. Done: `mnemosyne_scratchpad_clear`
+
+### When to invalidate
+- A NixOS config decision was reversed or superseded
+- A user preference was misinterpreted — corrected understanding
+- A module/file moved or was renamed

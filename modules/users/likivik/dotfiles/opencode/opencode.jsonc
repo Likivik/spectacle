@@ -6,11 +6,12 @@
   "plugin": [
     "opencode-snip@latest",
     "@tarquinen/opencode-dcp@latest",
-    "@simonwjackson/opencode-direnv"
+    "@simonwjackson/opencode-direnv",
+    "cc-safety-net"
   ],
-  "instructions": [
-    "~/.config/opencode/plugin/shell-strategy/shell_strategy.md"
-  ],
+  "permission": {
+    "edit": "ask"
+  },
   "compaction": {
     "auto": true,
     "prune": true

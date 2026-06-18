@@ -20,11 +20,18 @@ What do we want:
 
 ### Agents Setup
 - [ ] Compare
-    * oh-my-opencode
-    * oh-my-opencode-slim
+    * [oh-my-opencode](https://github.com/code-yeongyu/oh-my-opencode)
+    * [oh-my-opencode-slim](https://github.com/alvinunreal/oh-my-opencode-slim)
     * https://github.com/hffmnnj/opencode-goopspec
     * https://github.com/vtemian/micode
-    * 
+    * https://github.com/kdcokenny/opencode-workspace
+    *
+    #### Agent - agecent stuff
+        * https://github.com/AnganSamadder/opentmux
+        * https://github.com/Mark1708/opencode-agents-sidebar
+        * https://github.com/IgorWarzocha/opencode-planning-toolkit - more general perhaps
+        * https://github.com/malhashemi/opencode-sessions
+        * 
 
 
 ### Migration off home-manager

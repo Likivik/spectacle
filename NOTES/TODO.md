@@ -18,13 +18,14 @@ What do we want:
 - Autoupdate
 - Change config from remote box (Desktop)
 
+### Agents Setup
+- [ ] Compare
+    * oh-my-opencode
+    * oh-my-opencode-slim
+    * https://github.com/hffmnnj/opencode-goopspec
+    * https://github.com/vtemian/micode
+    * 
 
-
-
-### Cleanup
-
-- [x] Remove DMS wallpaper generation files (`gen-keybind-wallpaper.sh`, `keybinds.png`)
-- [x] Remove Noctalia (aspect, dotfiles, cachix upstream, flake input)
 
 ### Migration off home-manager
 
@@ -32,8 +33,14 @@ What do we want:
 
 ### OpenCode Tools
 
-- [ ] **(HIGH)** Task/project management MCP — auto-create/complete todos, wanttodos, integrated with agent
+- [x] **opencode-snip** — snip v0.18.0 at `~/.local/bin`, plugin registered in global config
+- [x] **Dynamic Context Pruning** — `@tarquinen/opencode-dcp` registered in global plugin array
+- [x] **Token Tracker** — TUI sidebar footer plugin at `~/.config/opencode/plugins/token-tracker.tsx`, registered in tui.jsonc
+- [x] **Direnv** — `@simonwjackson/opencode-direnv` registered in global plugin array
+- [x] **Shell Strategy** — cloned to `~/.config/opencode/plugin/shell-strategy/`, referenced in config instructions
 - [x] Context7 — library docs MCP
+- [] https://github.com/ramarivera/opencode-model-announcer
+
 
 ### Streaming Box:
 

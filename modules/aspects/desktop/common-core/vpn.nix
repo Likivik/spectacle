@@ -2,13 +2,16 @@
 {
   den.aspects.desktop.common-core.vpn = {
     nixos =
+      { config, pkgs, lib, ... }:
+      let
+        useFreshAmnezia = false;
+      in
       {
-        config,
-        pkgs,
-        lib,
-        ...
-      }:
-      {
+        nixpkgs.overlays = lib.mkIf useFreshAmnezia [
+          (final: prev: {
+            amnezia-vpn = inputs.nixpkgs-master.legacyPackages.${pkgs.system}.amnezia-vpn;
+          })
+        ];
 
         programs.amnezia-vpn.enable = true;
 
@@ -41,20 +44,78 @@
             # cliPackage = pkgs.v2ray;
          };
 
-        # Bypass route so L2TP work VPN server traffic doesn't enter Amnezia tunnel
-        networking.networkmanager.dispatcherScripts = [{
-          source = pkgs.writeText "l2tp-bypass-amnezia" ''
-            #!/bin/sh
-            case "$2" in
-              up|connectivity-change)
-                GW=$(ip route show default 0.0.0.0/0 2>/dev/null | head -1 | awk '{print $3}')
-                DEV=$(ip route show default 0.0.0.0/0 2>/dev/null | head -1 | awk '{print $5}')
-                [ -n "$GW" ] && [ -n "$DEV" ] && ip route replace 46.148.234.215/32 via "$GW" dev "$DEV" 2>/dev/null || true
-                ;;
-            esac
-          '';
-          type = "basic";
-        }];
+        # ── L2TP + AmneziaVPN coexistence ────────────────────────────────────
+        # AmneziaVPN installs two routes that together cover ALL IPv4:
+        #   0.0.0.0/1  dev amn0  metric 1    (covers 0.0.0.0 – 127.255.255.255)
+        #   128.0.0.0/1 dev amn0  metric 1    (covers 128.0.0.0 – 255.255.255.255)
+        # Everything — including the L2TP gateway (46.148.234.215) and our RDP
+        # target (10.1.1.104) — gets stuffed into the Amnezia tunnel.
+        #
+        # We beat this with Linux's longest-prefix-match rule: a /32 or /24
+        # route is *more specific* than a /1, so the kernel prefers it regardless
+        # of metric. We just need to make sure those specific routes stay in the
+        # table. The problem: Amnezia's client flushes routes when it starts or
+        # reconnects, silently removing our entries.
+        #
+        # Solution: a systemd timer that re-asserts both routes every 2 minutes.
+        #   ┌─ Route                                ─ Why we need it ────────
+        #   │ 46.148.234.215/32 via WiFi gateway    L2TP/IPsec handshake must
+        #   │                                       reach the server directly,
+        #   │                                       not enter the Amnezia tunnel
+        #   │ 10.1.1.0/24 dev ppp*                  RDP traffic must go through
+        #   │                                       the L2TP tunnel's ppp interface
+        systemd.services.ensure-l2tp-bypass = {
+          description = "Ensure L2TP VPN server IP bypasses Amnezia VPN tunnel";
+          after = [ "network-online.target" ];
+          wants = [ "network-online.target" ];
+          wantedBy = [ "multi-user.target" ];
+          serviceConfig = {
+            Type = "oneshot";
+            RemainAfterExit = true;
+          };
+          script =
+            let
+              ip = "${pkgs.iproute2}/bin/ip";
+              gawk = "${pkgs.gawk}/bin/awk";
+              coreutils = "${pkgs.coreutils}/bin";
+              gnugrep = "${pkgs.gnugrep}/bin/grep";
+            in ''
+              # Step 1 — find the real WiFi/ethernet default gateway
+              # We MUST skip routes that go through a VPN/tunnel interface
+              # (ppp, tun, tap, amn). When L2TP is active, it adds a default
+              # route via ppp1 that has no gateway IP — that would break the
+              # `ip route replace` command below.
+              GW_DEV=$(${ip} route show default 0.0.0.0/0 | ${gnugrep} -v -E 'dev (ppp|tun|tap|amn)' | ${coreutils}/head -1 | ${gawk} '{print $3, $5}')
+              set -- $GW_DEV
+              GW=$1 DEV=$2
+              if [ -n "$GW" ] && [ -n "$DEV" ]; then
+                # Step 2 — bypass Amnezia for the L2TP server IP
+                # /32 is more specific than Amnezia's /1 → kernel picks this route
+                ${ip} route replace 46.148.234.215/32 via "$GW" dev "$DEV"
+              fi
+
+              # Step 3 — route RDP subnet through the L2TP tunnel
+              # /24 beats Amnezia's /1 by longest-prefix match.
+              # Loop over all active ppp* interfaces (ppp0, ppp1, …)
+              # in case the L2TP connection was re-established on a new device.
+              for pppdev in $(${ip} link show | ${gnugrep} -oP 'ppp\d+'); do
+                ${ip} route replace 10.1.1.0/24 dev "$pppdev"
+              done
+            '';
+        };
+
+        # Timer: re-asserts routes every 2 minutes as a safety net.
+        # Even after the NM dispatcher and the ppp* loop above run,
+        # AmneziaVPN's client can silently flush our routes when it
+        # re-establishes its tunnel. The timer catches that within 2 min.
+        systemd.timers.ensure-l2tp-bypass = {
+          description = "Periodically re-assert L2TP bypass route";
+          wantedBy = [ "timers.target" ];
+          timerConfig = {
+            OnBootSec = "2min";
+            OnUnitActiveSec = "2min";
+          };
+        };
 
          # boot.kernel.sysctl = {
         #   "net.ipv4.conf.all.forwarding" = true;
@@ -72,48 +133,31 @@
 }
 
 /*
-  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  Testing dual VPN (Mullvad + Tailscale) on NixOS:
+  ── Diagnostics: L2TP + AmneziaVPN ──────────────────────────────────────────
 
-  1. Rebuild & apply config
-     ```bash
-     sudo nixos-rebuild switch
-     ```
+  The two routes this service maintains:
 
-  2. Verify services are active
-     ```bash
-     systemctl status mullvad-vpn.service
-     systemctl status tailscale.service
-     ```
+    ip route get 46.148.234.215    → should show "via 192.168.0.1 dev wlo1"
+                                     (bypasses Amnezia, reaches L2TP server)
+    ip route get 10.1.1.104        → should show "dev ppp0" or "dev ppp1"
+                                     (goes through the L2TP tunnel to RDP target)
 
-  3. Confirm Mullvad tunnel up
-     ```bash
-     mullvad status
-     # should show “Connected” and your location
-     ```
+  Health checks:
 
-  4. Confirm Tailscale up & device listed
-     ```bash
-     tailscale status
-     # should list this host and any peers
-     ```
+    systemctl status ensure-l2tp-bypass.service   # active (exited)
+    systemctl status ensure-l2tp-bypass.timer     # active (waiting)
+    journalctl -u ensure-l2tp-bypass.service      # check logs on failure
 
-  5. Check routing tables – Mullvad should have default route, Tailscale should have subnet routes only:
-     ```bash
-     ip route show table main
-     ip route show table tailscale0   # if using tailscale routing
-     ```
+  Rebuild:
 
-  6. Verify Tailscale‑only traffic bypasses Mullvad:
-     - Ping a Tailscale peer (replace <peer-ip> with a peer’s Tailscale IP)
-       ```bash
-       ping -c 3 <peer-ip>
-       ```
-     - Ensure response works; if it fails, check `tailscale ping <peer-ip>`.
+    sudo nixos-rebuild switch
 
-  7. Verify internet traffic still goes through Mullvad:
-     ```bash
-     curl -s https://ifconfig.co
-     # IP should belong
-  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  If RDP stops working after Amnezia reconnects, wait ≤2 min for the timer
+  to re-assert both routes. If it doesn't recover, trigger manually:
+
+    sudo systemctl start ensure-l2tp-bypass.service
+    ip route get 46.148.234.215
+    ip route get 10.1.1.104
+
+  See also: https://den.denful.com/
 */

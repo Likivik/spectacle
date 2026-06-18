@@ -12,6 +12,7 @@
     # nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0.1"; # flakehub unstable
     # nixpkgs.url = "https://flakehub.com/f/DeterminateSystems/nixpkgs-weekly/0.1";
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+    nixpkgs-master.url = "github:NixOS/nixpkgs/master";
     # # Replace github:NixOS/nixpkgs/nixos-unstable
     # nixpkgs.url = "git+https://tsinghua.edu.cn";
     # den.url = "github:vic/den";

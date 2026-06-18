@@ -129,7 +129,13 @@
 
         services.gnome.gnome-keyring.enable = true;
         security.pam.services.dms-greeter.enableGnomeKeyring = true;
-        services.upower.enable = true;
+        services.upower = {
+          enable = true;
+          percentageLow = 10;
+          percentageCritical = 7;
+          percentageAction = 5;
+          criticalPowerAction = "PowerOff";
+        };
       };
 
     maid =

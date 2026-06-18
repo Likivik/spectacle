@@ -3,6 +3,14 @@
   "model": "",
   "autoshare": false,
   "autoupdate": false,
+  "plugin": [
+    "opencode-snip@latest",
+    "@tarquinen/opencode-dcp@latest",
+    "@simonwjackson/opencode-direnv"
+  ],
+  "instructions": [
+    "~/.config/opencode/plugin/shell-strategy/shell_strategy.md"
+  ],
   "compaction": {
     "auto": true,
     "prune": true
@@ -16,7 +24,7 @@
         "nixpkgs#python3",
         "nixpkgs#python313Packages.pipx",
         "-c",
-        "pipx", "run", "--spec", "mnemosyne-memory[mcp]", "mnemosyne", "mcp"
+        "pipx", "run", "--spec", "mnemosyne-memory[mcp]", "--with", "mnemosyne-hermes", "mnemosyne", "mcp"
       ]
     },
     "nixos": {

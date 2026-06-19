@@ -7,10 +7,13 @@
     "opencode-snip@latest",
     "@tarquinen/opencode-dcp@latest",
     "@simonwjackson/opencode-direnv",
-    "cc-safety-net"
+    "cc-safety-net",
+    "./plugins/mnemosyne-bridge.ts"
   ],
   "permission": {
-    "edit": "ask"
+    "edit": "ask",
+    "codesearch": "allow",
+    "websearch": "allow"
   },
   "compaction": {
     "auto": true,

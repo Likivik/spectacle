@@ -7,10 +7,12 @@
 
     nixos =
       { pkgs, ... }: {
+        environment.sessionVariables.OPENCODE_ENABLE_EXA = "1";
         environment.systemPackages = with pkgs; [
           opencode
           opencode-desktop
 
+          # These are for documents/tables access
           pandoc
           python313Packages.python-docx
           python313Packages.openpyxl

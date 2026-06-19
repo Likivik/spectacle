@@ -7,6 +7,7 @@
 
     nixos =
       { pkgs, ... }: {
+        environment.localBinInPath = true;
         environment.sessionVariables.OPENCODE_ENABLE_EXA = "1";
         environment.systemPackages = with pkgs; [
           opencode

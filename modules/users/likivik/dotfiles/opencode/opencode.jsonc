@@ -8,7 +8,10 @@
     "@tarquinen/opencode-dcp@latest",
     "@simonwjackson/opencode-direnv",
     "cc-safety-net",
-    "./plugins/mnemosyne-bridge.ts"
+    "./plugins/mnemosyne-bridge.ts",
+    "opencode-throughput@latest",
+    "@ramtinj95/opencode-tokenscope@latest",
+    "opencode-token-monitor@latest"
   ],
   "permission": {
     "edit": "ask",

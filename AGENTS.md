@@ -119,17 +119,7 @@ Single-context repo — no CONTEXT.md or docs/adr/ yet (created lazily). See `do
 
 ## Memory (Mnemosyne MCP)
 
-### Recall
-Handled automatically by `mnemosyne-bridge` plugin. No manual recall needed.
-
-### Store triggers — fire these during conversation
-| When | Action | Importance | Scope |
-|---|---|---|---|
-| User states a preference | `mnemosyne_remember_canonical(category="preference", name="<topic>", body="<value>")` | — | global |
-| Commit made | `mnemosyne_remember(content="<subject>: <files>", ...)` | 0.6 | global |
-| Build command succeeds | `mnemosyne_remember(content="<cmd> works for <purpose>", ...)` | 0.5 | global |
-| Architecture decision | `mnemosyne_remember(content="<decision>", ...)` | 0.8 | global |
-| User says "remember" | `mnemosyne_remember(content="<exact quote>", ...)` | 0.7 | global |
+Canonical Mnemosyne reference (tools, triggers, importance, scope) in `~/.config/opencode/AGENTS.md`.
 
 ### Scratchpad for complex Nix operations
 Before multi-step config changes:

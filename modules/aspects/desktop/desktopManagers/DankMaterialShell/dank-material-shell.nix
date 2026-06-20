@@ -104,6 +104,7 @@
         environment.systemPackages = with pkgs; [
           capitaine-cursors
           i2c-tools
+          libinput # bongoCat plugin
           pcmanfm
           papirus-icon-theme
           tela-icon-theme

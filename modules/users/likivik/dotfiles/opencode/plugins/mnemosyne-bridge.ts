@@ -52,7 +52,7 @@ interface RecallRow {
 
 // ===== Helpers =====
 
-async function doRecall($: any, query: string): Promise<string | null> {
+export async function doRecall($: any, query: string): Promise<string | null> {
   if (!query) return null;
   try {
     const raw = await $`nix shell nixpkgs#python3 nixpkgs#python313Packages.pipx -c pipx run --spec mnemosyne-memory[mcp] --with mnemosyne-hermes mnemosyne recall ${query} ${RECALL_TOP_K}`
@@ -68,7 +68,7 @@ async function doRecall($: any, query: string): Promise<string | null> {
   }
 }
 
-function parseRecallText(text: string): RecallRow[] {
+export function parseRecallText(text: string): RecallRow[] {
   const results: RecallRow[] = [];
   const blocks = text.split(/\n\n+/);
   for (const block of blocks) {
@@ -86,12 +86,15 @@ function parseRecallText(text: string): RecallRow[] {
       else if (key === "timestamp") row.timestamp = val;
       else if (key === "veracity") row.veracity = val;
     }
-    if (row.id && row.content) results.push(row as RecallRow);
+    if (row.id && row.content) {
+      row.score = row.score ?? 0;
+      results.push(row as RecallRow);
+    }
   }
   return results;
 }
 
-function formatContext(rows: RecallRow[]): string {
+export function formatContext(rows: RecallRow[]): string {
   const lines = rows.map(r => {
     const parts: string[] = [];
     if (r.importance !== undefined) {
@@ -153,7 +156,7 @@ async function doSleep($: any): Promise<void> {
   }
 }
 
-function matchIdentitySignal(userText: string): boolean {
+export function matchIdentitySignal(userText: string): boolean {
   const lower = userText.toLowerCase();
   return IDENTITY_SIGNALS.some(s => lower.includes(s));
 }

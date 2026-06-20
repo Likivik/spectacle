@@ -2,32 +2,34 @@
 {
   den.aspects.bash = {
 
-    homeManager =
-    { pkgs, ... }:
-    {
+    maid = { ... }: {
+      file.home.".bash_aliases".text = ''
+        # Nix helpers
+        nix-eval-host() {
+            local host="''${1:-$(hostname -s)}"
+            nix eval .#nixosConfigurations."$host".config.networking.hostName
+        }
 
-      programs.bash = {
-        enable = true;
-        enableCompletion = true;
-        enableVteIntegration = true;
-        shellAliases = {
-          ll = "ls -l";
-          ".." = "cd ..";
-        };
-        # initExtra = ''
-        #   ssh-add /home/likivik/.ssh/id_rsa
-        #   cdl ()
-        #   {
-        #     cd "$(dirname "$(readlink "$1")")";
-        #   }
-        #   eval "$(starship init bash)"
-        # '';
-      };
+        nixos-switch-cn() {
+            local host="''${1:-$(hostname -s)}"
+            NIX_CONFIG='substituters = https://mirrors.ustc.edu.cn/nix-channels/store https://mirrors.tuna.tsinghua.edu.cn/nix-channels/store https://mirror.sjtu.edu.cn/nix-channels/store https://cache.nixos.org' \
+              nh os switch .#"$host"
+        }
 
+        # Shortcuts
+        alias ll='ls -l'
+        alias ..='cd ..'
+      '';
     };
 
-    nixos = { ... }: {
+    nixos = { pkgs, ... }: {
       environment.localBinInPath = lib.mkDefault true;
+      programs.bash.completion.enable = true;
+      programs.bash.interactiveShellInit = ''
+        if [[ "$TERM" =~ xterm|vte|gnome ]]; then
+          . ${pkgs.vte}/etc/profile.d/vte.sh
+        fi
+      '';
     };
 
   };

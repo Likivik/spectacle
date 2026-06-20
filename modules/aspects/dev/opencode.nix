@@ -9,6 +9,7 @@
       { pkgs, ... }: {
         environment.localBinInPath = true;
         environment.sessionVariables.OPENCODE_ENABLE_EXA = "1";
+        programs.nix-ld.enable = true;
         environment.systemPackages = with pkgs; [
           opencode
           opencode-desktop

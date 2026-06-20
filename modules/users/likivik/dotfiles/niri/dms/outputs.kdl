@@ -4,7 +4,12 @@ output "eDP-1" {
     mode "2560x1600@120.001"
     scale 1.25
     position x=0 y=0
+    focus-at-startup
+    hot-corners {
+        off
+    }
     layout {
+        gaps 8
         always-center-single-column
     }
 }

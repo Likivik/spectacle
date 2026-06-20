@@ -25,7 +25,6 @@
     hyprland.url = "github:hyprwm/Hyprland/v0.52.0";
     hyprland-plugins.url = "github:hyprwm/hyprland-plugins/v0.52.0";
     import-tree.url = "github:vic/import-tree";
-    ncro.url = "github:feel-co/ncro";
     nirimod = {
       url = "github:srinivasr/nirimod";
       inputs.nixpkgs.follows = "nixpkgs";

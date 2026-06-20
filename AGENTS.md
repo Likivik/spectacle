@@ -7,27 +7,64 @@ Flake uses `github:denful/den`. Docs: https://den.denful.com/
 ```bash
 # only if inputs changed, binary cache was added or flake.nix needs to be rebuilt for some reason:
 nix run .#write-flake && nix flake update <input-name>
-
+  
 # Quick eval-only check (skip building derivations)
 nix flake check --no-build --keep-going
 ```
+## `nh os switch` requires sudo — agent cannot run non-interactively
 
-## nix flake check speed tips
+Two ways to handle this:
+
+**Manual (default):** Tell the user to run the command and paste the exact invocation.
+
+**Ghostty (agent spawns terminal):** Use `ghostty -e bash -c 'nh os switch --ask .#<host>; read -p "Press enter"'` — opens a new terminal window with a real TTY so sudo can prompt normally. Password stays local, never passes through agent output.
+
+## Quick check after changes — 3 commands for different needs
+
+### Syntax/layout check (fastest, single host)
 ```bash
-# `nix flake check` already scopes to checks.<currentSystem> by default,
-# but builds everything. Use --no-build to skip derivation builds:
-nix flake check --no-build            # eval only, fast
-nix flake check --keep-going          # report all failures, don't stop at first
+nix eval .#nixosConfigurations.<hostname>.config.networking.hostName
+```
+Add `--show-trace` if you need a full stack trace on error.
 
-# Check a single named check:
-nix build .#checks.$(nix eval --impure --raw 'builtins.currentSystem').<name>
+### Full flake eval (all hosts, all outputs)
+```bash
+nix flake check --no-build --keep-going
+```
+
+### Dry build (resolve derivations for one host)
+```bash
+nix build .#nixosConfigurations.<hostname>.config.system.build.toplevel --dry-run
+```
+
+### Shell aliases for daily use
+```bash
+nix-eval-host() {
+    local host="${1:-$(hostname -s)}"
+    nix eval .#nixosConfigurations."$host".config.networking.hostName
+}
+
+nixos-switch-cn() {
+    local host="${1:-$(hostname -s)}"
+    NIX_CONFIG='substituters = https://mirrors.ustc.edu.cn/nix-channels/store https://mirrors.tuna.tsinghua.edu.cn/nix-channels/store https://mirror.sjtu.edu.cn/nix-channels/store https://cache.nixos.org' \
+      nh os switch --ask .#"$host"
+}
 ```
 
 ## If asked to switch to new config (applies changes to hardware)
+
+Two ways:
+
+**Ghostty (agent can run):**
 ```bash
-# Run manually — requires sudo password (agent cannot run non-interactively)
-nh os switch .#hostname
-nh os boot .#hostname   # staged for next reboot
+ghostty -e bash -c 'nh os switch --ask .#hostname; read -p "Press enter"'
+ghostty -e bash -c 'nh os boot --ask .#hostname; read -p "Press enter"'  # staged for next reboot
+```
+
+**Manual (delegate to user):**
+```bash
+nh os switch --ask .#hostname
+nh os boot --ask .#hostname   # staged for next reboot
 ```
 
 ## Conventions
@@ -82,17 +119,17 @@ Single-context repo — no CONTEXT.md or docs/adr/ yet (created lazily). See `do
 
 ## Memory (Mnemosyne MCP)
 
-### On session start
-1. `mnemosyne_recall(query="spectacle nix flake den", limit=5)`
-2. `mnemosyne_recall(query="spectacle recent", limit=3)`
+### Recall
+Handled automatically by `mnemosyne-bridge` plugin. No manual recall needed.
 
-### What to remember in this project
-- NixOS architecture decisions (e.g., how modules are split)
-- Den framework conventions learned
-- Build/test commands that worked or failed
-- flake input changes and their reasons
-- User preferences about this repo's code style
-- NOTES/*.md — decisions captured there should also be stored as memories
+### Store triggers — fire these during conversation
+| When | Action | Importance | Scope |
+|---|---|---|---|
+| User states a preference | `mnemosyne_remember_canonical(category="preference", name="<topic>", body="<value>")` | — | global |
+| Commit made | `mnemosyne_remember(content="<subject>: <files>", ...)` | 0.6 | global |
+| Build command succeeds | `mnemosyne_remember(content="<cmd> works for <purpose>", ...)` | 0.5 | global |
+| Architecture decision | `mnemosyne_remember(content="<decision>", ...)` | 0.8 | global |
+| User says "remember" | `mnemosyne_remember(content="<exact quote>", ...)` | 0.7 | global |
 
 ### Scratchpad for complex Nix operations
 Before multi-step config changes:

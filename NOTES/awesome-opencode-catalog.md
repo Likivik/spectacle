@@ -100,7 +100,7 @@
 
 | Repo | Stars | Description |
 |------|-------|-------------|
-| [Th0rgal/opencode-ralph-wiggum](https://github.com/Th0rgal/opencode-ralph-wiggum) | 1.8k | Autonomous iterative loop. `ralph "prompt"` runs agent repeatedly until done. |
+| MOVETO:AGENTS @probably-not [Th0rgal/opencode-ralph-wiggum](https://github.com/Th0rgal/opencode-ralph-wiggum) | 1.8k | Autonomous iterative loop. `ralph "prompt"` runs agent repeatedly until done. |
 | [kdcokenny/opencode-notify](https://github.com/kdcokenny/opencode-notify) | 233 | Native OS notifications. Task complete, error, needs input. macOS/Windows/Linux. |
 | [MasuRii/opencode-smart-voice-notify](https://github.com/MasuRii/opencode-smart-voice-notify) | 64 | Voice notifications. ElevenLabs, Edge TTS, SAPI. AI-generated messages, webhooks. |
 | [pantheon-org/opencode-warcraft-notifications](https://github.com/pantheon-org/opencode-warcraft-notifications) | 55 | Warcraft II audio clips on idle. 110 bundled sounds, toast notifications. |

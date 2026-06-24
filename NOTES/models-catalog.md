@@ -62,34 +62,6 @@ Provider ID: `openrouter`. Model IDs: `openrouter/<org>/<model>:free`. Rate limi
 
 **Other notable free models (not selected, for reference):** DeepSeek R1 (free, 64K, reasoning/math), Qwen3 235B (free, 128K, coding), Qwen3 Next 80B A3B (free, fast MoE), Gemma 4 31B (free, 256K, multimodal), Llama 4 Scout (free, 10M context — largest free context), Laguna M.1 (Poolside, free in preview, coding agent), Owl Alpha (OpenRouter stealth, 1M context, $0).
 
-## Routing strategy for spectacle
-
-Per `NOTES/multi-agent-evaluation.md`: the real 2026 win is **model routing, not agent count** (Morph Router 4× cost reduction, polydev 38% cost matching Opus). Route by role:
-
-### Final routing (implemented Jun 2026)
-
-| Agent | Model | Source | Cost/session |
-|---|---|---|---|
-| plan | MiniMax M3 | opencode-go | $0.72 |
-| build | DeepSeek V4 Flash | opencode-go | $0.15 |
-| flagship | GLM-5.2 | opencode-go | $2.50 |
-| plan-free | Nemotron 3 Ultra 550B | OpenRouter free | $0 |
-| consultant | GLM-5.2 | opencode-go | $0.10 |
-| reviewer | DeepSeek V4 Pro | opencode-go | $0.20 |
-| explore | Nemotron 3 Ultra 550B | OpenRouter free | $0 |
-
-**What changed from the initial concept:**
-- **No `nix-` prefix** — agents are general names (plan-free, flagship, consultant, reviewer).
-- **MiniMax M3 over Qwen3.7 Plus** — 3× promo enabled this. Will switch to Qwen3.7 Plus when promo ends.
-- **Nemotron 3 Ultra 550B for free tier** — strongest free reasoning model on OpenRouter (550B MoE, 55B active, 1M context, no data retention). Replaces Zen free models (which have privacy caveats).
-- **Zen free models unused** — privacy caveat (data retained during free period) makes them unsuitable even for NixOS configs without secrets. Only use manually if OpenRouter free is exhausted.
-- **Theme of results:** conversational + strong reasoning mid-tiers. MiniMax M3 scores low coding benchmarks but high conversational ELO — fine for planning (plan asks questions). DeepSeek V4 Flash handles the actual coding/implementation.
-
-### Tab cycle: plan → build → flagship → plan-free
-### Escalation: plan/plan-free → Task tool → consultant (GLM-5.2, hidden)
-### Reviewer: edit:deny, bash restricted (git diff*/nix eval*/nix flake check*), task:deny
-### Explore fallback: /model switch to big-pickle/gpt-oss-120b/qwen3-coder
-
 ## Privacy
 
 - **All Zen paid models:** US-hosted, zero-retention, no training use.

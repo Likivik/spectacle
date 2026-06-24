@@ -80,23 +80,22 @@ nh os boot --ask .#hostname   # staged for next reboot
 
 ## Agent routing
 
-7 agents across 3 model sources for optimal cost/quality:
+6 agents across 2 model sources (opencode-go + opencode-zen). OpenRouter removed.
 
 | Agent | Model | Mode | Cost/session | Role |
 |---|---|---|---|---|
 | plan | MiniMax M3 | primary | $0.72 | Daily plan mode (Tab cycle default) |
 | build | DeepSeek V4 Flash | primary | $0.15 | Implementation (Tab cycle) |
-| flagship | GLM-5.2 | primary | $2.50 | Heavy sessions (Tab cycle) |
-| plan-free | Nemotron 3 Ultra (free) | primary | $0 | Free tier plan (Tab cycle, fallback) |
-| consultant | GLM-5.2 | hidden subagent | $0.10 | Escalation oracle (via Task tool) |
-| reviewer | DeepSeek V4 Pro | subagent | $0.20 | Diff review (via Task tool or @mention) |
-| explore | Nemotron 3 Ultra (free) | subagent | $0 | Read-only search (@mention) |
+| flagship-consultant | GLM-5.2 | subagent | $2.50 | Heavy sessions + escalation oracle (via @ or Task tool) |
+| plan-free | big-pickle (opencode-zen) | subagent | $0 (prompts logged) | Free tier plan fallback (via @ or Task tool) |
+| reviewer | DeepSeek V4 Pro | subagent | $0.20 | Diff review (via @ or Task tool) |
+| explore | DeepSeek V4 Flash | subagent | $0.15 | Read-only search (via @ or Task tool) |
 
 ### Tab cycle
-Tab cycles through: **plan → build → flagship → plan-free**
+Tab cycles through: **plan → build**. All other agents are subagents — not in Tab, but callable via @mention or Task tool.
 
 ### Consultation pattern
-When mid-tier (plan/plan-free) gets stuck on complex NixOS architecture or eval, agent auto-delegates to consultant (GLM-5.2) via Task tool. Works by standard problem description — no special invocation needed. Consultant is hidden, so @-mention doesn't show it, but Task tool finds it.
+When primary agents (plan/build) get stuck on complex NixOS architecture or eval, they auto-delegate to flagship-consultant (GLM-5.2) via Task tool. Works by standard problem description — no special invocation needed. flagship-consultant is a subagent, callable via @flagship-consultant or programmatically.
 
 ### Reviewer workflow
 Before `nh os switch`, get a diff review:
@@ -105,14 +104,8 @@ Before `nh os switch`, get a diff review:
 ```
 Reviewer (DeepSeek V4 Pro) can run `git diff*`, `nix eval*`, `nix flake check*` only. Cannot edit files or spawn subagents.
 
-### Model fallback (free tier rate limits)
-OpenRouter free models (Nemotron, etc.) have limits (~20 req/min, ~500 req/day). If plan-free or explore get rate-limited:
-
-1. `/model` switch to an alternative free model: `big-pickle`, `gpt-oss-120b`, `qwen3-coder`
-2. If all free models rate-limited, switch to opencode-go mid-tier: `opencode-go/qwen3.7-plus` or `opencode-go/deepseek-v4-pro`
-
 ### Budget
-~$33/mo at current routing (plan $0.72 + build $0.15 = $0.87/session × ~38 sessions). 1.8× headroom under $60 opencode-go monthly cap. Flagship sessions ($2.50) for heavy work. Free tier (plan-free, explore) costs $0 — use for routine exploration and model-free days.
+~$40/mo at current routing (plan $0.72 + build $0.15 + explore $0.15 = $1.02/session × ~38 sessions ≈ $39). Tighter headroom under $60 opencode-go monthly cap. flagship-consultant sessions ($2.50) for heavy work or escalation. plan-free (big-pickle) is $0 nominal but prompts are logged for model improvement — avoid for sensitive work.
 
 ## Commit = consider what to add, create a commit message and ask user to confirm it.
 - Commit Prefixes (new prefix = new line):

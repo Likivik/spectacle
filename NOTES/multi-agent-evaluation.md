@@ -23,9 +23,9 @@
   serial (`nh os switch`, `nix flake check`), so parallelism rarely applies.
 - **The real 2026 win = model routing, not agent count.** Morph Router: 4× cost reduction via
   planner (Opus) + executor (Haiku). polydev: Haiku + consultation matches Opus at 38% cost.
-- **Recommendation:** Path A (native custom agents with per-agent model routing using our 3
-  model sources). Zero plugin deps, no telemetry, no Nix closure bloat. Optional Tier-1 plugin
-  additions: subtask2, opencode-background-agents.
+- **Recommendation:** Path A (native custom agents with per-agent model routing using our 2
+  active model sources: opencode-go + opencode-zen). Zero plugin deps, no telemetry, no Nix
+  closure bloat. Optional Tier-1 plugin additions: subtask2, opencode-background-agents.
 
 ---
 
@@ -38,10 +38,11 @@ Is it worth implementing a multi-agent setup for this NixOS fleet config repo? S
 3. Will it improve speed?
 
 Our context: single-domain repo (NixOS configs), mostly localized edits + eval debugging.
-3 model sources available: **opencode-go** models (GLM-5.2 flagship, Qwen3.7 Max, Kimi K2.7
-Code, DeepSeek V4 Pro, etc. — see `NOTES/OPENCODE-GO.md`), **opencode free** models, and
-**openrouter free** models. Already running a token-conscious stack: opencode-snip + DCP
-(context pruning) + tokenscope + throughput.
+2 active model sources: **opencode-go** (subscription, $10/mo) for daily work and
+**opencode-zen free** (big-pickle) for fallback — see `NOTES/OPENCODE-GO.md` and
+`NOTES/models-catalog.md`. OpenRouter free kept as backup source (catalogued in
+models-catalog.md but not in active routing). Already running a token-conscious stack:
+opencode-snip + DCP (context pruning) + tokenscope + throughput.
 
 ---
 
@@ -163,27 +164,37 @@ evidence:
 This captures the two durable wins (context isolation for search; cost via routing) without
 the 15× token tax or coordination fragility.
 
-### Final routing table (implemented Jun 2026)
+### Current routing (updated Jun 2026, post-restructuring)
+
+After Nemotron free endpoint died, restructured to **6 agents across 2 active model sources**.
+Merged flagship + consultant into flagship-consultant (same model GLM-5.2). All custom
+agents (anything not `plan` or `build`) are now `mode: subagent` — uniform policy: Tab cycle
+contains only `plan` and `build`; everything else lives in @ autocomplete and is Task-callable.
 
 | Agent | Model | Mode | Cost/session | Role |
 |---|---|---|---|---|
 | plan | MiniMax M3 ($0.30/$1.20) | primary | $0.72 | Daily plan mode (Tab cycle default) |
 | build | DeepSeek V4 Flash ($0.14/$0.28) | primary | $0.15 | Implementation (Tab cycle) |
-| flagship | GLM-5.2 ($1.40/$4.40) | primary | $2.50 | Heavy sessions (Tab cycle) |
-| plan-free | Nemotron 3 Ultra 550B (free) | primary | $0 | Free tier plan (Tab cycle, fallback) |
-| consultant | GLM-5.2 | hidden subagent | $0.10 | Escalation oracle (via Task tool) |
-| reviewer | DeepSeek V4 Pro ($1.74/$3.48) | subagent | $0.20 | Diff review (via Task tool or @mention) |
-| explore | Nemotron 3 Ultra 550B (free) | subagent | $0 | Read-only search (@mention) |
+| flagship-consultant | GLM-5.2 | subagent | $2.50 | Heavy sessions + escalation oracle (via @ or Task) |
+| plan-free | big-pickle (`opencode/big-pickle`) | subagent | $0 (logged) | Free tier plan fallback (via @ or Task) |
+| reviewer | DeepSeek V4 Pro ($1.74/$3.48) | subagent | $0.20 | Diff review (via @ or Task) |
+| explore | DeepSeek V4 Flash ($0.14/$0.28) | subagent | $0.15 | Read-only search (via @ or Task) |
 
-**Sources:** 1) opencode-go subscription ($10/mo): MiniMax M3, DeepSeek V4 Flash, GLM-5.2, DeepSeek V4 Pro.
-2) opencode Zen free ($0): not used — privacy caveat (data retained during free period). 3) OpenRouter free ($0):
-Nemotron 3 Ultra 550B (nvidia/nemotron-3-ultra-550b-a55b:free), 1M context, reasoning-capable, no data retention.
+**Sources:** 1) opencode-go subscription ($10/mo): 4 agents (plan, build, flagship-consultant, reviewer)
+and 1 reused (explore = same model as build). 2) opencode-zen free: 1 agent (plan-free = big-pickle,
+stealth model, prompts logged for improvement). OpenRouter removed from active routing — Nemotron
+endpoint died; no free replacement that fits the routing.
 
-**Tab cycle:** plan → build → flagship → plan-free
-**Budget:** ~$33/mo at current routing. 1.8× headroom under $60 opencode-go cap.
-**Escalation:** mid-tier agents (plan/plan-free) auto-delegate to consultant (GLM-5.2, hidden) via Task tool when stuck.
-**Reviewer constraint:** edit:deny, bash restricted to `git diff*` / `nix eval*` / `nix flake check*`, task:deny.
-**Explore fallback:** single agent, manual `/model` switch to alternative free model (big-pickle, gpt-oss-120b, qwen3-coder).
+**Tab cycle:** plan → build. All other agents are subagents (not in Tab, but @-mentionable and
+Task-callable).
+**Budget:** ~$40/mo at current routing (plan $0.72 + build $0.15 + explore $0.15 = $1.02/session
+× ~38 sessions ≈ $39). Tighter headroom under $60 opencode-go cap. flagship-consultant ($2.50)
+reserved for heavy work / escalation. plan-free (big-pickle) prompts are logged — avoid for
+sensitive work.
+**Escalation:** primary agents (plan/build) auto-delegate to flagship-consultant (GLM-5.2) via
+Task tool when stuck. Works by standard problem description — no special invocation needed.
+**Reviewer constraint:** edit:deny, bash restricted to `git diff*` / `nix eval*` /
+`nix flake check*`, task:deny. Invoked manually via @reviewer before `nh os switch`.
 
 ---
 
@@ -197,7 +208,7 @@ delivers the real 2026 win.
 
 | Tool | Stars | Architecture | Per-agent model routing? | Token cost | NixOS fit | License | Notes |
 |---|---|---|---|---|---|---|---|
-| **Native custom agents** (no plugin) | — | Define `~/.config/opencode/agents/nix-*.md` + per-agent `model` field. Use built-in Task tool for subagent isolation. Built-in Explore subagent is read-only. | **Yes** (opencode built-in) | **Lowest** — no orchestration overhead, just model routing | **Best** | — | Zero deps, no telemetry, no Nix closure bloat. Uses our 3 model sources directly. `permission.task` glob patterns control delegation graph. `steps` field = max agentic iterations (cost control). |
+| **Native custom agents** (no plugin) | — | Define `~/.config/opencode/agents/*.md` + per-agent `model` field. Use built-in Task tool for subagent isolation. Built-in Explore subagent is read-only. | **Yes** (opencode built-in) | **Lowest** — no orchestration overhead, just model routing | **Best** | — | Zero deps, no telemetry, no Nix closure bloat. Uses our 2 active model sources (opencode-go + opencode-zen) directly. `permission.task` glob patterns control delegation graph. `mode: subagent` keeps custom agents out of Tab cycle. `steps` field = max agentic iterations (cost control). |
 | **subtask2** (spoons-and-mirrors) | 223 | Orchestration framework for existing /commands + subagents. Parallel/loop/chaining. `$RESULT[name]` named outputs. `$TURN[n]` precise context injection. `until:` conditions evaluated by reading real files/git/tests. | **Yes** (inline `{model:anthropic/claude-sonnet-4}`) | Low (only when you invoke parallel) | **Very Good** | **PolyForm Noncommercial** | Build custom `/eval-host` loops that run `nix eval` until it passes. Parallel multi-model research. **Caveats: PolyForm NC license (check if commercial use applies); `parallel` feature needs unmerged opencode PR #6478.** |
 | **opencode-background-agents** (kdcokenny) | ~300 | Async background delegation. `delegate(prompt, agent)` fires read-only subagent, results persist to `~/.local/share/opencode/delegations/` as markdown. Solves context-compaction amnesia. 15-min timeout. | No (subagent uses its own model; no per-delegation override) | **Low** (context isolation saves tokens — only distilled result returns) | **Good** | MIT | Delegate "research NixOS options for service X" to background, keep editing. Persisted results survive long eval cycles. Lightweight (1 plugin). **Limitation:** no per-delegation model override — see aptdnfapt fork below. |
 
@@ -287,15 +298,18 @@ with per-agent `model` routing using our 3 sources.
 - Fits the 2026-favored "single-agent with strong context engineering + narrow subagent
   delegation" pattern.
 
-**Model routing strategy using our 3 sources:**
+**Model routing strategy using our 2 active sources:**
 - **Frontier (planning, hard Nix eval, architecture):** GLM-5.2 / GLM-5.1 (880 req/5hr),
   Qwen3.7 Max (950), Kimi K2.7 Code (1350) — from opencode-go. Reserve for final error
   handling and architecture decisions per `NOTES/OPENCODE-GO.md`.
-- **Mid-tier (80% of daily work, mechanical edits, exploration):** Qwen3.7 Plus (4300 req/5hr),
-  DeepSeek V4 Pro (3450) — from opencode-go. Also opencode free models, openrouter free models.
+- **Mid-tier (80% of daily work, mechanical edits):** Qwen3.7 Plus (4300 req/5hr),
+  DeepSeek V4 Pro (3450) — from opencode-go.
 - **Lightweight (file reads, grep, simple searches):** MiMo-V2.5 / DeepSeek V4 Flash (30k+
-  req/5hr) — from opencode-go. Also openrouter free models for variety/heterogeneity
-  (OneFlow's escape hatch: genuine model heterogeneity is the one place multi-agent still helps).
+  req/5hr) — from opencode-go. Reused for both `build` and `explore` (one model, two roles).
+- **Free fallback (big-pickle):** opencode-zen `opencode/big-pickle` — prompts logged for model
+  improvement; use only for non-sensitive work. Replaces former Nemotron free tier (endpoint died).
+- **Heterogeneity backup:** openrouter free models kept as catalogued backup per
+  `NOTES/models-catalog.md` but not in active routing.
 
 ### Optional Tier-1 plugin additions (if specific needs arise)
 

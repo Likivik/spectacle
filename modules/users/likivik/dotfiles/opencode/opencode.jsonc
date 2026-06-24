@@ -31,27 +31,27 @@
       "model": "opencode-go/deepseek-v4-flash"
     },
     "explore": {
-      "model": "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free"
+      "model": "opencode-go/deepseek-v4-flash",
+      "mode": "subagent"
     },
-    "flagship": {
+    "flagship-consultant": {
       "model": "opencode-go/glm-5.2",
+      "mode": "subagent",
       "steps": 40
     },
     "plan-free": {
-      "model": "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
+      "model": "opencode/big-pickle",
+      "mode": "subagent",
       "permission": {
         "edit": "ask",
         "bash": "ask"
       },
       "steps": 20
     },
-    "consultant": {
-      "model": "opencode-go/glm-5.2",
-      "hidden": true,
-      "steps": 20
-    },
+
     "reviewer": {
       "model": "opencode-go/deepseek-v4-pro",
+      "mode": "subagent",
       "permission": {
         "edit": "deny",
         "bash": {

@@ -163,6 +163,28 @@ evidence:
 This captures the two durable wins (context isolation for search; cost via routing) without
 the 15× token tax or coordination fragility.
 
+### Final routing table (implemented Jun 2026)
+
+| Agent | Model | Mode | Cost/session | Role |
+|---|---|---|---|---|
+| plan | MiniMax M3 ($0.30/$1.20) | primary | $0.72 | Daily plan mode (Tab cycle default) |
+| build | DeepSeek V4 Flash ($0.14/$0.28) | primary | $0.15 | Implementation (Tab cycle) |
+| flagship | GLM-5.2 ($1.40/$4.40) | primary | $2.50 | Heavy sessions (Tab cycle) |
+| plan-free | Nemotron 3 Ultra 550B (free) | primary | $0 | Free tier plan (Tab cycle, fallback) |
+| consultant | GLM-5.2 | hidden subagent | $0.10 | Escalation oracle (via Task tool) |
+| reviewer | DeepSeek V4 Pro ($1.74/$3.48) | subagent | $0.20 | Diff review (via Task tool or @mention) |
+| explore | Nemotron 3 Ultra 550B (free) | subagent | $0 | Read-only search (@mention) |
+
+**Sources:** 1) opencode-go subscription ($10/mo): MiniMax M3, DeepSeek V4 Flash, GLM-5.2, DeepSeek V4 Pro.
+2) opencode Zen free ($0): not used — privacy caveat (data retained during free period). 3) OpenRouter free ($0):
+Nemotron 3 Ultra 550B (nvidia/nemotron-3-ultra-550b-a55b:free), 1M context, reasoning-capable, no data retention.
+
+**Tab cycle:** plan → build → flagship → plan-free
+**Budget:** ~$33/mo at current routing. 1.8× headroom under $60 opencode-go cap.
+**Escalation:** mid-tier agents (plan/plan-free) auto-delegate to consultant (GLM-5.2, hidden) via Task tool when stuck.
+**Reviewer constraint:** edit:deny, bash restricted to `git diff*` / `nix eval*` / `nix flake check*`, task:deny.
+**Explore fallback:** single agent, manual `/model` switch to alternative free model (big-pickle, gpt-oss-120b, qwen3-coder).
+
 ---
 
 ## 4. Tool comparison (comprehensive)

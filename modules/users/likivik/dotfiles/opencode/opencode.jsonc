@@ -23,6 +23,48 @@
     "auto": true,
     "prune": true
   },
+  "agent": {
+    "plan": {
+      "model": "opencode-go/minimax-m3"
+    },
+    "build": {
+      "model": "opencode-go/deepseek-v4-flash"
+    },
+    "explore": {
+      "model": "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free"
+    },
+    "flagship": {
+      "model": "opencode-go/glm-5.2",
+      "steps": 40
+    },
+    "plan-free": {
+      "model": "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
+      "permission": {
+        "edit": "ask",
+        "bash": "ask"
+      },
+      "steps": 20
+    },
+    "consultant": {
+      "model": "opencode-go/glm-5.2",
+      "hidden": true,
+      "steps": 20
+    },
+    "reviewer": {
+      "model": "opencode-go/deepseek-v4-pro",
+      "permission": {
+        "edit": "deny",
+        "bash": {
+          "git diff*": "allow",
+          "nix eval*": "allow",
+          "nix flake check*": "allow",
+          "*": "deny"
+        },
+        "task": "deny"
+      },
+      "steps": 15
+    }
+  },
   "mcp": {
     "mnemosyne": {
       "type": "local",

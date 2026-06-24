@@ -78,6 +78,42 @@ nh os boot --ask .#hostname   # staged for next reboot
 - Inputs can be declared in any module that imports `flake-file`'s dendritic flakeModule (this repo uses `modules/defaults/inputs.nix` by convention).
 - After changing inputs: `nix run .#write-flake && nix flake update <input-name>`.
 
+## Agent routing
+
+7 agents across 3 model sources for optimal cost/quality:
+
+| Agent | Model | Mode | Cost/session | Role |
+|---|---|---|---|---|
+| plan | MiniMax M3 | primary | $0.72 | Daily plan mode (Tab cycle default) |
+| build | DeepSeek V4 Flash | primary | $0.15 | Implementation (Tab cycle) |
+| flagship | GLM-5.2 | primary | $2.50 | Heavy sessions (Tab cycle) |
+| plan-free | Nemotron 3 Ultra (free) | primary | $0 | Free tier plan (Tab cycle, fallback) |
+| consultant | GLM-5.2 | hidden subagent | $0.10 | Escalation oracle (via Task tool) |
+| reviewer | DeepSeek V4 Pro | subagent | $0.20 | Diff review (via Task tool or @mention) |
+| explore | Nemotron 3 Ultra (free) | subagent | $0 | Read-only search (@mention) |
+
+### Tab cycle
+Tab cycles through: **plan → build → flagship → plan-free**
+
+### Consultation pattern
+When mid-tier (plan/plan-free) gets stuck on complex NixOS architecture or eval, agent auto-delegates to consultant (GLM-5.2) via Task tool. Works by standard problem description — no special invocation needed. Consultant is hidden, so @-mention doesn't show it, but Task tool finds it.
+
+### Reviewer workflow
+Before `nh os switch`, get a diff review:
+```
+@reviewer Review the current diff against the plan. Check: module correctness, cross-host impacts, Nix syntax, and whether the nh os switch is safe.
+```
+Reviewer (DeepSeek V4 Pro) can run `git diff*`, `nix eval*`, `nix flake check*` only. Cannot edit files or spawn subagents.
+
+### Model fallback (free tier rate limits)
+OpenRouter free models (Nemotron, etc.) have limits (~20 req/min, ~500 req/day). If plan-free or explore get rate-limited:
+
+1. `/model` switch to an alternative free model: `big-pickle`, `gpt-oss-120b`, `qwen3-coder`
+2. If all free models rate-limited, switch to opencode-go mid-tier: `opencode-go/qwen3.7-plus` or `opencode-go/deepseek-v4-pro`
+
+### Budget
+~$33/mo at current routing (plan $0.72 + build $0.15 = $0.87/session × ~38 sessions). 1.8× headroom under $60 opencode-go monthly cap. Flagship sessions ($2.50) for heavy work. Free tier (plan-free, explore) costs $0 — use for routine exploration and model-free days.
+
 ## Commit = consider what to add, create a commit message and ask user to confirm it.
 - Commit Prefixes (new prefix = new line):
   - feat:

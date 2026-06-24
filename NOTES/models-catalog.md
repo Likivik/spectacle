@@ -66,14 +66,29 @@ Provider ID: `openrouter`. Model IDs: `openrouter/<org>/<model>:free`. Rate limi
 
 Per `NOTES/multi-agent-evaluation.md`: the real 2026 win is **model routing, not agent count** (Morph Router 4× cost reduction, polydev 38% cost matching Opus). Route by role:
 
-| Role | Agent | Default | Backup (budget stretched / heterogeneity) |
-|---|---|---|---|
-| Frontier reasoning (build, plan, hard Nix eval) | `build`, `plan` | `opencode-go/glm-5.2` | `opencode-go/glm-5.1`, `opencode-go/qwen3.7-max` |
-| Read-only exploration | `nix-explorer` | `opencode-go/qwen3.7-plus` | `opencode/deepseek-v4-flash-free` (Zen), `openrouter/deepseek/deepseek-v4-flash:free` |
-| Diff review + eval check | `nix-reviewer` | `opencode-go/deepseek-v4-pro` | `openrouter/qwen/qwen3-coder:free`, `opencode-go/mimo-v2.5-pro` |
-| Mechanical high-volume (grep/locate) | (as needed) | `opencode-go/deepseek-v4-flash` | `opencode/mimo-v2.5-free` (Zen) |
+### Final routing (implemented Jun 2026)
 
-**Principle:** reserve flagship (GLM-5.2, 880 req/5hr) for hard reasoning + edits. Route high-volume work to mid-tier (Qwen3.7 Plus, 4,300 req/5hr). Use Zen/openrouter free as ephemeral backups — don't depend on them.
+| Agent | Model | Source | Cost/session |
+|---|---|---|---|
+| plan | MiniMax M3 | opencode-go | $0.72 |
+| build | DeepSeek V4 Flash | opencode-go | $0.15 |
+| flagship | GLM-5.2 | opencode-go | $2.50 |
+| plan-free | Nemotron 3 Ultra 550B | OpenRouter free | $0 |
+| consultant | GLM-5.2 | opencode-go | $0.10 |
+| reviewer | DeepSeek V4 Pro | opencode-go | $0.20 |
+| explore | Nemotron 3 Ultra 550B | OpenRouter free | $0 |
+
+**What changed from the initial concept:**
+- **No `nix-` prefix** — agents are general names (plan-free, flagship, consultant, reviewer).
+- **MiniMax M3 over Qwen3.7 Plus** — 3× promo enabled this. Will switch to Qwen3.7 Plus when promo ends.
+- **Nemotron 3 Ultra 550B for free tier** — strongest free reasoning model on OpenRouter (550B MoE, 55B active, 1M context, no data retention). Replaces Zen free models (which have privacy caveats).
+- **Zen free models unused** — privacy caveat (data retained during free period) makes them unsuitable even for NixOS configs without secrets. Only use manually if OpenRouter free is exhausted.
+- **Theme of results:** conversational + strong reasoning mid-tiers. MiniMax M3 scores low coding benchmarks but high conversational ELO — fine for planning (plan asks questions). DeepSeek V4 Flash handles the actual coding/implementation.
+
+### Tab cycle: plan → build → flagship → plan-free
+### Escalation: plan/plan-free → Task tool → consultant (GLM-5.2, hidden)
+### Reviewer: edit:deny, bash restricted (git diff*/nix eval*/nix flake check*), task:deny
+### Explore fallback: /model switch to big-pickle/gpt-oss-120b/qwen3-coder
 
 ## Privacy
 

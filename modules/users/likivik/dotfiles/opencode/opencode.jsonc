@@ -4,7 +4,6 @@
   "autoshare": false,
   "autoupdate": false,
   "plugin": [
-    "opencode-snip@latest",
     "@tarquinen/opencode-dcp@latest",
     "@simonwjackson/opencode-direnv",
     "cc-safety-net",
@@ -48,7 +47,6 @@
       },
       "steps": 20
     },
-
     "reviewer": {
       "model": "opencode-go/deepseek-v4-pro",
       "mode": "subagent",
@@ -70,13 +68,28 @@
       "type": "local",
       "enabled": true,
       "command": [
-        "nix", "shell",
+        "nix",
+        "shell",
         "nixpkgs#python3",
         "nixpkgs#python313Packages.pipx",
         "-c",
-        "pipx", "run", "--spec", "mnemosyne-memory[mcp]", "--with", "mnemosyne-hermes", "--with", "fastembed", "--with", "numpy", "--", "mnemosyne", "mcp"
+        "pipx",
+        "run",
+        "--spec",
+        "mnemosyne-memory[mcp]",
+        "--with",
+        "mnemosyne-hermes",
+        "--with",
+        "fastembed",
+        "--with",
+        "numpy",
+        "--",
+        "mnemosyne",
+        "mcp"
       ],
-      "environment": {"LD_LIBRARY_PATH": "/run/current-system/sw/share/nix-ld/lib"}
+      "environment": {
+        "LD_LIBRARY_PATH": "/run/current-system/sw/share/nix-ld/lib"
+      }
     },
     "nixos": {
       "type": "local",

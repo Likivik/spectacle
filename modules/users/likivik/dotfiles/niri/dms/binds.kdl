@@ -68,7 +68,7 @@ binds {
     Super+slash { spawn "dms" "ipc" "call" "spotlight" "toggle"; }
     Super+V { spawn "dms" "ipc" "call" "clipboard" "toggle"; }
     Super+comma { spawn "dms" "ipc" "call" "settings" "focusOrToggle"; }
-    Super+N { spawn "dms" "ipc" "call" "notifications" "toggle"; }
+    Super+N { spawn "dms" "ipc" "call" "notepad" "toggle"; }
     Super+M { spawn "dms" "ipc" "call" "processlist" "focusOrToggle"; }
     Super+O { spawn "dms" "ipc" "call" "keybinds" "toggle" "niri"; }
     Super+Y { spawn "dms" "ipc" "call" "dankdash" "wallpaper"; }

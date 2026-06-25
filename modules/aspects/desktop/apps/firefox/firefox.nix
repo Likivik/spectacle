@@ -3,6 +3,10 @@
 
   den.aspects.firefox = {
 
+    maid = { ... }: {
+      file.xdg_config."mozilla/firefox/likivik/chrome/userChrome.css".source = ./userChrome.css;
+    };
+
     homeManager =
     { pkgs, config, user, ... }:
     {

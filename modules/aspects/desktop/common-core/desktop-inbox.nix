@@ -148,8 +148,6 @@
 
           lite-xl
 
-          vscodium
-
         ];
 
       };

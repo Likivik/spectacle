@@ -63,6 +63,7 @@
       den.aspects.ssh
       # den.aspects.stash
       den.aspects.virtualization
+      den.aspects.vscodium
     ];
   };
 

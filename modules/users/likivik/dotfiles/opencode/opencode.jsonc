@@ -47,6 +47,26 @@
       },
       "steps": 20
     },
+    "den-expert": {
+      "model": "opencode-go/deepseek-v4-flash",
+      "mode": "subagent",
+      "permission": {
+        "edit": "allow",
+        "bash": "allow",
+        "task": "deny"
+      },
+      "steps": 30
+    },
+    "nix-maid-expert": {
+      "model": "opencode-go/deepseek-v4-flash",
+      "mode": "subagent",
+      "permission": {
+        "edit": "allow",
+        "bash": "allow",
+        "task": "deny"
+      },
+      "steps": 30
+    },
     "reviewer": {
       "model": "opencode-go/deepseek-v4-pro",
       "mode": "subagent",

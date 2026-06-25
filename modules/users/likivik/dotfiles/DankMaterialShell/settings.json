@@ -265,9 +265,9 @@
   "monoFontFamily": "Monaspace Radon NF",
   "fontWeight": 400,
   "fontScale": 1.25,
-  "notepadUseMonospace": true,
-  "notepadFontFamily": "",
-  "notepadFontSize": 14,
+  "notepadUseMonospace": false,
+  "notepadFontFamily": "TeX Gyre Heros",
+  "notepadFontSize": 16,
   "notepadShowLineNumbers": false,
   "notepadTransparencyOverride": -1,
   "notepadLastCustomTransparency": 0.7,
@@ -460,9 +460,26 @@
       ],
       "showOnLastDisplay": true,
       "leftWidgets": [
-        "launcherButton",
-        "workspaceSwitcher",
-        "focusedWindow"
+        {
+          "id": "launcherButton",
+          "enabled": true
+        },
+        {
+          "id": "powerMenuButton",
+          "enabled": true
+        },
+        {
+          "id": "workspaceSwitcher",
+          "enabled": true
+        },
+        {
+          "id": "focusedWindow",
+          "enabled": true
+        },
+        {
+          "id": "dankDiskUsage",
+          "enabled": true
+        }
       ],
       "centerWidgets": [
         {
@@ -481,7 +498,7 @@
       ],
       "rightWidgets": [
         {
-          "id": "powerMenuButton",
+          "id": "privacyIndicator",
           "enabled": true
         },
         {
@@ -490,6 +507,10 @@
         },
         {
           "id": "clipboard",
+          "enabled": true
+        },
+        {
+          "id": "dankKDEConnect",
           "enabled": true
         },
         {

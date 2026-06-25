@@ -1,5 +1,75 @@
 {
   "bongoCat": {
+    "enabled": true,
+    "catYOffset": 2,
+    "catColorMode": "classic",
+    "mouseEnabled": true,
+    "showMetrics": true,
+    "metricsInBar": false,
+    "pawHoldTime": 0,
+    "metricsWindowSec": 120
+  },
+  "caffeine": {
+    "enabled": false,
+    "selectedDuration": "300"
+  },
+  "clipboardPlus": {
+    "enabled": false,
+    "fullscreenMode": true,
+    "tabOrder": "clipboard,search,category,pinned,todo,emoji",
+    "tabOrderEnabled": "clipboard,search,category,pinned,todo,emoji",
+    "emojiTileGap": 2,
+    "emojiTileSize": 44,
+    "emojiPopupWidth": 489,
+    "emojiPopupHeight": 540,
+    "listenClipboardWhileOpen": false
+  },
+  "commandRunner": {
+    "enabled": false
+  },
+  "dankActions": {
+    "enabled": false,
+    "variants": [
+      {
+        "icon": "terminal",
+        "displayText": "",
+        "displayCommand": "",
+        "clickCommand": "",
+        "middleClickCommand": "",
+        "rightClickCommand": "",
+        "updateInterval": 2,
+        "showIcon": true,
+        "showText": true,
+        "visibilityCommand": "",
+        "visibilityInterval": 0,
+        "id": "variant_1782284298522",
+        "name": "nh os switch . --ask"
+      }
+    ]
+  },
+  "dankBatteryAlerts": {
     "enabled": true
+  },
+  "dankBitwarden": {
+    "enabled": false,
+    "trigger": "["
+  },
+  "dankCalendar": {
+    "enabled": false
+  },
+  "dankDiskUsage": {
+    "enabled": true,
+    "refreshInterval": 600,
+    "criticalThreshold": 90
+  },
+  "dankHooks": {
+    "enabled": false
+  },
+  "dankKDEConnect": {
+    "enabled": true,
+    "selectedDeviceId": "45e15bfd_2754_4ea3_8080_e35fb05713cf"
+  },
+  "keybindingCheatSheet": {
+    "enabled": false
   }
 }

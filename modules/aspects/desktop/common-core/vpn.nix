@@ -4,14 +4,38 @@
     nixos =
       { config, pkgs, lib, ... }:
       let
-        useFreshAmnezia = false;
+        # Three-way source selector for amnezia-vpn:
+        #   "unstable" → main nixpkgs input (nixos-unstable, no overlay applied). DEFAULT.
+        #   "master"   → inputs.nixpkgs-master (latest in nixpkgs master branch).
+        #   "local"    → locally pinned source (see amneziaSrc below).
+        #
+        # When a new upstream release appears before nixpkgs packages it:
+        #   1. Switch to "local"
+        #   2. Bump `tag` and recompute hash:
+        #      nix run nixpkgs#nix-prefetch-github -- --fetch-submodules \
+        #        --rev <new-tag> --nix amnezia-vpn amnezia-client
+        #   3. Patch the SRI hash below, switch, test
+        #   4. When upstream catches up, flip back to "unstable"
+        amneziaSource = "local";
+        amneziaSrc = pkgs.fetchFromGitHub {
+          owner = "amnezia-vpn";
+          repo = "amnezia-client";
+          tag = "4.8.19.0";
+          hash = "sha256-kftLofCyLA6DDfEXRPyy6Zx0JiQUEzpdYpTlvPihPZg=";
+          fetchSubmodules = true;
+        };
       in
       {
-        nixpkgs.overlays = lib.mkIf useFreshAmnezia [
-          (final: prev: {
+        nixpkgs.overlays =
+          lib.optional (amneziaSource == "master") (final: prev: {
             amnezia-vpn = inputs.nixpkgs-master.legacyPackages.${pkgs.system}.amnezia-vpn;
           })
-        ];
+          ++ lib.optional (amneziaSource == "local") (final: prev: {
+            amnezia-vpn = prev.amnezia-vpn.overrideAttrs (_: {
+              version = "4.8.19.0";
+              src = amneziaSrc;
+            });
+          });
 
         programs.amnezia-vpn.enable = true;
 

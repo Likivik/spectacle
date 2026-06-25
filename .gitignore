@@ -12,3 +12,6 @@ config.kdl.backup*
 # DMS auto-generated files
 modules/users/*/dotfiles/DankMaterialShell/.changelog*
 modules/users/*/dotfiles/DankMaterialShell/.firstlaunch
+
+# opencode-agent-monitor logs
+.opencode/agent-monitor.log*

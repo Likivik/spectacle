@@ -101,6 +101,11 @@
           };
         };
 
+        programs.kdeconnect = {
+          enable = true;
+          package = pkgs.valent;
+        };
+
         environment.systemPackages = with pkgs; [
           capitaine-cursors
           i2c-tools

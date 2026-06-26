@@ -2,6 +2,8 @@
   "$schema": "https://opencode.ai/config.json",
   "plugin": [
     "opencode-agent-monitor",
-    "@tmegit/opencode-worktree-session"
+    "opencode-worktree-manager",
+    "./plugins/auto-worktree.ts"
   ]
+
 }

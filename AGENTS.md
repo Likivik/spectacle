@@ -115,12 +115,19 @@ Domain-specialist subagents (den-expert, nix-maid-expert) only cost when invoked
 
 ## Parallel sessions
 
-Each opencode session auto-creates its own git worktree via the `opencode-worktree-session` plugin:
-- On start: prompts for branch suffix, creates `.opencode/worktrees/<name>`, moves cwd there
-- On exit: commits changes, pushes, removes worktree
-- Each worktree is its own branch — `git add` collisions across sessions are physically impossible
+Each opencode session auto-isolates into its own git worktree via a two-plugin stack:
+- **`opencode-worktree-manager`** (npm) — provides the `worktree_create` / `worktree_list` / `worktree_switch` / `worktree_status` / `worktree_finish` tools (and a TUI sidebar). Lets the LLM and user manually spawn/fork into a worktree on demand.
+- **`./plugins/auto-worktree.ts`** (local) — `session.created` event handler. When a brand-new session is created in the main repo, it makes a worktree at `.opencode/worktrees/opencode/ses_<id>`, branches from current HEAD, forks the session into that directory, and switches the TUI to the forked session. `session.deleted` removes the worktree + branch.
+
+Flow:
+- On start: a new session in main repo → auto-worktree creates a worktree and forks itself there
+- During: the user can call `worktree_create` / `worktree_switch` to spawn additional worktrees
+- On session delete: the worktree + branch are removed; state in `.opencode/auto-worktree-state.json` (gitignored) is purged
+- Each worktree = its own branch — `git add` collisions across sessions are physically impossible
 
 If you open multiple opencode instances, each gets its own worktree. No shared working tree.
+
+See `NOTES/WORKTREES.md` for the full design doc and troubleshooting.
 
 ## Commit = consider what to add, create a commit message and ask user to confirm it.
 - Commit Prefixes (new prefix = new line):

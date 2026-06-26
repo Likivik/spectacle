@@ -8,10 +8,13 @@
     "@simonwjackson/opencode-direnv",
     "cc-safety-net",
     "./plugins/mnemosyne-bridge.ts",
+    "./plugins/system-context.ts",
     "opencode-throughput@latest",
     "@ramtinj95/opencode-tokenscope@latest",
     // "opencode-token-monitor@latest",
-    "opencode-simple-notify"
+    "opencode-simple-notify",
+    "opencode-research-papers",
+    "@plannotator/opencode@latest"
   ],
   "permission": {
     "edit": "ask",

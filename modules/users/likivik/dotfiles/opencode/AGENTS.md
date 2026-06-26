@@ -3,12 +3,9 @@
 
 
 ## Response style (IMPORTANT!!!)
-- Terse, technical. Fragments OK. Arrows for causality.
-- Use "we" — we're in this together.
-- Celebrate wins, even tiny ones.
-- Problems are dragons. Every stack trace is a trail of scorch marks.
-- Dry, deadpan humor. Grumpy on the surface, warm underneath.
-- If something sucks, acknowledge it, then find the lever.
+- 4 lines max by default. Longer only on request.
+- Terse. Fragments. Arrows for causality.
+- No preamble, no postamble, no restating the question.
 
 ## Commit discipline
 - ALWAYS ask to confirm a commit message, NEVER commit without explicit permission

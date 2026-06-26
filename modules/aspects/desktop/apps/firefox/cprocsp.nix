@@ -6,63 +6,60 @@ let
     mintsifrySub = ./certs/mintsifry-sub.crt;
   };
 
-  govPolicyJSON = builtins.toJSON {
-    policies.Certificates.Install = [
-      "DIST_DIR_PLACEHOLDER/mintsifry-root.crt"
-      "DIST_DIR_PLACEHOLDER/mintsifry-sub.crt"
-    ];
-  };
+  addonId = "ru.cryptopro.nmcades@cryptopro.ru";
 in
 {
   den.aspects.cprocsp = {
 
-    nixos = { pkgs, ... }: {
+    nixos = { pkgs, ... }: let
+      cprocspPkg = pkgs.callPackage ../../../../../pkgs/cprocsp { };
+    in {
       services.pcscd.enable = true;
 
       services.udev.extraRules = ''
-        # Rutoken EDS (all models — VID 0a89)
         SUBSYSTEM=="usb", ATTRS{idVendor}=="0a89", TAG+="uaccess"
       '';
 
       environment.sessionVariables = {
         LD_LIBRARY_PATH = [ "/opt/cprocsp/lib/amd64" ];
       };
-    };
 
-    homeManager =
-    { lib, ... }:
-    {
+      environment.systemPackages = [ cprocspPkg ];
 
-      programs.firefox.profiles.gov-sign = {
-        id = 1;
-        name = "gov-sign";
-        settings = {
-          "browser.theme.content-theme" = 2;
-          "browser.theme.toolbar-theme" = 3;
-          "browser.shell.checkDefaultBrowser" = false;
-        };
+      systemd.tmpfiles.rules = [
+        "L+ /opt/cprocsp - - - - ${cprocspPkg}/opt/cprocsp"
+      ];
+
+      environment.etc = {
+        "ssl/certs/mintsifry-root.crt".source = certs.mintsifryRoot;
+        "ssl/certs/mintsifry-sub.crt".source = certs.mintsifrySub;
+        "opt/chrome/native-messaging-hosts/ru.cryptopro.nmcades.json".source =
+          "${cprocspPkg}/usr/lib/mozilla/native-messaging-hosts/ru.cryptopro.nmcades.json";
       };
 
-      home.activation.installMintsifryCA = lib.hm.dag.entryAfter ["writeBoundary"] ''
-        PROFILE_DIR=$(ls -d "$HOME/.mozilla/firefox/"*.gov-sign 2>/dev/null | head -1)
-        if [ -z "$PROFILE_DIR" ]; then
-          echo "cprocsp: gov-sign profile not found, skipping CA install"
-          exit 0
-        fi
-
-        DIST_DIR="$PROFILE_DIR/distribution"
-        mkdir -p "$DIST_DIR"
-
-        cp -f ${certs.mintsifryRoot} "$DIST_DIR/mintsifry-root.crt"
-        cp -f ${certs.mintsifrySub} "$DIST_DIR/mintsifry-sub.crt"
-
-        echo '${govPolicyJSON}' \
-          | sed "s|DIST_DIR_PLACEHOLDER|$DIST_DIR|g" \
-          > "$DIST_DIR/policies.json"
-
-        echo "cprocsp: installed Минцифры CA into gov-sign profile"
-      '';
+      programs.firefox = {
+        nativeMessagingHosts.packages = [ cprocspPkg ];
+        policies.Certificates.Install = [
+          "/etc/ssl/certs/mintsifry-root.crt"
+          "/etc/ssl/certs/mintsifry-sub.crt"
+        ];
+      };
     };
 
+    maid = { pkgs, ... }: let
+      cprocspPkg = pkgs.callPackage ../../../../../pkgs/cprocsp { };
+    in {
+      file.home.".mozilla/firefox/gov-sign/user.js".text = ''
+        user_pref("browser.theme.content-theme", 2);
+        user_pref("browser.theme.toolbar-theme", 3);
+        user_pref("browser.shell.checkDefaultBrowser", false);
+      '';
+
+      file.home.".mozilla/firefox/gov-sign/extensions/${addonId}.xpi".source =
+        "${cprocspPkg}/share/mozilla/extensions/{ec8030f7-c20a-464f-9b0e-13a3a9e97384}/${addonId}.xpi";
+
+      file.home.".mozilla/native-messaging-hosts/ru.cryptopro.nmcades.json".source =
+        "${cprocspPkg}/usr/lib/mozilla/native-messaging-hosts/ru.cryptopro.nmcades.json";
+    };
   };
 }

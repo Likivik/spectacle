@@ -1,40 +1,27 @@
-{ den, config, ... }:
+{ den, lib, ... }:
 {
 
   den.aspects.firefox = {
 
-    maid = { ... }: {
-      file.xdg_config."mozilla/firefox/likivik/chrome/userChrome.css".source = ./userChrome.css;
-    };
-
-    homeManager =
-    { pkgs, config, user, ... }:
-    {
+    nixos = { pkgs, ... }: {
       programs.firefox = {
         enable = true;
         package = pkgs.firefox;
-        configPath = "${config.xdg.configHome}/mozilla/firefox";
         languagePacks = [
-          "ru_RU"
+          "ru"
           "en-US"
         ];
-        nativeMessagingHosts = [
+        nativeMessagingHosts.packages = [
           pkgs.firefoxpwa-unwrapped
           pkgs.kdePackages.plasma-browser-integration
         ];
-        # pkcs11Modules = [  ];
         policies = {
-          # Updates & Background Services
           AppAutoUpdate = false;
           BackgroundAppUpdate = false;
-
-          # Feature Disabling
           DisableProfileImport = true;
           DisablePocket = true;
           NoDefaultBookmarks = true;
           OfferToSaveLoginsDefault = false;
-
-          # # UI and Behavior
           DontCheckDefaultBrowser = true;
           HardwareAcceleration = true;
           OfferToSaveLogins = false;
@@ -54,29 +41,32 @@
             Locked = false;
           };
         };
-
-        profiles.default = {
-          id = 0;
-          isDefault = true;
-          name = "defaultNix";
-          userChrome = ./userChrome.css;
-          extensions = {
-            settings = {
-              # sidebery = {
-              #   settings = {
-              #     sidebarCSS = "#root.root {--frame-fg: #813d9cff;}";
-              #   };
-              # };
-            };
-          };
-        };
       };
 
-      home.sessionVariables = {
+      environment.sessionVariables = {
         MOZ_USE_XINPUT2 = "1";
       };
     };
 
+    maid = { ... }: {
+      file.home.".mozilla/firefox/profiles.ini".text = ''
+        [General]
+        StartWithLastProfile=1
+
+        [Profile0]
+        Name=defaultNix
+        IsRelative=1
+        Path=defaultNix
+        Default=yes
+
+        [Profile1]
+        Name=gov-sign
+        IsRelative=1
+        Path=gov-sign
+      '';
+
+      file.home.".mozilla/firefox/defaultNix/chrome/userChrome.css".source = ./userChrome.css;
+    };
   };
 
 }

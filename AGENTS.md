@@ -11,6 +11,8 @@ nix run .#write-flake && nix flake update <input-name>
 # Quick eval-only check (skip building derivations)
 nix flake check --no-build --keep-going
 ```
+**Gotcha**: New files must be `git add`ed *before* `nix flake check` — flake's git-aware fetcher only sees tracked files.
+
 ## `nh os switch` requires sudo — agent cannot run non-interactively
 
 Two ways to handle this:

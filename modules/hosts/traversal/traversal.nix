@@ -15,7 +15,9 @@
 
       den.aspects.dev
 
+      den.aspects.cprocsp
       den.aspects.firefox
+      den.aspects.tts
     ];
 
     nixos =

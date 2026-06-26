@@ -113,6 +113,15 @@ Reviewer (DeepSeek V4 Pro) can run `git diff*`, `nix eval*`, `nix flake check*` 
 
 Domain-specialist subagents (den-expert, nix-maid-expert) only cost when invoked via Task tool or @mention — their $0.15/session estimate is a ceiling assuming 1 call per session. In practice they cost essentially nothing until used.
 
+## Parallel sessions
+
+Each opencode session auto-creates its own git worktree via the `opencode-worktree-session` plugin:
+- On start: prompts for branch suffix, creates `.opencode/worktrees/<name>`, moves cwd there
+- On exit: commits changes, pushes, removes worktree
+- Each worktree is its own branch — `git add` collisions across sessions are physically impossible
+
+If you open multiple opencode instances, each gets its own worktree. No shared working tree.
+
 ## Commit = consider what to add, create a commit message and ask user to confirm it.
 - Commit Prefixes (new prefix = new line):
   - feat:

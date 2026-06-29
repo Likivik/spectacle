@@ -2,10 +2,14 @@
 - ALWAYS ask user to choose direction/strategy/approach, NEVER decide on your own without approval
 
 ## Worktrees
-- On session start (when implementation begins), create a git worktree via `worktree_create` — branch name based on the work topic
-- Do all file editing, commits, and testing inside the worktree
-- After committing (or when session wraps), delete the worktree via `worktree_delete`
-- Ask user before creating worktree — confirm branch name
+
+Auto-managed by `.opencode/plugins/auto-worktree.ts`.
+
+- **Trigger**: on session start (auto), no prompt
+- **Branch**: `opencode/ses_<sessionId>`
+- **Storage**: `.opencode/worktrees/opencode/ses_<id>/` (gitignored)
+- **Cleanup**: auto-commit + remove on session end
+- **Manual tools**: `worktree_list` (status) and `worktree_finish` (cleanup current)
 
 
 ## Response style (IMPORTANT!!!)

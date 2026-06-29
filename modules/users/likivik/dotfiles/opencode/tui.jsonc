@@ -4,5 +4,5 @@
   "scroll_acceleration": {
     "enabled": true
   },
-  "plugin": ["opencode-throughput@latest", "opencode-worktree-manager"]
+  "plugin": ["opencode-throughput@latest"]
 }

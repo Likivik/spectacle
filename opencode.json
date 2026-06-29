@@ -3,6 +3,10 @@
   "instructions": [
     "AGENTS.md"
   ],
+  "plugin": [
+    "opencode-agent-monitor",
+    "./.opencode/plugins/auto-worktree.ts"
+  ],
   "permission": {
     "NOTES/": "ask",
     "bash": {

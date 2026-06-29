@@ -6,7 +6,7 @@
   "plugin": [
     "@tarquinen/opencode-dcp@latest",
     "@simonwjackson/opencode-direnv",
-    "cc-safety-net",
+    // "cc-safety-net",  // disabled 2026-06-26: blocks git branch -D cleanup; use manual judgment
     "./plugins/mnemosyne-bridge.ts",
     "./plugins/system-context.ts",
     "opencode-throughput@latest",
@@ -14,6 +14,7 @@
     // "opencode-token-monitor@latest",
     "opencode-simple-notify",
     "opencode-research-papers",
+    // @ykaratkou/opencode-worktree removed 2026-06-26: replaced by auto-worktree plugin
     "@plannotator/opencode@latest"
   ],
   "permission": {

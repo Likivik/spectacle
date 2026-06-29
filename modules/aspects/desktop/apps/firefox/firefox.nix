@@ -40,6 +40,25 @@
             Snippets = false;
             Locked = false;
           };
+
+          Preferences = {
+            "extensions.autoDisableScopes" = {
+              Value = 0;
+              Status = "user";
+            };
+            "browser.theme.content-theme" = {
+              Value = 2;
+              Status = "user";
+            };
+            "browser.theme.toolbar-theme" = {
+              Value = 3;
+              Status = "user";
+            };
+            "browser.shell.checkDefaultBrowser" = {
+              Value = false;
+              Status = "user";
+            };
+          };
         };
       };
 
@@ -48,24 +67,32 @@
       };
     };
 
-    maid = { ... }: {
-      file.home.".mozilla/firefox/profiles.ini".text = ''
+    maid = { pkgs, ... }: let
+      profilesIni = pkgs.writeText "firefox-profiles.ini" ''
         [General]
         StartWithLastProfile=1
+        Version=2
 
         [Profile0]
-        Name=defaultNix
+        Name=likivik
         IsRelative=1
-        Path=defaultNix
-        Default=yes
+        Path=likivik
+        Default=1
 
         [Profile1]
         Name=gov-sign
         IsRelative=1
         Path=gov-sign
       '';
+    in {
+      systemd.tmpfiles.dynamicRules = [
+        "d {{xdg_config_home}}/mozilla/firefox 0755 - - -"
+        "d {{xdg_config_home}}/mozilla/firefox/gov-sign 0755 - - -"
+        "d {{xdg_config_home}}/mozilla/firefox/likivik 0755 - - -"
+        "C+ {{xdg_config_home}}/mozilla/firefox/profiles.ini 0644 - - - ${profilesIni}"
+      ];
 
-      file.home.".mozilla/firefox/defaultNix/chrome/userChrome.css".source = ./userChrome.css;
+      file.xdg_config."mozilla/firefox/likivik/chrome/userChrome.css".source = ./userChrome.css;
     };
   };
 

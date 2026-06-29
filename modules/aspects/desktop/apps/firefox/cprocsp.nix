@@ -49,17 +49,8 @@ in
     maid = { pkgs, ... }: let
       cprocspPkg = pkgs.callPackage ../../../../../pkgs/cprocsp { };
     in {
-      file.home.".mozilla/firefox/gov-sign/user.js".text = ''
-        user_pref("browser.theme.content-theme", 2);
-        user_pref("browser.theme.toolbar-theme", 3);
-        user_pref("browser.shell.checkDefaultBrowser", false);
-      '';
-
-      file.home.".mozilla/firefox/gov-sign/extensions/${addonId}.xpi".source =
+      file.xdg_config."mozilla/firefox/gov-sign/extensions/${addonId}.xpi".source =
         "${cprocspPkg}/share/mozilla/extensions/{ec8030f7-c20a-464f-9b0e-13a3a9e97384}/${addonId}.xpi";
-
-      file.home.".mozilla/native-messaging-hosts/ru.cryptopro.nmcades.json".source =
-        "${cprocspPkg}/usr/lib/mozilla/native-messaging-hosts/ru.cryptopro.nmcades.json";
     };
   };
 }

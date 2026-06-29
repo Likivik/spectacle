@@ -113,22 +113,6 @@ Reviewer (DeepSeek V4 Pro) can run `git diff*`, `nix eval*`, `nix flake check*` 
 
 Domain-specialist subagents (den-expert, nix-maid-expert) only cost when invoked via Task tool or @mention — their $0.15/session estimate is a ceiling assuming 1 call per session. In practice they cost essentially nothing until used.
 
-## Parallel sessions
-
-Each opencode session auto-isolates into its own git worktree via a two-plugin stack:
-- **`opencode-worktree-manager`** (npm) — provides the `worktree_create` / `worktree_list` / `worktree_switch` / `worktree_status` / `worktree_finish` tools (and a TUI sidebar). Lets the LLM and user manually spawn/fork into a worktree on demand.
-- **`./plugins/auto-worktree.ts`** (local) — `session.created` event handler. When a brand-new session is created in the main repo, it makes a worktree at `.opencode/worktrees/opencode/ses_<id>`, branches from current HEAD, forks the session into that directory, and switches the TUI to the forked session. `session.deleted` removes the worktree + branch.
-
-Flow:
-- On start: a new session in main repo → auto-worktree creates a worktree and forks itself there
-- During: the user can call `worktree_create` / `worktree_switch` to spawn additional worktrees
-- On session delete: the worktree + branch are removed; state in `.opencode/auto-worktree-state.json` (gitignored) is purged
-- Each worktree = its own branch — `git add` collisions across sessions are physically impossible
-
-If you open multiple opencode instances, each gets its own worktree. No shared working tree.
-
-See `NOTES/WORKTREES.md` for the full design doc and troubleshooting.
-
 ## Commit = consider what to add, create a commit message and ask user to confirm it.
 - Commit Prefixes (new prefix = new line):
   - feat:
@@ -167,6 +151,16 @@ Default label set (five canonical roles). See `docs/agents/triage-labels.md`.
 ### Domain docs
 
 Single-context repo — no CONTEXT.md or docs/adr/ yet (created lazily). See `docs/agents/domain.md`.
+
+## Worktrees
+
+Auto-managed by `.opencode/plugins/auto-worktree.ts`.
+
+- **Trigger**: on session start (auto), no prompt
+- **Branch**: `opencode/ses_<sessionId>`
+- **Storage**: `.opencode/worktrees/opencode/ses_<id>/` (gitignored)
+- **Cleanup**: auto-commit + remove on session end
+- **Manual tools**: `worktree_list` (status) and `worktree_finish` (cleanup current)
 
 ## Memory (Mnemosyne MCP)
 

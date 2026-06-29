@@ -70,6 +70,7 @@ binds {
     Super+comma { spawn "dms" "ipc" "call" "settings" "focusOrToggle"; }
     Super+N { spawn "dms" "ipc" "call" "notepad" "toggle"; }
     Super+M { spawn "dms" "ipc" "call" "processlist" "focusOrToggle"; }
+    Super+S { spawn "niri-float-sticky" "-ipc" "toggle_sticky"; }
     Super+O { spawn "dms" "ipc" "call" "keybinds" "toggle" "niri"; }
     Super+Y { spawn "dms" "ipc" "call" "dankdash" "wallpaper"; }
     Super+Escape { toggle-keyboard-shortcuts-inhibit; }

@@ -1,6 +1,12 @@
 ## Workflow
 - ALWAYS ask user to choose direction/strategy/approach, NEVER decide on your own without approval
 
+## Worktrees
+- On session start (when implementation begins), create a git worktree via `worktree_create` — branch name based on the work topic
+- Do all file editing, commits, and testing inside the worktree
+- After committing (or when session wraps), delete the worktree via `worktree_delete`
+- Ask user before creating worktree — confirm branch name
+
 
 ## Response style (IMPORTANT!!!)
 - 4 lines max by default. Longer only on request.

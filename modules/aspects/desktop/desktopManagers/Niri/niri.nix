@@ -4,6 +4,10 @@
       url = "github:srinivasr/nirimod";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    niri-float-sticky = {
+      url = "github:probeldev/niri-float-sticky";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   den.aspects.desktop.desktopManagers.niri = {
@@ -21,6 +25,7 @@
 
       environment.systemPackages = [
         inputs.nirimod.packages.${pkgs.stdenv.hostPlatform.system}.default
+        inputs.niri-float-sticky.packages.${pkgs.stdenv.hostPlatform.system}.default
       ];
     };
 

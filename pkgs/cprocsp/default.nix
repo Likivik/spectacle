@@ -48,6 +48,9 @@ stdenv.mkDerivation {
     for bin in "$out"/opt/cprocsp/bin/amd64/* "$out"/opt/cprocsp/sbin/amd64/*; do
       bname=$(basename "$bin")
       [ -x "$bin" ] && [ ! -d "$bin" ] || continue
+      # CryptoPro's bundled curl is a Windows/schannel build that shadows
+      # system curl — skip it so nixpkgs curl stays authoritative.
+      [ "$bname" = "curl" ] && continue
       makeWrapper "$bin" "$out/bin/$bname" \
         --prefix LD_LIBRARY_PATH : "$out/opt/cprocsp/lib/amd64:$out/opt/cprocsp/openssl/lib"
     done
@@ -58,6 +61,10 @@ stdenv.mkDerivation {
     ffExtDir="$out/share/mozilla/extensions/{ec8030f7-c20a-464f-9b0e-13a3a9e97384}"
     mkdir -p "$ffExtDir"
     cp ${firefoxExt} "$ffExtDir/${addonId}.xpi"
+
+    # NMH path wrapper expects lib/mozilla, but deb extracts to usr/lib/mozilla
+    mkdir -p "$out/lib/mozilla"
+    ln -s "$out/usr/lib/mozilla/native-messaging-hosts" "$out/lib/mozilla/native-messaging-hosts"
 
     runHook postInstall
   '';

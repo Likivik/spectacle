@@ -7,6 +7,10 @@
     den.url = "github:denful/den";
     determinate.url = "https://flakehub.com/f/DeterminateSystems/determinate/*";
     devshell.url = "github:numtide/devshell";
+    disko = {
+      url = "github:nix-community/disko";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     dms-plugin-registry = {
       url = "github:AvengeMedia/dms-plugin-registry";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -39,8 +43,16 @@
     };
     nix-maid.url = "github:viperML/nix-maid";
     nixfmt-rs.url = "github:Mic92/nixfmt-rs";
+    nixos-anywhere = {
+      url = "github:nix-community/nixos-anywhere";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     nixpkgs-master.url = "github:NixOS/nixpkgs/master";
+    sops-nix = {
+      url = "github:Mic92/sops-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     torrserver.url = "github:YouROK/TorrServer";
   };
 }

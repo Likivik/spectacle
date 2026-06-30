@@ -29,6 +29,10 @@
     determinate.url = "https://flakehub.com/f/DeterminateSystems/determinate/*";
     nix-maid.url = "github:viperML/nix-maid";
     nixfmt-rs.url = "github:Mic92/nixfmt-rs";
+    hermes-agent = {
+      url = "github:NousResearch/hermes-agent";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
 
   };
 }

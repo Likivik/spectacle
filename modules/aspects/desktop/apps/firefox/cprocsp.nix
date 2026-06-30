@@ -35,6 +35,8 @@ in
         "ssl/certs/mintsifry-sub.crt".source = certs.mintsifrySub;
         "opt/chrome/native-messaging-hosts/ru.cryptopro.nmcades.json".source =
           "${cprocspPkg}/usr/lib/mozilla/native-messaging-hosts/ru.cryptopro.nmcades.json";
+        "chromium/native-messaging-hosts/ru.cryptopro.nmcades.json".source =
+          "${cprocspPkg}/usr/lib/mozilla/native-messaging-hosts/ru.cryptopro.nmcades.json";
       };
 
       programs.firefox = {

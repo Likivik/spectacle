@@ -8,19 +8,15 @@ in
       den.aspects.core
       den.aspects.core.tailscale
       den.aspects.server.hermes-agent
+      den.aspects.server.sops
     ];
 
-    nixos = { pkgs, lib, ... }: {
-      fileSystems."/" = {
-        device = "tmpfs";
-        fsType = "tmpfs";
-        options = [ "mode=0755" ];
-      };
-      fileSystems."/boot" = {
-        device = "tmpfs";
-        fsType = "tmpfs";
-        options = [ "mode=0755" ];
-      };
+    nixos = { config, pkgs, lib, ... }: {
+      imports = [
+        inputs.disko.nixosModules.disko
+        ./_disko.nix
+        ./_hardware-configuration.nix
+      ];
 
       services.openssh = {
         enable = true;
@@ -85,7 +81,33 @@ in
         timerConfig.OnCalendar = "daily";
       };
 
-      services.hermes-agent.environmentFiles = [ "/var/lib/hermes/.hermes/.env" ];
+      sops.secrets = {
+        "tailscale/auth-key" = {
+          sopsFile = ../../../secrets/vps/secrets.yaml;
+          key = "tailscale_auth_key";
+          owner = "root";
+          group = "root";
+          mode = "0600";
+        };
+        "hermes/openrouter-api-key" = {
+          sopsFile = ../../../secrets/vps/secrets.yaml;
+          key = "hermes_openrouter_api_key";
+          owner = "hermes";
+          group = "hermes";
+          mode = "0600";
+        };
+      };
+
+      services.tailscale.authKeyFile =
+        config.sops.secrets."tailscale/auth-key".path;
+
+      services.hermes-agent.environment = { };
+
+      system.activationScripts."hermes-secrets-env" =
+        lib.stringAfter [ "hermes-agent-setup" ] ''
+          echo "OPENROUTER_API_KEY=$(${pkgs.coreutils}/bin/cat ${config.sops.secrets."hermes/openrouter-api-key".path})" \
+            >> /var/lib/hermes/.hermes/.env
+        '';
     };
   };
 }

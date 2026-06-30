@@ -56,6 +56,13 @@
       };
     };
 
+    vps = {
+      description = "Hermes agent VPS (Tailscale-only)";
+      users = {
+        likivik = { };
+      };
+    };
+
   };
 
 }

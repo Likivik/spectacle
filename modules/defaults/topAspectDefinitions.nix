@@ -20,6 +20,7 @@
   };
   den.aspects.desktop.common-core = {
     includes = lib.mkDefault [
+      den.aspects.core.tailscale
       den.aspects.desktop.common-core.desktop-inbox
       den.aspects.desktop.common-core.filesystems-support
       den.aspects.desktop.common-core.networking
@@ -68,4 +69,10 @@
   };
 
   den.aspects.server = {};
+  den.aspects.server.core = {
+    includes = lib.mkDefault [
+      den.aspects.core
+      den.aspects.core.tailscale
+    ];
+  };
 }

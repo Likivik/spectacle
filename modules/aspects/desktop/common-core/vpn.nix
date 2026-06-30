@@ -43,13 +43,6 @@
         services.mullvad-vpn.enableExcludeWrapper = true;
         services.mullvad-vpn.package = pkgs.mullvad-vpn;
 
-        services.tailscale.enable = true;
-        services.tailscale.useRoutingFeatures = "both";
-        services.tailscale.extraUpFlags = [
-          "--operator=$USER"
-          "--accept-routes=true"
-        ];
-
         environment.systemPackages = with pkgs; [
           mullvad-compass
 

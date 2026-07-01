@@ -19,11 +19,7 @@ BWRAP="${bubblewrap}/bin/bwrap"
 CHROME="${chromium-gost}/bin/chromium-gost"
 export PATH="${coreutils}/bin:\$PATH"
 
-if [ "\''${HOME:-}" = "/homeless-shelter" ] || [ ! -d "\''${HOME:-}" ]; then
-  DATA_DIR="/tmp/gov-browser-\''${USER:-unknown}"
-else
-  DATA_DIR="\''${XDG_DATA_HOME:-\$HOME/.local/share}/gov-browser"
-fi
+DATA_DIR="/tmp/gov-browser-\''${USER:-unknown}"
 
 PROFILE_DIR="\$DATA_DIR/profile"
 

@@ -28,33 +28,37 @@ PROFILE_DIR="\$DATA_DIR/profile"
 
 mkdir -p "\$PROFILE_DIR"
 
-exec "\$BWRAP" \
-  --unshare-all \
-  --die-with-parent \
-  --new-session \
-  --ro-bind /nix/store /nix/store \
-  --ro-bind "/run/user/\$UID/wayland-0" "/run/user/\$UID/wayland-0" \
-  --bind "/run/user/\$UID/bus" "/run/user/\$UID/bus" \
-  --bind "/run/user/\$UID/pipewire-0" "/run/user/\$UID/pipewire-0" \
-  --bind /run/pcscd /run/pcscd \
-  --bind /dev/shm /dev/shm \
-  --dev-bind /dev/dri /dev/dri \
-  --dev-bind /dev/bus/usb /dev/bus/usb \
-  --proc /proc \
-  --ro-bind /sys/dev/char /sys/dev/char \
-  --ro-bind /etc/machine-id /etc/machine-id \
-  --ro-bind /etc/chromium /etc/chromium \
-  --ro-bind /opt /opt \
-  --tmpfs /home \
-  --setenv HOME "\$DATA_DIR/home" \
-  --setenv USER "\$USER" \
-  --setenv LD_LIBRARY_PATH "/opt/cprocsp/lib/amd64:/opt/cprocsp/openssl/lib" \
-  "\$CHROME" \
-    --user-data-dir="\$PROFILE_DIR" \
-    --disable-telemetry \
-    --no-first-run \
-    --password-store=basic \
-    "\$@"
+ARGS=(
+  --unshare-all
+  --die-with-parent
+  --new-session
+  --ro-bind /nix/store /nix/store
+  --ro-bind /opt /opt
+  --ro-bind /etc/machine-id /etc/machine-id
+  --ro-bind /etc/chromium /etc/chromium
+  --ro-bind /sys/dev/char /sys/dev/char
+  --bind /dev/shm /dev/shm
+  --dev-bind /dev/dri /dev/dri
+  --dev-bind /dev/bus/usb /dev/bus/usb
+  --bind /run/pcscd /run/pcscd
+  --proc /proc
+  --tmpfs /home
+  --setenv HOME "\$DATA_DIR/home"
+  --setenv USER "\$USER"
+  --setenv LD_LIBRARY_PATH "/opt/cprocsp/lib/amd64:/opt/cprocsp/openssl/lib"
+)
+
+WS="\''${XDG_RUNTIME_DIR:-\''${HOME:-/tmp}/run}/\''${WAYLAND_DISPLAY:-wayland-0}"
+[ -S "\$WS" ] && ARGS+=(--bind "\$WS" "\$WS")
+[ -S "\''${XDG_RUNTIME_DIR}/bus" ] && ARGS+=(--bind "\''${XDG_RUNTIME_DIR}/bus" "\''${XDG_RUNTIME_DIR}/bus")
+[ -S "\''${XDG_RUNTIME_DIR}/pipewire-0" ] && ARGS+=(--bind "\''${XDG_RUNTIME_DIR}/pipewire-0" "\''${XDG_RUNTIME_DIR}/pipewire-0")
+
+exec "\$BWRAP" "\''${ARGS[@]}" "\$CHROME" \
+  --user-data-dir="\$PROFILE_DIR" \
+  --disable-telemetry \
+  --no-first-run \
+  --password-store=basic \
+  "\$@"
 WRAPPER
     chmod +x $out/bin/gov-browser
 

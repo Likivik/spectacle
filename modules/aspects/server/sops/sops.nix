@@ -1,4 +1,4 @@
-{ inputs, den, lib, ... }:
+{ inputs, den, lib, pkgs, ... }:
 {
   flake-file.inputs = {
     sops-nix = {
@@ -12,7 +12,13 @@
       imports = [ inputs.sops-nix.nixosModules.sops ];
 
       sops = {
+        # Bootstrap: use the vps's host SSH key (ssh-to-age).
+        # After first boot, a TPM identity can be created and this
+        # can be swapped to:
+        #   age.keyFile = "/var/lib/sops/tpm-identity.txt";
+        #   age.plugins = [ pkgs.age-plugin-tpm ];
         age.sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];
+        age.plugins = [ pkgs.age-plugin-tpm ];
         defaultSopsFile = lib.mkForce null;
       };
     };

@@ -2,26 +2,19 @@
 
 ## Prerequisites
 
-- You're on your local machine with the spectacle repo
-- VPS is running Ubuntu, reachable via SSH from your machine
-- All local file changes from this plan are committed
+- Local spectacle repo with latest commits
+- VPS running Ubuntu, reachable via SSH
+- Recovery key generated (see `NOTES/secrets.md`)
 
-## Step 1: Generate your age key (one-time)
-
-```sh
-age-keygen -o ~/.config/sops/age/keys.txt
-age-keygen -y ~/.config/sops/age/keys.txt > ~/.config/sops/age/keys.txt.pub
-```
-
-## Step 2: Prepare the flake
+## Step 1: Prepare the flake
 
 ```sh
 cd /Storage/Git/spectacle
-nix flake check --no-build --keep-going   # verify everything evals
+nix flake check --no-build --keep-going
 nix build .#nixosConfigurations.vps.config.system.build.toplevel --dry-run
 ```
 
-## Step 3: Deploy via nixos-anywhere
+## Step 2: Run nixos-anywhere
 
 ```sh
 nix run github:nix-community/nixos-anywhere -- \
@@ -30,104 +23,63 @@ nix run github:nix-community/nixos-anywhere -- \
   --target-host root@<vps-public-ip>
 ```
 
-**What happens**: nixos-anywhere SSHes into Ubuntu, kexec's into a NixOS
-installer, partitions the disk (via `modules/hosts/vps/disko.nix`), installs
-NixOS from our flake config, and reboots.
+Converts Ubuntu to NixOS via kexec, partitions disk, installs, reboots.
 
-After reboot, the VPS is running NixOS with the vps host config.
+> **Wrong device in `_disko.nix`?** nixos-facter reports the real device.
+> Edit and re-run.
 
-> **If the device name in disko.nix (`/dev/vda`) is wrong**: nixos-facter
-> reports the actual device. Edit `modules/hosts/vps/disko.nix` with the
-> correct device name and re-run nixos-anywhere.
-
-## Step 4: Commit the hardware config
-
-The first nixos-anywhere run produced a `facter.json`. Convert it:
+## Step 3: Bootstrap ssh-to-age (first deploy only)
 
 ```sh
-# On the vps (via SSH):
-sudo bash
-cd /var/lib/spectacle
-# Copy the facter.json from where nixos-anywhere put it
-# (usually the --generate-hardware-config output path)
-git add modules/hosts/vps/facter.json
-git commit -m "vps: add facter hardware report"
-```
-
-Or if you used `nixos-generate-config` instead, commit the
-`hardware-configuration.nix` that was generated.
-
-## Step 5: Bootstrap the vps
-
-Still on the vps as root:
-
-```sh
-# 1. Tailscale auth (if no auth key is in sops yet)
+# On vps after reboot:
 tailscale up --operator=likivik --accept-routes=true
+cd /var/lib/spectacle && git pull
 
-# 2. Generate the vps age key for sops
-ssh-to-age < /etc/ssh/ssh_host_ed25519_key.pub > /var/lib/spectacle/secrets/vps/age.pub
-
-# 3. Commit the age key
-cd /var/lib/spectacle
-git add secrets/vps/age.pub
-git -c user.name=likivik -c user.email=likivik@vps.local \
-  commit -m "vps: add age public key for sops"
-git push <remote>
-
-# 4. Update .sops.yaml and secrets.yaml on your local machine
+# Get the vps host SSH key for sops
+ssh-to-age < /etc/ssh/ssh_host_ed25519_key.pub
+# Paste output into secrets/.sops.yaml as &vps (temporary)
 ```
 
-## Step 6: Encrypt real secrets from your local machine
+## Step 4: Encrypt real secrets from your local machine
 
 ```sh
 cd /Storage/Git/spectacle
-
-# Pull the vps age key (from the vps's push)
-git pull
-
-# Update secrets/vps/secrets.yaml with real values
-# sops automatically decrypts (with your key) and re-encrypts (with both keys)
+# 1. Add vps pubkey to .sops.yaml
+# 2. Add recovery + serenity + traversal pubkeys too
 sops secrets/vps/secrets.yaml
 # Fill in: tailscale_auth_key, hermes_openrouter_api_key
-
-# Commit
-git add secrets/vps/secrets.yaml
-git commit -m "secrets: add initial vps secrets with both recipients"
+git add secrets/.sops.yaml secrets/vps/secrets.yaml
+git commit -m "secrets: add vps secrets"
 git push
 ```
 
-## Step 7: Pull on vps, rebuild
+## Step 5: Rebuild on vps
 
 ```sh
 ssh likivik@<vps-ts-ip>
-cd /var/lib/spectacle
-git pull
-
-# This rebuild will now:
-# - Decrypt tailscale auth key → tailscaled auto-configures
-# - Decrypt hermes API key → environment variable set
+cd /var/lib/spectacle && git pull
 nh os switch .#vps
 ```
 
-After this, `systemctl status tailscaled` should show authenticated.
+Tailscale auto-auths, hermes gets its API key.
 
-## Step 8: Lock down SSH
+## Step 6: Migrate to TPM
+
+See `NOTES/secrets.md` "TPM migration on vps".
+
+## Step 7: Lock down SSH
 
 ```sh
-# Edit /var/lib/spectacle/modules/hosts/vps/vps.nix
-# Set lockSshToTailscale = true;
-# Commit, push, pull on vps, nh os switch
+# vps.nix: lockSshToTailscale = true; → rebuild
 ```
 
-After lockdown, only tailnet devices can SSH.
+Only tailnet devices can SSH after this.
 
 ## Troubleshooting
 
-| Symptom | Likely cause |
+| Symptom | Cause |
 |---|---|
-| `nixos-anywhere` hangs on kexec | VPS has < 1GB RAM. Need at least 1GB real RAM (not swap) |
-| After reboot, no SSH | Device name in disko.nix wrong. Check cloud console VNC |
-| `sops-install-secrets` fails | VPS host SSH key doesn't match `.sops.yaml` recipient. Re-generate `age.pub` and re-encrypt |
-| Tailscale says "not logged in" | Auth key missing or wrong. Re-run `sops secrets/vps/secrets.yaml` |
-| Hermes says "invalid API key" | API key wrong. Check the value in sops |
+| `nixos-anywhere` hangs | VPS < 1GB RAM |
+| No SSH after reboot | Wrong device in `_disko.nix` |
+| `sops-install-secrets` fails | Host key mismatch. Regenerate |
+| Tailscale not logged in | Auth key missing |

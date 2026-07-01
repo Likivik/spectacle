@@ -1,58 +1,62 @@
 # Secrets management with sops-nix
 
-## First-time setup (on your local machine)
+## Key setup
+
+Each machine needs a unique age identity. The vps starts with
+ssh-to-age (bootstrap), then migrates to TPM.
+
+### 1. Generate the RECOVERY key (on any machine, one-time)
 
 ```sh
-# 1. Generate your age key (one-time)
-age-keygen -o ~/.config/sops/age/keys.txt
-
-# 2. Get the public key
-age-keygen -y ~/.config/sops/age/keys.txt
-
-# 3. Update secrets/.sops.yaml with your public key (replace &user_age value)
-#    Then commit the change.
+age-keygen -o ~/hermes-recovery-key.txt
+age-keygen -y ~/hermes-recovery-key.txt > ~/hermes-recovery-key.txt.pub
 ```
 
-## After vps is deployed
+- **Private key**: encrypt with a strong password, store in Bitwarden.
+- **Public key** (`.pub`): paste into `secrets/.sops.yaml` as `&recovery`.
 
+### 2. Generate TPM keys on each machine
+
+**Serenity** (desktop):
 ```sh
-# 4. SSH into the vps, generate its age key from the host SSH key
-ssh likivik@<vps-ts-ip>
-sudo ssh-to-age < /etc/ssh/ssh_host_ed25519_key.pub
-
-# 5. Copy the output into secrets/.sops.yaml as &vps_age
-#    Then: sops --rotate --in-place secrets/vps/secrets.yaml
-
-# 6. Commit both changes
+nix shell nixpkgs#age-plugin-tpm --command \
+  age-plugin-tpm --generate -o ~/.config/sops/tpm-identity.txt
+nix shell nixpkgs#age-plugin-tpm --command \
+  age-plugin-tpm -y ~/.config/sops/tpm-identity.txt
 ```
+Paste the recipient into `.sops.yaml` as `&serenity`.
+
+**Traversal** (laptop): same, paste as `&traversal`.
+
+**VPS**: after first NixOS deploy (see `vps-deploy.md`):
+```sh
+sudo age-plugin-tpm --generate -o /var/lib/sops/tpm-identity.txt
+sudo age-plugin-tpm -y /var/lib/sops/tpm-identity.txt
+```
+Paste as `&vps`. Then migrate from ssh-to-age to TPM.
+
+### 3. TPM migration on vps
+
+Once the vps TPM identity exists:
+1. Add its pubkey to `.sops.yaml` as `&vps`
+2. `sops --rotate --in-place secrets/vps/secrets.yaml`
+3. Edit `modules/aspects/server/sops/sops.nix`:
+   - Comment `age.sshKeyPaths`
+   - Uncomment `age.keyFile` + `age.plugins`
+4. Commit, push, rebuild on vps
 
 ## Daily workflow
 
 ```sh
-# Edit secrets
-sops secrets/vps/secrets.yaml
-
-# Re-encrypt after adding a new key (e.g., a new machine)
-sops --rotate --in-place secrets/vps/secrets.yaml
-
-# View a specific secret (printing to terminal, piped to clipboard)
-sops -d secrets/vps/secrets.yaml | grep tailscale
-
-# Keys and rotation
-# - User key: ~/.config/sops/age/keys.txt — protect it!
-# - Vps key: /etc/ssh/ssh_host_ed25519_key — derived at runtime
-# - To rotate: generate new key, add it to .sops.yaml, re-encrypt,
-#   then remove old key. All clients must have the new key.
+sops secrets/vps/secrets.yaml          # edit
+sops --rotate --in-place secrets/vps/secrets.yaml  # re-encrypt
+sops -d secrets/vps/secrets.yaml | grep tailscale  # view one
 ```
 
 ## Adding a new secret
 
-1. Add the decrypted placeholder to `secrets/vps/secrets.yaml`:
-   ```yaml
-   new_service_api_key: "placeholder"
-   ```
-2. Save and close (sops re-encrypts on save).
-3. Declare the secret in `modules/hosts/vps/vps.nix`:
+1. `sops secrets/vps/secrets.yaml` — add the new key-value
+2. Declare in `modules/hosts/vps/vps.nix`:
    ```nix
    "new-service/api-key" = {
      sopsFile = ../../../secrets/vps/secrets.yaml;
@@ -62,17 +66,12 @@ sops -d secrets/vps/secrets.yaml | grep tailscale
      mode = "0600";
    };
    ```
-4. Reference it where needed: `config.sops.secrets."new-service/api-key".path`
-5. Rebuild: `nh os switch .#vps`
+3. Reference: `config.sops.secrets."new-service/api-key".path`
+4. `nh os switch .#vps`
 
 ## Security model
 
-Each secret is mounted at `/run/secrets/<name>` with the declared `owner`/`group`/`mode`.
-A service can only read secrets declared for its own user:
-
-- `/run/secrets/hermes/*` → 0600 hermes:hermes → only hermes-agent can read
-- `/run/secrets/tailscale/*` → 0600 root:root → only tailscaled can read
-- *(future)* `/run/secrets/kokoro/*` → 0600 kokoro:kokoro → only kokoro can read
-
-No service can see another service's secrets. To escalate, an attacker needs
-root access.
+Each secret mounts at `/run/secrets/<name>` with per-service ACLs.
+TPM-sealed keys can't be extracted from the TPM — even root on a
+compromised machine can't steal them. Recovery key in Bitwarden
+(passphrase-locked) is the only backdoor.

@@ -6,16 +6,28 @@
   "plugin": [
     "@tarquinen/opencode-dcp@latest",
     "@simonwjackson/opencode-direnv",
-    // "cc-safety-net",  // disabled 2026-06-26: blocks git branch -D cleanup; use manual judgment
     "./plugins/mnemosyne-bridge.ts",
     "./plugins/system-context.ts",
     "opencode-throughput@latest",
     "@ramtinj95/opencode-tokenscope@latest",
-    // "opencode-token-monitor@latest",
     "opencode-simple-notify",
     "opencode-research-papers",
-    // @ykaratkou/opencode-worktree removed 2026-06-26: replaced by auto-worktree plugin
-    // "@plannotator/opencode@latest"  // disabled 2026-07-01: no auto-evoke
+    /*
+     * Plannotator: user-managed workflow → submit_plan tool registered, no agent nudges it.
+     * Evoke manually via /plannotator-review, /plannotator-annotate, /plannotator-last, /plannotator-archive.
+     * Requires `plannotator` CLI on PATH.
+     * Gotcha: plugin array is read at opencode startup. Config changes only apply after restart.
+     */
+    ["@plannotator/opencode@latest", {
+      "workflow": "user-managed"
+    }],
+    // Disabled plugins (take effect on next opencode restart):
+    /* 2026-06-26: blocks git branch -D cleanup; use manual judgment */
+    // "cc-safety-net",
+    /* had some issues, possibly redundant with tokenscope; re-evaluate */
+    // "opencode-token-monitor@latest",
+    /* 2026-06-26: replaced by auto-worktree plugin (which never worked); re-evaluate */
+    // "@ykaratkou/opencode-worktree@latest"
   ],
   "permission": {
     "edit": "ask",

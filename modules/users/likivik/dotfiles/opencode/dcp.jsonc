@@ -1,3 +1,39 @@
 {
-  "$schema": "https://raw.githubusercontent.com/Opencode-DCP/opencode-dynamic-context-pruning/master/dcp.schema.json"
+  "$schema": "https://raw.githubusercontent.com/Opencode-DCP/opencode-dynamic-context-pruning/master/dcp.schema.json",
+  // Per-model compression thresholds. DCP nudges compression above
+  // maxContextLimit, reminds between minContextLimit and maxContextLimit,
+  // and stays quiet below minContextLimit.
+  //
+  // Model context windows (per opencode-go catalog):
+  //   minimax-m3: 256K, deepseek-v4-flash: 1M, glm-5.2: 1M, deepseek-v4-pro: 1M
+  // Note: opencode runtime may fall back to 200K when loading these;
+  // using absolute numbers avoids that bug.
+  "compress": {
+    "modelMaxLimits": {
+      "opencode-go/minimax-m3": 150000,
+      "opencode-go/deepseek-v4-flash": 250000,
+      "opencode-go/glm-5.2": 300000,
+      "opencode-go/deepseek-v4-pro": 300000
+    },
+    "modelMinLimits": {
+      "opencode-go/minimax-m3": 80000,
+      "opencode-go/deepseek-v4-flash": 120000,
+      "opencode-go/glm-5.2": 150000,
+      "opencode-go/deepseek-v4-pro": 150000
+    },
+    "nudgeForce": "soft",
+    "nudgeFrequency": 7,
+    "iterationNudgeThreshold": 20
+  },
+  // Protect last 6 turns from pruning. Recent content stays verbatim
+  // even when earlier history is compressed.
+  "turnProtection": {
+    "enabled": true,
+    "turns": 6
+  },
+  "strategies": {
+    "purgeErrors": {
+      "turns": 6
+    }
+  }
 }

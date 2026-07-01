@@ -15,7 +15,7 @@
     "opencode-simple-notify",
     "opencode-research-papers",
     // @ykaratkou/opencode-worktree removed 2026-06-26: replaced by auto-worktree plugin
-    "@plannotator/opencode@latest"
+    // "@plannotator/opencode@latest"  // disabled 2026-07-01: no auto-evoke
   ],
   "permission": {
     "edit": "ask",

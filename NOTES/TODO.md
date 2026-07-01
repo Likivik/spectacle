@@ -52,6 +52,12 @@
 
 - [ ] Where do we start?
 
+## OMP Setup
+
+- [ ] Make opencode consume `shared-mcp.jsonc` instead of inline MCP in `opencode.jsonc`
+- [ ] Make omp consume `shared-mcp.jsonc` directly (instead of its own `mcp.json`)
+- [ ] Generalize: generate tool-specific format from canonical Nix attrset
+
 ## OpenCode Tools
 
 ### Done

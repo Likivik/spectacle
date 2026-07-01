@@ -8,5 +8,10 @@
         inputs.llm-agents.packages.${pkgs.stdenv.hostPlatform.system}.omp
       ];
     };
+
+    maid = { user, ... }: {
+      file.home.".omp".source =
+        /Storage/Git/spectacle/modules/users/likivik/dotfiles/omp;
+    };
   };
 }

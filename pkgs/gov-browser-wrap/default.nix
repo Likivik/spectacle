@@ -1,4 +1,4 @@
-{ lib, stdenv, makeWrapper, bubblewrap, chromium-gost }:
+{ lib, stdenv, makeWrapper, coreutils, bubblewrap, chromium-gost }:
 
 stdenv.mkDerivation {
   pname = "gov-browser-wrap";
@@ -17,6 +17,7 @@ set -euo pipefail
 
 BWRAP="${bubblewrap}/bin/bwrap"
 CHROME="${chromium-gost}/bin/chromium-gost"
+export PATH="${coreutils}/bin:\$PATH"
 
 if [ "\''${HOME:-}" = "/homeless-shelter" ] || [ ! -d "\''${HOME:-}" ]; then
   DATA_DIR="/tmp/gov-browser-\''${USER:-unknown}"
@@ -37,9 +38,10 @@ ARGS=(
   --ro-bind /etc/machine-id /etc/machine-id
   --ro-bind /etc/chromium /etc/chromium
   --ro-bind /sys/dev/char /sys/dev/char
-  --bind /dev/shm /dev/shm
+  --dev /dev
   --dev-bind /dev/dri /dev/dri
   --dev-bind /dev/bus/usb /dev/bus/usb
+  --bind /dev/shm /dev/shm
   --bind /run/pcscd /run/pcscd
   --proc /proc
   --tmpfs /home

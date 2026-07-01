@@ -6,38 +6,11 @@
 - Gateway API: `http://<vps-tailnet-ip>:8642`
 - SSH: `ssh likivik@<vps-tailnet-ip>` (until lock-down; after, only from tailnet)
 
-## Deploy steps
+## Setup
 
-1. **Provision VPS** (Hetzner CX22 / DO basic droplet — anything `nixos-25.11`-capable, ~$5/mo)
-   Install NixOS using `nixos-infect`-style ISO or the upstream installer.
-
-2. **Clone this repo on the vps**:
-   ```sh
-   sudo git clone <repo-url> /var/lib/spectacle
-   sudo chown -R likivik:likivik /var/lib/spectacle
-   sudo chmod -R g+rwX /var/lib/spectacle
-   ```
-
-3. **Tailscale auth**: pre-create a reusable auth key in your tailnet admin,
-   OR run `sudo tailscale up` interactively.
-
-4. **API keys**:
-   ```sh
-   sudo install -m 0600 -o hermes /dev/stdin /var/lib/hermes/.hermes/.env
-   # paste: OPENROUTER_API_KEY=sk-or-...
-   ```
-
-5. **Tune `hermes-config.yaml`** at `/var/lib/spectacle/modules/hosts/vps/hermes-config.yaml`.
-
-6. **First rebuild**:
-   ```sh
-   cd /var/lib/spectacle && nh os switch .#vps
-   ```
-
-7. **Lock down SSH** after `tailscale status` shows the vps:
-   - Edit `/var/lib/spectacle/modules/hosts/vps/vps.nix`
-   - Set `lockSshToTailscale = true;`
-   - Commit + push. Rebuild from a tailnet device.
+1. **Deploy NixOS**: follow `NOTES/vps-deploy.md` (uses nixos-anywhere)
+2. **Secrets**: follow `NOTES/secrets.md` (uses sops-nix with TPM + recovery key)
+3. **Tune `hermes-config.yaml`**: edit `modules/hosts/vps/hermes-config.yaml`
 
 ## Git workflow
 
@@ -60,22 +33,19 @@
 
 | Service | Port | Access |
 |---------|------|--------|
-| SSH | 22 | Public until lock-down, then tailscale0 only |
+| SSH | 22 | Public until lockdown, then tailscale0 only |
 | Hermes dashboard | 9119 | tailscale0 only (from day 1) |
 | Hermes gateway API | 8642 | tailscale0 only (from day 1) |
 | Tailscale wire | 41641/udp | tailscale0 only |
 
 ## Locking down SSH
 
+After Tailscale is confirmed working, flip the flag and rebuild:
 ```sh
-tailscale status  # confirm vps is on the tailnet
-# edit /var/lib/spectacle/modules/hosts/vps/vps.nix
-# set lockSshToTailscale = true;
+# edit modules/hosts/vps/vps.nix — set lockSshToTailscale = true;
 git add -A && git commit -m "vps: lock SSH to tailscale"
 cd /var/lib/spectacle && nh os switch .#vps
 ```
-
-After lockdown, only tailnet devices can SSH. To reverse: flip the flag back and rebuild.
 
 ## Updating the config
 

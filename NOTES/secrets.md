@@ -8,8 +8,8 @@ ssh-to-age (bootstrap), then migrates to TPM.
 ### 1. Generate the RECOVERY key (on any machine, one-time)
 
 ```sh
-age-keygen -o ~/hermes-recovery-key.txt
-age-keygen -y ~/hermes-recovery-key.txt > ~/hermes-recovery-key.txt.pub
+age-keygen -o ~/sops-recovery-key.txt
+age-keygen -y ~/sops-recovery-key.txt > ~/sops-recovery-key.txt.pub
 ```
 
 - **Private key**: encrypt with a strong password, store in Bitwarden.

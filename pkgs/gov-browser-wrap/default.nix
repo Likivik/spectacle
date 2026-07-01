@@ -27,6 +27,7 @@ fi
 
 PROFILE_DIR="\$DATA_DIR/profile"
 
+mkdir -p "\$DATA_DIR/home"
 mkdir -p "\$PROFILE_DIR"
 
 ARGS=(
@@ -42,6 +43,7 @@ ARGS=(
   --dev-bind /dev/dri /dev/dri
   --dev-bind /dev/bus/usb /dev/bus/usb
   --bind /dev/shm /dev/shm
+  --bind "\$DATA_DIR" "\$DATA_DIR"
   --bind /run/pcscd /run/pcscd
   --proc /proc
   --tmpfs /home

@@ -21,7 +21,7 @@ CHROME="${chromium-gost}/bin/chromium-gost"
 if [ "\''${HOME:-}" = "/homeless-shelter" ] || [ ! -d "\''${HOME:-}" ]; then
   DATA_DIR="/tmp/gov-browser-\''${USER:-unknown}"
 else
-  DATA_DIR="\''${XDG_DATA_HOME:-$HOME/.local/share}/gov-browser"
+  DATA_DIR="\''${XDG_DATA_HOME:-\$HOME/.local/share}/gov-browser"
 fi
 
 PROFILE_DIR="\$DATA_DIR/profile"

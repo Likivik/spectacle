@@ -67,7 +67,7 @@ stdenv.mkDerivation {
     ln -s "$out/usr/lib/mozilla/native-messaging-hosts" "$out/lib/mozilla/native-messaging-hosts"
 
     # bwrap sandbox for the NMH helper: only /opt/cprocsp, /etc, /nix/store, /run/pcscd, /dev visible
-    cat > $out/bin/cprocsp-nmh << WRAPPER
+    cat > $out/bin/cprocsp-nmh << 'WRAPPER'
 #!/usr/bin/env bash
 exec ${bubblewrap}/bin/bwrap \
   --unshare-user-try \

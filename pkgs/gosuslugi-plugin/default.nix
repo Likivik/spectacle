@@ -59,7 +59,7 @@ in stdenv.mkDerivation rec {
     cp -r $TMPDIR/pkg/etc/* $out/etc/
     cp -r $TMPDIR/pkg/usr $out/
 
-    cat > $out/bin/gosuslugi-nmh << WRAPPER
+    cat > $out/bin/gosuslugi-nmh << 'WRAPPER'
 #!/usr/bin/env bash
 exec ${bubblewrap}/bin/bwrap \
   --unshare-user-try \
@@ -82,6 +82,7 @@ exec ${bubblewrap}/bin/bwrap \
   --setenv HOME /tmp \
   --setenv TMPDIR /tmp \
   --setenv LD_LIBRARY_PATH /opt/iitrust/gosuslugi_plugin/bin:/opt/iitrust/gosuslugi_plugin/lib \
+  --setenv QT_QPA_PLATFORM offscreen \
   -- \
   /opt/iitrust/gosuslugi_plugin/bin/gosuslugi_plugin "$@"
 WRAPPER

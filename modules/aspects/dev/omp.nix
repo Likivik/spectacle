@@ -11,7 +11,7 @@
 
     maid = { user, ... }: {
       file.home.".omp".source =
-        /Storage/Git/spectacle/modules/users/likivik/dotfiles/omp;
+        ../../users/likivik/dotfiles/omp;
     };
   };
 }

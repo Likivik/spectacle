@@ -48,6 +48,7 @@
 
   den.aspects.dev = {
     includes = lib.mkDefault [
+      den.aspects.sops-cli
       den.aspects.flatpak-build
       den.aspects.android
       den.aspects.dev-fonts

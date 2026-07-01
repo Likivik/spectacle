@@ -2,8 +2,10 @@
   cfg = "chromium-gost";
 in {
   den.aspects.${cfg} = {
-    nixos = { pkgs, ... }: {
-      environment.systemPackages = [ pkgs.chromium-gost ];
+    nixos = { pkgs, ... }: let
+      chromiumGost = pkgs.callPackage ../../../../../pkgs/chromium-gost { };
+    in {
+      environment.systemPackages = [ chromiumGost ];
 
       environment.sessionVariables = {
         CHROME_GOST = "chromium-gost";

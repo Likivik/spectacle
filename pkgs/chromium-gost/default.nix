@@ -1,4 +1,4 @@
-{ stdenv, lib, fetchurl, autoPatchelfHook, wrapGAppsHook, makeWrapper
+{ stdenv, lib, fetchurl, autoPatchelfHook, wrapGAppsHook3, makeWrapper
 , flac, gnome2, harfbuzzFull, nss, snappy, xdg-utils, xorg
 , alsa-lib, atk, cairo, cups, curl, dbus, expat, fontconfig, freetype
 , gdk-pixbuf, glib, gtk3, libX11, libxcb, libXScrnSaver, libXcomposite
@@ -20,7 +20,7 @@ stdenv.mkDerivation rec {
   nativeBuildInputs = [
     autoPatchelfHook
     qt6.wrapQtAppsHook
-    wrapGAppsHook
+    wrapGAppsHook3
     makeWrapper
   ];
 

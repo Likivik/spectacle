@@ -19,17 +19,19 @@ age-keygen -y ~/likivik-nixos-sops-recovery-key.txt > ~/likivik-nixos-sops-recov
 
 **Serenity** (desktop):
 ```sh
-nix shell nixpkgs#age-plugin-tpm --command \
-  age-plugin-tpm --generate -o ~/.config/sops/tpm-identity.txt
-nix shell nixpkgs#age-plugin-tpm --command \
-  age-plugin-tpm -y ~/.config/sops/tpm-identity.txt
+sudo mkdir -p /var/lib/sops
+sudo nix shell nixpkgs#age-plugin-tpm --command \
+  age-plugin-tpm --generate -o /var/lib/sops/tpm-identity.txt
+sudo nix shell nixpkgs#age-plugin-tpm --command \
+  age-plugin-tpm -y /var/lib/sops/tpm-identity.txt
 ```
 Paste the recipient into `.sops.yaml` as `&serenity`.
 
-**Traversal** (laptop): same, paste as `&traversal`.
+**Traversal** (laptop): paste as `&traversal`.
 
 **VPS**: after first NixOS deploy (see `vps-deploy.md`):
 ```sh
+sudo mkdir -p /var/lib/sops
 sudo age-plugin-tpm --generate -o /var/lib/sops/tpm-identity.txt
 sudo age-plugin-tpm -y /var/lib/sops/tpm-identity.txt
 ```
@@ -47,10 +49,20 @@ Once the vps TPM identity exists:
 
 ## Daily workflow
 
+TPM identity is at `/var/lib/sops/tpm-identity.txt` (needs root for TPM device).
+Run sops with the identity and age-plugin-tpm on PATH:
+
 ```sh
-sops secrets/vps/secrets.yaml          # edit
-sops --rotate --in-place secrets/vps/secrets.yaml  # re-encrypt
-sops -d secrets/vps/secrets.yaml | grep tailscale  # view one
+nix shell nixpkgs#sops nixpkgs#age-plugin-tpm --command \
+  sops --age-identity /var/lib/sops/tpm-identity.txt secrets/vps/secrets.yaml
+
+nix shell nixpkgs#sops nixpkgs#age-plugin-tpm --command \
+  sops --age-identity /var/lib/sops/tpm-identity.txt \
+    --rotate --in-place secrets/vps/secrets.yaml
+
+nix shell nixpkgs#sops nixpkgs#age-plugin-tpm --command \
+  sops --age-identity /var/lib/sops/tpm-identity.txt \
+    -d secrets/vps/secrets.yaml | grep tailscale
 ```
 
 ## Adding a new secret

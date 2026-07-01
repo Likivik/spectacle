@@ -18,7 +18,6 @@
       den.aspects.cprocsp
       den.aspects.chromium-gost
       den.aspects.gosuslugi
-      den.aspects.gov-browser
       den.aspects.firefox
       den.aspects.tts
     ];

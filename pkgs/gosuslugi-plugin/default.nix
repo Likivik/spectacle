@@ -54,10 +54,37 @@ in stdenv.mkDerivation rec {
   '';
 
   installPhase = ''
-    mkdir -p $out/opt $out/etc
+    mkdir -p $out/opt $out/etc $out/bin
     cp -r $TMPDIR/pkg/opt/* $out/opt/
     cp -r $TMPDIR/pkg/etc/* $out/etc/
     cp -r $TMPDIR/pkg/usr $out/
+
+    cat > $out/bin/gosuslugi-nmh << WRAPPER
+#!/usr/bin/env bash
+exec systemd-run --user --scope --quiet \
+  -p DynamicUser=yes \
+  -p ProtectSystem=strict \
+  -p ProtectHome=yes \
+  -p PrivateTmp=yes \
+  -p NoNewPrivileges=yes \
+  -p CapabilityBoundingSet= \
+  -p AmbientCapabilities= \
+  -p RestrictNamespaces=yes \
+  -p LockPersonality=yes \
+  -p MemoryDenyWriteExecute=yes \
+  -p SystemCallArchitectures=native \
+  -p SystemCallFilter=@system-service \
+  -p SystemCallFilter=~@privileged:@resources:@debug:@mount:@cpu-emulation:@obsolete:@raw-io:@reboot:@swap:@module:@clock \
+  -p BindReadOnlyPaths=$out/opt/iitrust:/opt/iitrust:/etc:/nix/store \
+  -p BindPaths=/run/pcscd:/run/pcscd \
+  -p PrivateNetwork=no \
+  -p Environment=LD_LIBRARY_PATH=/opt/iitrust/gosuslugi_plugin/bin:/opt/iitrust/gosuslugi_plugin/lib \
+  -p Environment=HOME=/tmp \
+  -p Environment=TMPDIR=/tmp \
+  -p WorkingDirectory=/tmp \
+  /opt/iitrust/gosuslugi_plugin/bin/gosuslugi_plugin "$@"
+WRAPPER
+    chmod +x $out/bin/gosuslugi-nmh
   '';
 
   dontStrip = true;

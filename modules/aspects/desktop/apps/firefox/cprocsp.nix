@@ -30,22 +30,25 @@ in
         "L+ /opt/cprocsp - - - - ${cprocspPkg}/opt/cprocsp"
       ];
 
-      environment.etc = {
+      environment.etc = let
+        nmhManifest = pkgs.writeText "ru.cryptopro.nmcades.json" (builtins.toJSON {
+          name = "ru.cryptopro.nmcades";
+          description = "CryptoPro CAdES Browser Plug-in";
+          path = "${cprocspPkg}/bin/cprocsp-nmh";
+          type = "stdio";
+          allowed_origins = [ "chrome-extension://iifchhfnnmpdbibifmljnfjhpififfog/" ];
+        });
+      in {
         "ssl/certs/mintsifry-root.crt".source = certs.mintsifryRoot;
         "ssl/certs/mintsifry-sub.crt".source = certs.mintsifrySub;
-        "opt/chrome/native-messaging-hosts/ru.cryptopro.nmcades.json".source =
-          "${cprocspPkg}/usr/lib/mozilla/native-messaging-hosts/ru.cryptopro.nmcades.json";
-        "chromium/native-messaging-hosts/ru.cryptopro.nmcades.json".source =
-          "${cprocspPkg}/usr/lib/mozilla/native-messaging-hosts/ru.cryptopro.nmcades.json";
+        "chromium/native-messaging-hosts/ru.cryptopro.nmcades.json".source = nmhManifest;
+        "opt/chrome/native-messaging-hosts/ru.cryptopro.nmcades.json".source = nmhManifest;
       };
 
-      programs.firefox = {
-        nativeMessagingHosts.packages = [ cprocspPkg ];
-        policies.Certificates.Install = [
-          "/etc/ssl/certs/mintsifry-root.crt"
-          "/etc/ssl/certs/mintsifry-sub.crt"
-        ];
-      };
+      programs.firefox.policies.Certificates.Install = [
+        "/etc/ssl/certs/mintsifry-root.crt"
+        "/etc/ssl/certs/mintsifry-sub.crt"
+      ];
     };
 
     maid = { pkgs, ... }: let

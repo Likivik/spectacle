@@ -66,6 +66,34 @@ stdenv.mkDerivation {
     mkdir -p "$out/lib/mozilla"
     ln -s "$out/usr/lib/mozilla/native-messaging-hosts" "$out/lib/mozilla/native-messaging-hosts"
 
+    # systemd-run wrapper for NMH sandboxing via systemd --scope
+    cat > $out/bin/cprocsp-nmh << WRAPPER
+#!/usr/bin/env bash
+exec systemd-run --user --scope --quiet \
+  -p DynamicUser=yes \
+  -p ProtectSystem=strict \
+  -p ProtectHome=yes \
+  -p PrivateTmp=yes \
+  -p NoNewPrivileges=yes \
+  -p CapabilityBoundingSet= \
+  -p AmbientCapabilities= \
+  -p RestrictNamespaces=yes \
+  -p LockPersonality=yes \
+  -p MemoryDenyWriteExecute=yes \
+  -p SystemCallArchitectures=native \
+  -p SystemCallFilter=@system-service \
+  -p SystemCallFilter=~@privileged:@resources:@debug:@mount:@cpu-emulation:@obsolete:@raw-io:@reboot:@swap:@module:@clock \
+  -p BindReadOnlyPaths=$out/opt/cprocsp:/opt/cprocsp:/etc:/nix/store \
+  -p BindPaths=/run/pcscd:/run/pcscd \
+  -p PrivateNetwork=no \
+  -p Environment=LD_LIBRARY_PATH=/opt/cprocsp/lib/amd64:/opt/cprocsp/openssl/lib \
+  -p Environment=HOME=/tmp \
+  -p Environment=TMPDIR=/tmp \
+  -p WorkingDirectory=/tmp \
+  /opt/cprocsp/bin/amd64/nmcades "$@"
+WRAPPER
+    chmod +x $out/bin/cprocsp-nmh
+
     runHook postInstall
   '';
 

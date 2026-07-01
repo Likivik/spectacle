@@ -1,4 +1,6 @@
-{ stdenv, lib, fetchurl, autoPatchelfHook, coreutils, gnugrep, gnutar, dpkg, binutils }:
+{ stdenv, lib, fetchurl, autoPatchelfHook, coreutils, gnugrep, gnutar, dpkg, binutils
+, cups, fontconfig, freetype, libGL, pcsclite, sqlite, xorg
+}:
 
 let
   installer = fetchurl {
@@ -18,6 +20,18 @@ in stdenv.mkDerivation rec {
     gnutar
     gnugrep
     coreutils
+  ];
+
+  buildInputs = [
+    cups
+    fontconfig
+    freetype
+    libGL
+    pcsclite
+    sqlite
+    stdenv.cc.cc.lib
+    xorg.libX11
+    xorg.libxcb
   ];
 
   unpackPhase = ''

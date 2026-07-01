@@ -57,6 +57,7 @@
       den.aspects.docker
       # den.aspects.hindsight
       den.aspects.opencode
+      den.aspects.omp
       den.aspects.qt-inspection
       den.aspects.shell-commands
       den.aspects.bash

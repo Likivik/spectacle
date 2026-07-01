@@ -33,6 +33,10 @@
     hyprland.url = "github:hyprwm/Hyprland/v0.52.0";
     hyprland-plugins.url = "github:hyprwm/hyprland-plugins/v0.52.0";
     import-tree.url = "github:vic/import-tree";
+    llm-agents = {
+      url = "github:numtide/llm-agents.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     niri-float-sticky = {
       url = "github:probeldev/niri-float-sticky";
       inputs.nixpkgs.follows = "nixpkgs";

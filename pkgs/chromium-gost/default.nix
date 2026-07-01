@@ -1,11 +1,11 @@
 { stdenv, lib, fetchurl, autoPatchelfHook, wrapGAppsHook3, makeWrapper
-, flac, gnome2, harfbuzzFull, nss, snappy, xdg-utils, xorg
+, flac, gnome2, harfbuzzFull, nss, snappy, xdg-utils
 , alsa-lib, atk, cairo, cups, curl, dbus, expat, fontconfig, freetype
 , gdk-pixbuf, glib, gtk3, libX11, libxcb, libXScrnSaver, libXcomposite
 , libXcursor, libXdamage, libXext, libXfixes, libXi, libXrandr, libXrender
 , libXtst, libdrm, libnotify, libopus, libpulseaudio, libuuid, libxshmfence
 , mesa, nspr, pango, systemd, at-spi2-atk, at-spi2-core
-, qt6, vivaldi-ffmpeg-codecs
+, libxkbfile, qt6, vivaldi-ffmpeg-codecs
 }:
 
 stdenv.mkDerivation rec {
@@ -19,7 +19,6 @@ stdenv.mkDerivation rec {
 
   nativeBuildInputs = [
     autoPatchelfHook
-    qt6.wrapQtAppsHook
     wrapGAppsHook3
     makeWrapper
   ];
@@ -30,7 +29,7 @@ stdenv.mkDerivation rec {
     nss
     snappy
     xdg-utils
-    xorg.libxkbfile
+    libxkbfile
     alsa-lib
     at-spi2-atk
     at-spi2-core
@@ -71,6 +70,12 @@ stdenv.mkDerivation rec {
     qt6.qtbase
   ];
 
+  autoPatchelfIgnoreMissingDeps = [
+    "libQt5Core.so.5"
+    "libQt5Gui.so.5"
+    "libQt5Widgets.so.5"
+  ];
+
   unpackPhase = ''
     mkdir -p $out/bin $out/share/icons/hicolor $out/opt $TMP
     cd $TMP
@@ -89,6 +94,7 @@ stdenv.mkDerivation rec {
     ln -sf $out/opt/chromium-gost/chromium-gost $out/bin/chromium-gost
     sizes=(16 24 32 48 64 128 256)
     for size in "''${sizes[@]}"; do
+      mkdir -p "$out/share/icons/hicolor/''${size}x''${size}/apps"
       ln -s "$out/opt/chromium-gost/product_logo_$size.png" \
         "$out/share/icons/hicolor/''${size}x''${size}/apps/chromium-gost.png"
     done
@@ -112,6 +118,7 @@ stdenv.mkDerivation rec {
     vivaldi-ffmpeg-codecs
   ] ++ buildInputs;
 
+  dontWrapQtApps = true;
   dontStrip = true;
 
   meta = with lib; {

@@ -1,6 +1,7 @@
 { stdenv, lib, fetchurl, autoPatchelfHook, coreutils, gnugrep, gnutar, dpkg, binutils
 , cups, fontconfig, freetype, harfbuzz, libdrm, libinput, libGL, libjpeg_turbo, mesa
-, mtdev, pcsclite, sqlite, xorg
+, mtdev, pcsclite, sqlite
+, libICE, libSM, libX11, libXi, libXrender, libxcb
 }:
 
 let
@@ -37,12 +38,12 @@ in stdenv.mkDerivation rec {
     pcsclite
     sqlite
     stdenv.cc.cc.lib
-    xorg.libICE
-    xorg.libSM
-    xorg.libX11
-    xorg.libXi
-    xorg.libXrender
-    xorg.libxcb
+    libICE
+    libSM
+    libX11
+    libXi
+    libXrender
+    libxcb
   ];
 
   unpackPhase = ''

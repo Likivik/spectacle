@@ -1,5 +1,6 @@
 { stdenv, lib, fetchurl, autoPatchelfHook, coreutils, gnugrep, gnutar, dpkg, binutils
-, cups, fontconfig, freetype, libGL, pcsclite, sqlite, xorg
+, cups, fontconfig, freetype, harfbuzz, libdrm, libinput, libGL, libjpeg_turbo, mesa
+, mtdev, pcsclite, sqlite, xorg
 }:
 
 let
@@ -26,11 +27,21 @@ in stdenv.mkDerivation rec {
     cups
     fontconfig
     freetype
+    harfbuzz
+    libdrm
     libGL
+    libinput
+    libjpeg_turbo
+    mesa
+    mtdev
     pcsclite
     sqlite
     stdenv.cc.cc.lib
+    xorg.libICE
+    xorg.libSM
     xorg.libX11
+    xorg.libXi
+    xorg.libXrender
     xorg.libxcb
   ];
 

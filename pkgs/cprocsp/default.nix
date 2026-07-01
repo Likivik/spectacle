@@ -1,4 +1,4 @@
-{ lib, stdenv, fetchurl, dpkg, autoPatchelfHook, makeWrapper
+{ lib, stdenv, fetchurl, dpkg, autoPatchelfHook, makeWrapper, bubblewrap
 , openssl, curl, glib, libxml2, nspr, nss, pcsclite, zlib
 , gtk3, gdk-pixbuf, pango, cairo, at-spi2-atk
 , libx11, libxxf86vm, libsm, linux-pam, libusb-compat-0_1
@@ -66,30 +66,31 @@ stdenv.mkDerivation {
     mkdir -p "$out/lib/mozilla"
     ln -s "$out/usr/lib/mozilla/native-messaging-hosts" "$out/lib/mozilla/native-messaging-hosts"
 
-    # systemd-run wrapper for NMH sandboxing via systemd --scope
+    # bwrap sandbox for the NMH helper: only /opt/cprocsp, /etc, /nix/store, /run/pcscd, /dev visible
     cat > $out/bin/cprocsp-nmh << WRAPPER
 #!/usr/bin/env bash
-exec systemd-run --user --scope --quiet \
-  -p DynamicUser=yes \
-  -p ProtectSystem=strict \
-  -p ProtectHome=yes \
-  -p PrivateTmp=yes \
-  -p NoNewPrivileges=yes \
-  -p CapabilityBoundingSet= \
-  -p AmbientCapabilities= \
-  -p RestrictNamespaces=yes \
-  -p LockPersonality=yes \
-  -p MemoryDenyWriteExecute=yes \
-  -p SystemCallArchitectures=native \
-  -p SystemCallFilter=@system-service \
-  -p SystemCallFilter=~@privileged:@resources:@debug:@mount:@cpu-emulation:@obsolete:@raw-io:@reboot:@swap:@module:@clock \
-  -p BindReadOnlyPaths=$out/opt/cprocsp:/opt/cprocsp:/etc:/nix/store \
-  -p BindPaths=/run/pcscd:/run/pcscd \
-  -p PrivateNetwork=no \
-  -p Environment=LD_LIBRARY_PATH=/opt/cprocsp/lib/amd64:/opt/cprocsp/openssl/lib \
-  -p Environment=HOME=/tmp \
-  -p Environment=TMPDIR=/tmp \
-  -p WorkingDirectory=/tmp \
+exec ${bubblewrap}/bin/bwrap \
+  --unshare-user-try \
+  --unshare-pid \
+  --die-with-parent \
+  --new-session \
+  --ro-bind /nix/store /nix/store \
+  --ro-bind /opt/cprocsp /opt/cprocsp \
+  --ro-bind /etc /etc \
+  --bind /run/pcscd /run/pcscd \
+  --dev /dev \
+  --dev-bind /dev/bus/usb /dev/bus/usb \
+  --bind /dev/shm /dev/shm \
+  --proc /proc \
+  --tmpfs /run \
+  --tmpfs /home \
+  --tmpfs /Storage \
+  --tmpfs /tmp \
+  --share-net \
+  --setenv HOME /tmp \
+  --setenv TMPDIR /tmp \
+  --setenv LD_LIBRARY_PATH /opt/cprocsp/lib/amd64:/opt/cprocsp/openssl/lib \
+  -- \
   /opt/cprocsp/bin/amd64/nmcades "$@"
 WRAPPER
     chmod +x $out/bin/cprocsp-nmh

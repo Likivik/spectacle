@@ -1,4 +1,4 @@
-{ stdenv, lib, fetchurl, autoPatchelfHook, coreutils, gnugrep, gnutar, dpkg, binutils
+{ stdenv, lib, fetchurl, autoPatchelfHook, coreutils, gnugrep, gnutar, dpkg, binutils, bubblewrap
 , cups, fontconfig, freetype, harfbuzz, libdrm, libinput, libGL, libjpeg_turbo, mesa
 , mtdev, pcsclite, sqlite
 , libICE, libSM, libX11, libXi, libXrender, libxcb
@@ -61,27 +61,28 @@ in stdenv.mkDerivation rec {
 
     cat > $out/bin/gosuslugi-nmh << WRAPPER
 #!/usr/bin/env bash
-exec systemd-run --user --scope --quiet \
-  -p DynamicUser=yes \
-  -p ProtectSystem=strict \
-  -p ProtectHome=yes \
-  -p PrivateTmp=yes \
-  -p NoNewPrivileges=yes \
-  -p CapabilityBoundingSet= \
-  -p AmbientCapabilities= \
-  -p RestrictNamespaces=yes \
-  -p LockPersonality=yes \
-  -p MemoryDenyWriteExecute=yes \
-  -p SystemCallArchitectures=native \
-  -p SystemCallFilter=@system-service \
-  -p SystemCallFilter=~@privileged:@resources:@debug:@mount:@cpu-emulation:@obsolete:@raw-io:@reboot:@swap:@module:@clock \
-  -p BindReadOnlyPaths=$out/opt/iitrust:/opt/iitrust:/etc:/nix/store \
-  -p BindPaths=/run/pcscd:/run/pcscd \
-  -p PrivateNetwork=no \
-  -p Environment=LD_LIBRARY_PATH=/opt/iitrust/gosuslugi_plugin/bin:/opt/iitrust/gosuslugi_plugin/lib \
-  -p Environment=HOME=/tmp \
-  -p Environment=TMPDIR=/tmp \
-  -p WorkingDirectory=/tmp \
+exec ${bubblewrap}/bin/bwrap \
+  --unshare-user-try \
+  --unshare-pid \
+  --die-with-parent \
+  --new-session \
+  --ro-bind /nix/store /nix/store \
+  --ro-bind /opt/iitrust /opt/iitrust \
+  --ro-bind /etc /etc \
+  --bind /run/pcscd /run/pcscd \
+  --dev /dev \
+  --dev-bind /dev/bus/usb /dev/bus/usb \
+  --bind /dev/shm /dev/shm \
+  --proc /proc \
+  --tmpfs /run \
+  --tmpfs /home \
+  --tmpfs /Storage \
+  --tmpfs /tmp \
+  --share-net \
+  --setenv HOME /tmp \
+  --setenv TMPDIR /tmp \
+  --setenv LD_LIBRARY_PATH /opt/iitrust/gosuslugi_plugin/bin:/opt/iitrust/gosuslugi_plugin/lib \
+  -- \
   /opt/iitrust/gosuslugi_plugin/bin/gosuslugi_plugin "$@"
 WRAPPER
     chmod +x $out/bin/gosuslugi-nmh

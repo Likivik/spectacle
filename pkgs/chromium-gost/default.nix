@@ -91,6 +91,9 @@ stdenv.mkDerivation rec {
     substituteInPlace $out/share/applications/chromium-gost.desktop \
       --replace chromium-gost-stable chromium-gost
     ln -sf ${vivaldi-ffmpeg-codecs}/lib/libffmpeg.so $out/opt/chromium-gost/libffmpeg.so
+    substituteInPlace $out/opt/chromium-gost/chromium-gost \
+      --replace 'exec -a "$0" "$HERE/chrome" "$@"' \
+                'exec -a "$0" "$HERE/chrome" "--ozone-platform=wayland" "$@"'
     ln -sf $out/opt/chromium-gost/chromium-gost $out/bin/chromium-gost
     sizes=(16 24 32 48 64 128 256)
     for size in "''${sizes[@]}"; do

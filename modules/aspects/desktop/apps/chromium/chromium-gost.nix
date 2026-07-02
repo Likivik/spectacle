@@ -16,7 +16,10 @@ in {
           "policies": {
             "BackgroundModeEnabled": true,
             "AutoFillEnabled": false,
-            "PasswordManagerEnabled": false
+            "PasswordManagerEnabled": false,
+            "ExtensionInstallForcelist": [
+              "pbcgcpeifkdjijdjambaakmhhpkfgoec;https://clients2.google.com/service/update2/crx"
+            ]
           }
         }
       '';

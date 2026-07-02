@@ -49,25 +49,23 @@ Once the vps TPM identity exists:
 
 ## Daily workflow
 
-TPM identity is at `/var/lib/sops/tpm-identity.txt` (needs root for TPM device).
-Run sops with the identity and age-plugin-tpm on PATH:
+The `.envrc` at the repo root sets up the sops environment automatically
+via direnv:
 
 ```sh
-nix shell nixpkgs#sops nixpkgs#age-plugin-tpm --command \
-  sops --age-identity /var/lib/sops/tpm-identity.txt secrets/vps/secrets.yaml
-
-nix shell nixpkgs#sops nixpkgs#age-plugin-tpm --command \
-  sops --age-identity /var/lib/sops/tpm-identity.txt \
-    --rotate --in-place secrets/vps/secrets.yaml
-
-nix shell nixpkgs#sops nixpkgs#age-plugin-tpm --command \
-  sops --age-identity /var/lib/sops/tpm-identity.txt \
-    -d secrets/vps/secrets.yaml | grep tailscale
+cd /Storage/Git/spectacle          # direnv loads .envrc
+sudo sops secrets/vps/secrets.yaml # decrypts using TPM, opens $EDITOR
+# edit plaintext → save → sops encrypts
 ```
+
+The `env_keep` rule in the sops-cli aspect preserves `SOPS_AGE_KEY_FILE`
+and `SOPS_CONFIG` through `sudo`. The default editor is `micro`
+(configured via `$SOPS_EDITOR` in `.envrc`); override via
+`SOPS_EDITOR` in `.envrc.local` if needed.
 
 ## Adding a new secret
 
-1. `sops secrets/vps/secrets.yaml` — add the new key-value
+1. `sudo sops secrets/vps/secrets.yaml` — add the new key-value
 2. Declare in `modules/hosts/vps/vps.nix`:
    ```nix
    "new-service/api-key" = {

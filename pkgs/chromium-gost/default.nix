@@ -8,7 +8,13 @@
 , libxkbfile, qt6, vivaldi-ffmpeg-codecs
 }:
 
-stdenv.mkDerivation rec {
+let
+  sabyCrx = fetchurl {
+    url = "https://clients2.google.com/service/update2/crx?response=redirect&prodversion=148.0&acceptformat=crx3&x=id%3Dpbcgcpeifkdjijdjambaakmhhpkfgoec%26installsource%3Dpolicy%26uc";
+    name = "saby-extension.crx";
+    sha256 = "sha256-4BaGxywE2iQ6MRP7Sz4bg3PaDoBTPFNJ2NZaU9B3AjE=";
+  };
+in stdenv.mkDerivation rec {
   pname = "chromium-gost";
   version = "148.0.7778.280";
 
@@ -101,6 +107,9 @@ stdenv.mkDerivation rec {
       ln -s "$out/opt/chromium-gost/product_logo_$size.png" \
         "$out/share/icons/hicolor/''${size}x''${size}/apps/chromium-gost.png"
     done
+    # Saby extension (force-install via CWS blocked by debugger + downloads.open perms)
+    cp ${sabyCrx} "$out/opt/chromium-gost/default_apps/pbcgcpeifkdjijdjambaakmhhpkfgoec-26.3213.2.crx"
+
     # Auto-install bundled default extensions via external_extensions.json
     cd $out/opt/chromium-gost/default_apps
     json="{"

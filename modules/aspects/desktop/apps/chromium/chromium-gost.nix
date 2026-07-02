@@ -18,7 +18,13 @@ in {
             "AutoFillEnabled": false,
             "PasswordManagerEnabled": false,
             "ExtensionInstallForcelist": [
-              "pbcgcpeifkdjijdjambaakmhhpkfgoec;https://clients2.google.com/service/update2/crx"
+              "pbcgcpeifkdjijdjambaakmhhpkfgoec;https://clients2.google.com/service/update2/crx",
+              "hnhppcgejeffnbnioloohhmndpmclaga;https://clients2.google.com/service/update2/crx",
+              "nejicfcnfnecdilmajlppdcgbjilgeec;https://clients2.google.com/service/update2/crx",
+              "akpjpngckapnibajopggmfhnchfpnkkf;https://clients2.google.com/service/update2/crx",
+              "momffihklfhkoakghidmkdocdkbfmoac;https://clients2.google.com/service/update2/crx",
+              "kbeplgmhdbgnbpfkcmndbhjfadkhinhn;https://clients2.google.com/service/update2/crx",
+              "nhbmmgegnhdhkcclaandbaipceebnckc;https://clients2.google.com/service/update2/crx"
             ]
           }
         }

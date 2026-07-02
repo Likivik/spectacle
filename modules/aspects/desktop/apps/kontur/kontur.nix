@@ -31,14 +31,6 @@ in {
       in {
         "chromium/native-messaging-hosts/kontur.plugin.json".source = chromeManifest;
         "opt/chrome/native-messaging-hosts/kontur.plugin.json".source = chromeManifest;
-
-        "chromium/policies/managed/kontur-extensions.json".text = ''
-          {
-            "ExtensionInstallForcelist": [
-              ${lib.concatMapStringsSep ",\n              " (id: "\"${id};https://clients2.google.com/service/update2/crx\"") addonIds}
-            ]
-          }
-        '';
       };
     };
   };

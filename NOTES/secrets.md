@@ -58,10 +58,17 @@ sudo sops secrets/vps/secrets.yaml # decrypts using TPM, opens $EDITOR
 # edit plaintext → save → sops encrypts
 ```
 
-The `env_keep` rule in the sops-cli aspect preserves `SOPS_AGE_KEY_FILE`
-and `SOPS_CONFIG` through `sudo`. The default editor is `micro`
-(configured via `$SOPS_EDITOR` in `.envrc`); override via
-`SOPS_EDITOR` in `.envrc.local` if needed.
+The `env_keep` rule in the sops-cli aspect preserves `SOPS_AGE_KEY_FILE`,
+`SOPS_CONFIG`, and `SOPS_EDITOR` through `sudo`.
+
+Editor setup:
+- `$SOPS_EDITOR=micro` (sops-cli aspect, system-wide) — sops overrides
+  `$EDITOR` for its own editing; safe to run as root
+- `$EDITOR=micro` (direnv aspect, system-wide) — terminal fallback for
+  programs that don't check `$SOPS_EDITOR or `$VISUAL`
+- `$VISUAL=vscodium` (direnv aspect, user-level) — GUI editor for
+  programs that check `$VISUAL` first (git, etc.); kept out of root's
+  env
 
 ## Adding a new secret
 

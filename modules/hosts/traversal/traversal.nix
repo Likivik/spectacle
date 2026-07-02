@@ -18,6 +18,8 @@
       den.aspects.cprocsp
       den.aspects.chromium-gost
       den.aspects.gosuslugi
+      den.aspects.saby
+      den.aspects.kontur
       den.aspects.firefox
       den.aspects.tts
     ];

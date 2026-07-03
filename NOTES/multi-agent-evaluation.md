@@ -173,7 +173,7 @@ contains only `plan` and `build`; everything else lives in @ autocomplete and is
 
 | Agent | Model | Mode | Cost/session | Role |
 |---|---|---|---|---|
-| plan | MiniMax M3 ($0.30/$1.20) | primary | $0.72 | Daily plan mode (Tab cycle default) |
+| plan | Qwen3.7 Plus ($0.40/$1.60) | primary | ~$0.70 | Daily plan mode (Tab cycle default) |
 | build | DeepSeek V4 Flash ($0.14/$0.28) | primary | $0.15 | Implementation (Tab cycle) |
 | flagship-consultant | GLM-5.2 | subagent | $2.50 | Heavy sessions + escalation oracle (via @ or Task) |
 | plan-free | big-pickle (`opencode/big-pickle`) | subagent | $0 (logged) | Free tier plan fallback (via @ or Task) |
@@ -187,7 +187,7 @@ endpoint died; no free replacement that fits the routing.
 
 **Tab cycle:** plan → build. All other agents are subagents (not in Tab, but @-mentionable and
 Task-callable).
-**Budget:** ~$40/mo at current routing (plan $0.72 + build $0.15 + explore $0.15 = $1.02/session
+**Budget:** ~$39/mo at current routing (plan ~$0.70 + build $0.15 + explore $0.15 = $1.00/session
 × ~38 sessions ≈ $39). Tighter headroom under $60 opencode-go cap. flagship-consultant ($2.50)
 reserved for heavy work / escalation. plan-free (big-pickle) prompts are logged — avoid for
 sensitive work.

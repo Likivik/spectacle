@@ -21,14 +21,14 @@ For opencode-go full model table + tier strategy, see `NOTES/OPENCODE-GO.md`.
 
 ## Source 1: opencode-go (subscription, $10/mo)
 
-**Limits are dollar-based: $12/5hr, $30/week, $60/month.** Request counts are estimates — cheaper models allow more requests. No per-token cost. Best for high-volume daily work. 15 models including new MiniMax M3 + MiMo-V2.5-Pro.
+**Limits are dollar-based: $12/5hr, $30/week, $60/month.** Request counts are estimates — cheaper models allow more requests. No per-token cost. Best for high-volume daily work. 15 models including MiniMax M3 + MiMo-V2.5-Pro.
 
 Full model table + tier strategy: see `NOTES/OPENCODE-GO.md`.
 
 **Tiers at a glance:**
 - **Flagship (low freq, hard reasoning):** GLM-5.2, GLM-5.1, Qwen3.7 Max
 - **Code-specialized mid (review, refactor):** DeepSeek V4 Pro, MiMo-V2.5-Pro, Kimi K2.7 Code, Kimi K2.6
-- **General mid (exploration, daily work):** Qwen3.7 Plus (best value), Qwen3.6 Plus, MiniMax M3 (promo), MiniMax M2.7
+- **General mid (exploration, daily work):** Qwen3.7 Plus (best value), Qwen3.6 Plus, MiniMax M3, MiniMax M2.7
 - **Lightweight (high-volume mechanical):** DeepSeek V4 Flash, MiMo-V2.5
 
 ## Source 2: opencode Zen free (provider `opencode`, $0/token)

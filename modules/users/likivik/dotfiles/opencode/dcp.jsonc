@@ -5,18 +5,18 @@
   // and stays quiet below minContextLimit.
   //
   // Model context windows (per opencode-go catalog):
-  //   minimax-m3: 256K, deepseek-v4-flash: 1M, glm-5.2: 1M, deepseek-v4-pro: 1M
+  //   qwen3.7-plus: 256K, deepseek-v4-flash: 1M, glm-5.2: 1M, deepseek-v4-pro: 1M
   // Note: opencode runtime may fall back to 200K when loading these;
   // using absolute numbers avoids that bug.
   "compress": {
     "modelMaxLimits": {
-      "opencode-go/minimax-m3": 150000,
+      "opencode-go/qwen3.7-plus": 150000,
       "opencode-go/deepseek-v4-flash": 250000,
       "opencode-go/glm-5.2": 300000,
       "opencode-go/deepseek-v4-pro": 300000
     },
     "modelMinLimits": {
-      "opencode-go/minimax-m3": 80000,
+      "opencode-go/qwen3.7-plus": 80000,
       "opencode-go/deepseek-v4-flash": 120000,
       "opencode-go/glm-5.2": 150000,
       "opencode-go/deepseek-v4-pro": 150000

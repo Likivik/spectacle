@@ -49,7 +49,7 @@ Per 1M tokens (input / output / cached-read). Request estimates from opencode.ai
 | MiMo-V2.5 | $0.14 | $0.28 | $0.0028 | 30,100 | 75,200 | 150,400 |
 
 **Notes:**
-- **MiniMax M3** is NEW — currently gets 3× usage limits for a limited time per opencode.ai/go landing page.
+- **MiniMax M3** — 3× usage promotion has ended. Normal limits apply.
 - **MiMo-V2.5-Pro** is NEW — same pricing tier as DeepSeek V4 Pro (mid-tier code reasoning).
 - Qwen3.7 Plus / Qwen3.6 Plus have a **long-context price jump** at >256K (3-4× cost).
 - DeepSeek V4 Pro / MiMo-V2.5-Pro have the **cheapest cached read** ($0.0145) — good for agentic loops that re-read context.
@@ -71,11 +71,11 @@ Per 1M tokens (input / output / cached-read). Request estimates from opencode.ai
 - **Kimi K2.6** (`1,150 | 2,880 | 5,750`): previous Kimi code model. Fallback to K2.7 Code.
 
 ### General mid (exploration, daily work)
-**Qwen3.7 Plus (best value) > Qwen3.6 Plus > MiniMax M3 (promo) > MiniMax M2.7**
+**Qwen3.7 Plus (best value) > Qwen3.6 Plus > MiniMax M3 > MiniMax M2.7**
 
 - **Qwen3.7 Plus** (`4,300 | 10,800 | 21,600`): **best mid-tier value.** Highest req budget. "Punches way above its weight class" — inherits much of the advanced reasoning, instruction-following, and multilingual coding of the Max flagship tier.
 - **Qwen3.6 Plus** (`3,300 | 8,200 | 16,300`): previous Qwen Plus generation. Still capable for data parsing + general logic, but behind 3.7 in raw reasoning.
-- **MiniMax M3** (`3,200 | 8,000 | 16,000`): NEW, currently 3× usage limits promo. Excellent for creative writing, long-context conversational memory, human-like interaction. Lower on complex logic / code execution / rigorous step-by-step reasoning.
+- **MiniMax M3** (`3,200 | 8,000 | 16,000`): 3× usage promo has ended. Excellent for creative writing, long-context conversational memory, human-like interaction. Lower on complex logic / code execution / rigorous step-by-step reasoning.
 - **MiniMax M2.7** (`3,400 | 8,500 | 17,000`): previous MiniMax. Similar budget. Fallback to M3.
 
 ### Lightweight (high-volume mechanical)

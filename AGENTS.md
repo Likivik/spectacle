@@ -86,7 +86,7 @@ nh os boot --ask .#hostname   # staged for next reboot
 
 | Agent | Model | Mode | Cost/session | Role |
 |---|---|---|---|---|---|
-| plan | MiniMax M3 | primary | $0.72 | Daily plan mode (Tab cycle default) |
+| plan | Qwen3.7 Plus | primary | ~$0.70 | Daily plan mode (Tab cycle default) |
 | build | DeepSeek V4 Flash | primary | $0.15 | Implementation (Tab cycle) |
 | flagship-consultant | GLM-5.2 | subagent | $2.50 | Heavy sessions + escalation oracle (via @ or Task tool) |
 | plan-free | big-pickle (opencode-zen) | subagent | $0 (prompts logged) | Free tier plan fallback (via @ or Task tool) |
@@ -109,7 +109,7 @@ Before `nh os switch`, get a diff review:
 Reviewer (DeepSeek V4 Pro) can run `git diff*`, `nix eval*`, `nix flake check*` only. Cannot edit files or spawn subagents.
 
 ### Budget
-~$40/mo at current routing (plan $0.72 + build $0.15 + explore $0.15 + den-expert $0.15 + nix-maid-expert $0.15 = $1.32/session × ~30 sessions ≈ $40). Tighter headroom under $60 opencode-go monthly cap. flagship-consultant sessions ($2.50) for heavy work or escalation. plan-free (big-pickle) is $0 nominal but prompts are logged for model improvement — avoid for sensitive work.
+~$39/mo at current routing (plan ~$0.70 + build $0.15 + explore $0.15 + den-expert $0.15 + nix-maid-expert $0.15 = $1.30/session × ~30 sessions ≈ $39). Tighter headroom under $60 opencode-go monthly cap. flagship-consultant sessions ($2.50) for heavy work or escalation. plan-free (big-pickle) is $0 nominal but prompts are logged for model improvement — avoid for sensitive work.
 
 Domain-specialist subagents (den-expert, nix-maid-expert) only cost when invoked via Task tool or @mention — their $0.15/session estimate is a ceiling assuming 1 call per session. In practice they cost essentially nothing until used.
 

@@ -152,16 +152,6 @@ Default label set (five canonical roles). See `docs/agents/triage-labels.md`.
 
 Single-context repo — no CONTEXT.md or docs/adr/ yet (created lazily). See `docs/agents/domain.md`.
 
-## Worktrees
-
-Auto-managed by `.opencode/plugins/auto-worktree.ts`.
-
-- **Trigger**: on session start (auto), no prompt
-- **Branch**: `opencode/ses_<sessionId>`
-- **Storage**: `.opencode/worktrees/opencode/ses_<id>/` (gitignored)
-- **Cleanup**: auto-commit + remove on session end
-- **Manual tools**: `worktree_list` (status) and `worktree_finish` (cleanup current)
-
 ## Memory (Mnemosyne MCP)
 
 Canonical Mnemosyne reference (tools, triggers, importance, scope) in `~/.config/opencode/AGENTS.md`.

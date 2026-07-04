@@ -29,6 +29,13 @@ in {
           }
         }
       '';
+
+      environment.etc."chromium/extensions/pbcgcpeifkdjijdjambaakmhhpkfgoec.json".source =
+        pkgs.writeText "pbcgcpeifkdjijdjambaakmhhpkfgoec.json" (builtins.toJSON {
+          external_crx = "${chromiumGost}/opt/chromium-gost/default_apps/pbcgcpeifkdjijdjambaakmhhpkfgoec-26.3213.2.crx";
+          external_version = "26.3213.2";
+          external_update_url = "https://clients2.google.com/service/update2/crx";
+        });
     };
   };
 }

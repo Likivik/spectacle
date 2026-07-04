@@ -16,6 +16,7 @@
         #        --rev <new-tag> --nix amnezia-vpn amnezia-client
         #   3. Patch the SRI hash below, switch, test
         #   4. When upstream catches up, flip back to "unstable"
+        vpnFallback = pkgs.callPackage ../../../../pkgs/vpn-fallback { };
         amneziaSource = "local";
         amneziaSrc = pkgs.fetchFromGitHub {
           owner = "amnezia-vpn";
@@ -30,10 +31,11 @@
           lib.optional (amneziaSource == "master") (final: prev: {
             amnezia-vpn = inputs.nixpkgs-master.legacyPackages.${pkgs.system}.amnezia-vpn;
           })
-          ++ lib.optional (amneziaSource == "local") (final: prev: {
-            amnezia-vpn = prev.amnezia-vpn.overrideAttrs (_: {
+           ++ lib.optional (amneziaSource == "local") (final: prev: {
+            amnezia-vpn = prev.amnezia-vpn.overrideAttrs (old: {
               version = "4.8.19.0";
               src = amneziaSrc;
+              # wrapGAppsHook4 removed — file-chooser portal routing handles it
             });
           });
 
@@ -53,13 +55,47 @@
           mozillavpn
           proton-vpn
 
+          vpnFallback
+          byedpi
+          xray   # VLESS Reality engine (TUN-mode, managed via vpn-fallback v2ray)
         ];
 
-         services.v2raya = {
-            enable = true;
-            # in case of error in browsers this was reported to help:
-            # cliPackage = pkgs.v2ray;
+         # v2raya replaced by xray-vless (TUN-mode VLESS Reality service below)
+         # services.v2raya.enable = true;
+
+         systemd.tmpfiles.rules = [
+           "d /opt/vless 0700 root root - -"
+         ];
+
+         systemd.services.xray-vless = {
+           description = "xray-core VLESS Reality tunnel (TUN mode)";
+           after = [ "network-online.target" ];
+           wants = [ "network-online.target" ];
+           # NOT in wantedBy — manual start via vpn-fallback dispatcher
+           serviceConfig = {
+             Type = "simple";
+             User = "root";
+             ExecStartPre =
+               "${pkgs.bash}/bin/bash -ec 'if [ ! -f /opt/vless/config.json ]; then echo \"no /opt/vless/config.json — create from secrets/vless/config.template.json\" >&2; exit 1; fi; if head -1 /opt/vless/config.json | grep -q \"^sops$\" && command -v sops >/dev/null 2>&1; then ${pkgs.sops}/bin/sops decrypt /opt/vless/config.json > /run/secrets/vless-config.json; else cp /opt/vless/config.json /run/secrets/vless-config.json; fi'";
+             ExecStart = "${pkgs.xray}/bin/xray run -c /run/secrets/vless-config.json";
+             Restart = "on-failure";
+             RestartSec = "5s";
+             LimitNOFILE = "infinity";
+           };
          };
+
+        services.zapret = {
+          enable = true;
+          configureFirewall = true;
+          # set from blockcheck output (ran on traversal 2026-07-03)
+          params = [
+            "--dpi-desync=hostfakesplit"
+            "--dpi-desync-ttl=7"
+          ];
+        };
+        # Keep the unit and firewall rules available for vpn-fallback
+        # but don't auto-start at boot — managed manually via `vpn-fallback zapret on/off`
+        systemd.services.zapret.wantedBy = lib.mkForce [ ];
 
         # ── L2TP + AmneziaVPN coexistence ────────────────────────────────────
         # AmneziaVPN installs two routes that together cover ALL IPv4:

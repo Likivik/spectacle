@@ -41,6 +41,8 @@ in
         allowedTCPPorts = lib.mkForce [ 22 ];
       });
 
+      swapDevices = [ { device = "/swapfile"; size = 4096; } ];
+
       systemd.tmpfiles.rules = [
         "d /var/lib/hermes/.hermes 0750 hermes hermes - -"
         "L+ /var/lib/hermes/.hermes/config.yaml - - - - /var/lib/spectacle/modules/hosts/vps/hermes-config.yaml"
@@ -81,6 +83,8 @@ in
         timerConfig.OnCalendar = "daily";
       };
 
+      sops.age.keyFile = "/var/lib/sops/age-key.txt";
+
       sops.secrets = {
         "tailscale/auth-key" = {
           sopsFile = ../../../secrets/vps/secrets.yaml;
@@ -97,6 +101,16 @@ in
           mode = "0600";
         };
       };
+
+      users.users.likivik.openssh.authorizedKeys.keys = [
+        "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDLeI2EqFsNLBPNIi/neXss0yZ3Q0vLevkiK5gfF5Fc+Zo0i9Nf0JPPkq3ak+uc5wJvumSvMAgO+gUUxDbQ6ieMZKCU6HSEhcQvjiHKczyYx+mDxxz6TXnd9TQRUFwmM/u/5kocl9PIwzjDnEdC/84H4sKiv9tmCy6Lv97VpdTYwkYerNWPm3wiapfGROHcS1WjKFOTD7+S++SQLDzir07W509b15HzgiP0Mk7Jdcc3axfIVl/FykGUQeYEFCram0XHvlDIB4yCb9rFxVACQXvUFgXLLb942lvoKeg5d2HbOxLXRVFlJJCnJlYQB3aKis983zjNmZ18Pm21YYvG6vmH traversal-likivik-2024-07-rsa"
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPyWUPBV/fxkioRPFJ5ws3XQYwMX0hzo6SmQSJkLSV5w likivik@gmail.com"
+      ];
+
+      security.sudo.extraRules = [{
+        users = [ "likivik" ];
+        commands = [{ command = "ALL"; options = [ "NOPASSWD" ]; }];
+      }];
 
       services.tailscale.authKeyFile =
         config.sops.secrets."tailscale/auth-key".path;

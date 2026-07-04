@@ -1,17 +1,6 @@
 ## Workflow
 - ALWAYS ask user to choose direction/strategy/approach, NEVER decide on your own without approval
 
-## Worktrees
-
-Auto-managed by `.opencode/plugins/auto-worktree.ts`.
-
-- **Trigger**: on session start (auto), no prompt
-- **Branch**: `opencode/ses_<sessionId>`
-- **Storage**: `.opencode/worktrees/opencode/ses_<id>/` (gitignored)
-- **Cleanup**: auto-commit + remove on session end
-- **Manual tools**: `worktree_list` (status) and `worktree_finish` (cleanup current)
-
-
 ## Response style (IMPORTANT!!!)
 - 4 lines max by default. Longer only on request.
 - Terse. Fragments. Arrows for causality.

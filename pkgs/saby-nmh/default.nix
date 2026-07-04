@@ -1,5 +1,5 @@
 { stdenv, lib, fetchurl, dpkg, autoPatchelfHook, bubblewrap, coreutils
-, utillinux
+, util-linux
 }:
 
 let
@@ -21,7 +21,7 @@ stdenv.mkDerivation {
 
   buildInputs = [
     stdenv.cc.cc.lib
-    utillinux
+    util-linux
   ];
 
   installPhase = ''

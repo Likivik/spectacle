@@ -703,7 +703,11 @@
     }
   },
   "clipboardEnterToPaste": false,
-  "launcherPluginVisibility": {},
+  "launcherPluginVisibility": {
+    "nixPackageRunner": {
+      "allowWithoutTrigger": true
+    }
+  },
   "launcherPluginOrder": [],
   "configVersion": 5
 }

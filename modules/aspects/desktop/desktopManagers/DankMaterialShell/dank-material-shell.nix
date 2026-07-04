@@ -115,6 +115,8 @@
           tela-icon-theme
           kdePackages.breeze-icons
           kdePackages.qt6ct
+          kdePackages.okular
+          kdePackages.ark
           kitty
           ghostty
           wezterm
@@ -132,6 +134,9 @@
           pkgs.nordzy-cursor-theme
           pkgs.posy-cursors
         ];
+
+        # GTK_USE_PORTAL set in niri.nix — routes GTK file dialogs
+        # through xdg-desktop-portal-kde.
 
         services.gnome.gnome-keyring.enable = true;
         security.pam.services.dms-greeter.enableGnomeKeyring = true;
@@ -151,10 +156,39 @@
         file.xdg_config."qt6ct/qt6ct.conf".text = ''
           [Appearance]
           icon_theme=Tela
+          standard_dialogs=filechooser
         '';
         file.xdg_config."ghostty/config".source = "/Storage/Git/spectacle/modules/users/likivik/dotfiles/ghostty/config";
         file.xdg_config."kitty/kitty.conf".source = "/Storage/Git/spectacle/modules/users/likivik/dotfiles/kitty/kitty.conf";
         file.xdg_config."wezterm/wezterm.lua".source = "/Storage/Git/spectacle/modules/users/likivik/dotfiles/wezterm/wezterm.lua";
+        file.xdg_config."mimeapps.list".text = ''
+          [Default Applications]
+          inode/directory=org.kde.dolphin.desktop
+          image/*=qimgv.desktop
+          image/svg+xml=qimgv.desktop
+          image/vnd.adobe.photoshop=org.kde.krita.desktop
+          image/vnd.krita=org.kde.krita.desktop
+          video/*=org.kde.haruna.desktop
+          application/pdf=org.kde.okular.desktop
+          text/*=codium.desktop
+          application/msword=writer.desktop
+          application/vnd.openxmlformats-officedocument.wordprocessingml.document=writer.desktop
+          application/vnd.ms-excel=calc.desktop
+          application/vnd.openxmlformats-officedocument.spreadsheetml.sheet=calc.desktop
+          application/vnd.ms-powerpoint=impress.desktop
+          application/vnd.openxmlformats-officedocument.presentationml.presentation=impress.desktop
+          application/vnd.oasis.opendocument.text=writer.desktop
+          application/vnd.oasis.opendocument.spreadsheet=calc.desktop
+          application/vnd.oasis.opendocument.presentation=impress.desktop
+          application/zip=org.kde.ark.desktop
+          application/x-tar=org.kde.ark.desktop
+          application/gzip=org.kde.ark.desktop
+          application/x-7z-compressed=org.kde.ark.desktop
+          application/x-rar=org.kde.ark.desktop
+          x-scheme-handler/http=firefox.desktop
+          x-scheme-handler/https=firefox.desktop
+          x-scheme-handler/about=firefox.desktop
+        '';
       };
   };
 }

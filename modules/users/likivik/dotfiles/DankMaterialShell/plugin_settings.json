@@ -71,5 +71,14 @@
   },
   "keybindingCheatSheet": {
     "enabled": false
+  },
+  "nixMonitor": {
+    "enabled": false
+  },
+  "nixPackageRunner": {
+    "enabled": true
+  },
+  "ocrScanner": {
+    "enabled": true
   }
 }

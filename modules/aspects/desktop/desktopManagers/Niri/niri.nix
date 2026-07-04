@@ -18,9 +18,17 @@
       environment.etc."keyd/default.conf".source =
         ../../../../../modules/users/likivik/dotfiles/keyd/default.conf;
 
-      xdg.portal = {
-        enable = true;
-        extraPortals = with pkgs; [ xdg-desktop-portal-gtk xdg-desktop-portal-gnome xdg-desktop-portal-wlr xdg-desktop-portal-termfilechooser ];
+xdg.portal = {
+         enable = true;
+         config.common."org.freedesktop.impl.portal.FileChooser" = [ "kde" ];
+         extraPortals = with pkgs; [ xdg-desktop-portal-wlr ];
+         configPackages = [ pkgs.kdePackages.xdg-desktop-portal-kde ];
+       };
+
+      environment.sessionVariables = {
+        QT_QPA_PLATFORMTHEME = "qt6ct";
+        QT_QPA_PLATFORMTHEME_QT6 = "qt6ct";
+        GTK_USE_PORTAL = "1";
       };
 
       environment.systemPackages = [

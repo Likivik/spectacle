@@ -78,6 +78,12 @@ window-rule {
     open-floating true
 }
 
+window-rule {
+    match app-id="xdg-desktop-portal-kde"
+    default-column-width { proportion 0.5; }
+    default-window-height { proportion 0.8; }
+}
+
 spawn-at-startup "niri-float-sticky"
 
 binds {

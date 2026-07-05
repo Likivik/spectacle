@@ -9,7 +9,7 @@
 ### Step 1: Get age pubkey from VPS
 
 ```bash
-ssh root@148.253.214.185 cat /etc/ssh/ssh_host_ed25519_key.pub | nix run nixpkgs#ssh-to-age --
+ssh root@148.253.214.185 cat /etc/ssh/ssh_host_ed25519_key.pub | ssh-to-age
 ```
 
 Outputs `age1...` — copy this for Step 2.
@@ -39,9 +39,7 @@ sudo sops updatekeys -y secrets/erebus/secrets.yaml
 sudo sops secrets/erebus/secrets.yaml
 ```
 
-Replace `REPLACE_ME` with real values:
-- `tailscale_auth_key`: generate from Tailscale admin → Settings → Keys → Generate auth key (ephemeral recommended)
-- `hermes_openrouter_api_key`: generate from OpenRouter dashboard
+
 
 ### Step 5: Pre-flight checklist
 
@@ -59,7 +57,7 @@ Replace `REPLACE_ME` with real values:
 No `--extra-files` needed — authorized keys are declared in `erebus.nix`, age key is derived from the preserved SSH key at boot.
 
 ```bash
-nix run github:nix-community/nixos-anywhere -- \
+nixos-anywhere \
   --flake .#erebus \
   --copy-host-keys \
   --generate-hardware-config nixos-facter ./modules/hosts/erebus/facter.json \
@@ -101,6 +99,15 @@ git push
 
 ## Troubleshooting
 
+### nixos-anywhere fails at build step (before disko)
+
+If nixos-anywhere errors during the build phase (derivation evaluation), **the VPS is untouched** — no kexec, no disko, no changes. Fix the flake error locally, re-run nixos-anywhere. The VPS is still running its original OS, SSH still works.
+
+```bash
+# Verify VPS still reachable and unchanged
+ssh root@148.253.214.185 hostnamectl
+```
+
 ### nixos-anywhere fails mid-way
 
 If disko destroys partitions but install/reboot fails (network drop, OOM):
@@ -140,6 +147,9 @@ A: authorized_keys are declared in `erebus.nix` via `users.users.likivik.openssh
 
 **Q: What happens on each nixos-anywhere phase?**  
 A: 1) kexec (reboot into NixOS installer). 2) disko (destroy partitions, create per `_disko.nix`). 3) install (copy closure, `--copy-host-keys` copies SSH keys, Nix config applied). 4) reboot into new NixOS.
+
+**Q: How to verify the VPS is still alive after a build failure?**  
+A: `ssh root@148.253.214.185 hostnamectl` — if it responds, VPS is unchanged (build errored before kexec). Fix flake, re-run.
 
 **Q: What do Numtide themselves use?**  
 A: This exact flow — they built `--copy-host-keys` and `ssh-to-age` to solve this exact problem. No local keygen, no extra-files, one command.

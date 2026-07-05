@@ -7,11 +7,16 @@ Flake uses `github:denful/den`. Docs: https://den.denful.com/
 ```bash
 # only if inputs changed, binary cache was added or flake.nix needs to be rebuilt for some reason:
 nix run .#write-flake && nix flake update <input-name>
-  
-# Quick eval-only check (skip building derivations)
+
+# After changing one host — dry-build it (catches eval + build errors)
+nix build .#nixosConfigurations.<hostname>.config.system.build.toplevel --dry-run
+
+# After changing shared modules (aspects, inputs, defaults) — check all hosts
 nix flake check --no-build --keep-going
 ```
 **Gotcha**: New files must be `git add`ed *before* `nix flake check` — flake's git-aware fetcher only sees tracked files.
+
+**Gotcha**: `nixos = { ... }:` discards module args. Capture `pkgs` explicitly: `nixos = { pkgs, ... }:`. Errors surface at build—`--dry-run` catches them.
 
 ## `nh os switch` requires sudo — agent cannot run non-interactively
 

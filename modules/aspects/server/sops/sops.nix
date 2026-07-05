@@ -8,7 +8,7 @@
   };
 
   den.aspects.server.sops = {
-    nixos = { ... }: {
+    nixos = { pkgs, ... }: {
       imports = [ inputs.sops-nix.nixosModules.sops ];
 
       sops = {

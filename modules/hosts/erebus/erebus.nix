@@ -91,9 +91,9 @@ in
           group = "root";
           mode = "0600";
         };
-        "hermes/openrouter-api-key" = {
+        "hermes/opencode-go-api-key" = {
           sopsFile = ../../../secrets/erebus/secrets.yaml;
-          key = "hermes_openrouter_api_key";
+          key = "hermes_opencode_go_api_key";
           owner = "hermes";
           group = "hermes";
           mode = "0600";
@@ -117,7 +117,7 @@ in
 
       system.activationScripts."hermes-secrets-env" =
         lib.stringAfter [ "hermes-agent-setup" ] ''
-          echo "OPENROUTER_API_KEY=$(${pkgs.coreutils}/bin/cat ${config.sops.secrets."hermes/openrouter-api-key".path})" \
+          echo "OPENROUTER_API_KEY=$(${pkgs.coreutils}/bin/cat ${config.sops.secrets."hermes/opencode-go-api-key".path})" \
             >> /var/lib/hermes/.hermes/.env
         '';
     };

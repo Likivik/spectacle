@@ -43,45 +43,8 @@ in
 
       swapDevices = [ { device = "/swapfile"; size = 4096; } ];
 
-      systemd.tmpfiles.rules = [
-        "d /var/lib/hermes/.hermes 0750 hermes hermes - -"
-        "L+ /var/lib/hermes/.hermes/config.yaml - - - - /var/lib/spectacle/modules/hosts/erebus/hermes-config.yaml"
-      ];
-
       users.groups.hermes = { };
       users.users.hermes.extraGroups = [ "likivik" ];
-
-      systemd.paths."hermes-config-watcher" = {
-        pathConfig = {
-          PathChanged = "/var/lib/spectacle/modules/hosts/erebus/hermes-config.yaml";
-        };
-      };
-      systemd.services."hermes-config-watcher" = {
-        serviceConfig = {
-          Type = "simple";
-          ExecStart = "${pkgs.systemd}/bin/systemctl restart hermes-agent.service";
-        };
-      };
-
-      systemd.services."hermes-config-autocommit" = {
-        serviceConfig = {
-          Type = "oneshot";
-          User = "likivik";
-          WorkingDirectory = "/var/lib/spectacle";
-        };
-        script = ''
-          if ! git diff --quiet modules/hosts/erebus/hermes-config.yaml; then
-            git add modules/hosts/erebus/hermes-config.yaml
-            git -c user.name=hermes-agent \
-               -c user.email=hermes-agent@erebus.local \
-               commit -m "hermes-agent: auto-save config edit"
-          fi
-        '';
-      };
-      systemd.timers."hermes-config-autocommit" = {
-        wantedBy = [ "timers.target" ];
-        timerConfig.OnCalendar = "daily";
-      };
 
       sops.secrets = {
         "tailscale/auth-key" = {
@@ -91,6 +54,12 @@ in
           mode = "0600";
         };
         "hermes/opencode-go-api-key" = {
+          sopsFile = ../../../secrets/erebus/secrets.yaml;
+          owner = "hermes";
+          group = "hermes";
+          mode = "0600";
+        };
+        "hermes/nanogpt-api-key" = {
           sopsFile = ../../../secrets/erebus/secrets.yaml;
           owner = "hermes";
           group = "hermes";

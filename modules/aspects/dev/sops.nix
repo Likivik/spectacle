@@ -6,6 +6,8 @@
         sops
         age-plugin-tpm
         micro
+        nixos-anywhere
+        ssh-to-age
       ];
 
       environment.sessionVariables.SOPS_EDITOR = "micro";

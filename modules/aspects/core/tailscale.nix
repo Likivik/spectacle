@@ -5,7 +5,7 @@
       services.tailscale.enable = true;
       services.tailscale.useRoutingFeatures = "both";
       services.tailscale.extraUpFlags = [
-        "--operator=$USER"
+        "--operator=likivik"
         "--accept-routes=true"
       ];
     };

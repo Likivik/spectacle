@@ -12,7 +12,7 @@
       imports = [ inputs.sops-nix.nixosModules.sops ];
 
       sops = {
-        # Bootstrap: use the vps's host SSH key (ssh-to-age).
+        # Bootstrap: use the host's SSH key (ssh-to-age).
         # After first boot, a TPM identity can be created and this
         # can be swapped to:
         #   age.keyFile = "/var/lib/sops/tpm-identity.txt";

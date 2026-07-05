@@ -3,7 +3,7 @@ let
   lockSshToTailscale = false;
 in
 {
-  den.aspects.vps = {
+  den.aspects.erebus = {
     includes = [
       den.aspects.core
       den.aspects.core.tailscale
@@ -45,7 +45,7 @@ in
 
       systemd.tmpfiles.rules = [
         "d /var/lib/hermes/.hermes 0750 hermes hermes - -"
-        "L+ /var/lib/hermes/.hermes/config.yaml - - - - /var/lib/spectacle/modules/hosts/vps/hermes-config.yaml"
+        "L+ /var/lib/hermes/.hermes/config.yaml - - - - /var/lib/spectacle/modules/hosts/erebus/hermes-config.yaml"
       ];
 
       users.groups.hermes = { };
@@ -53,7 +53,7 @@ in
 
       systemd.paths."hermes-config-watcher" = {
         pathConfig = {
-          PathChanged = "/var/lib/spectacle/modules/hosts/vps/hermes-config.yaml";
+          PathChanged = "/var/lib/spectacle/modules/hosts/erebus/hermes-config.yaml";
         };
       };
       systemd.services."hermes-config-watcher" = {
@@ -70,10 +70,10 @@ in
           WorkingDirectory = "/var/lib/spectacle";
         };
         script = ''
-          if ! git diff --quiet modules/hosts/vps/hermes-config.yaml; then
-            git add modules/hosts/vps/hermes-config.yaml
+          if ! git diff --quiet modules/hosts/erebus/hermes-config.yaml; then
+            git add modules/hosts/erebus/hermes-config.yaml
             git -c user.name=hermes-agent \
-               -c user.email=hermes-agent@vps.local \
+               -c user.email=hermes-agent@erebus.local \
                commit -m "hermes-agent: auto-save config edit"
           fi
         '';
@@ -83,18 +83,16 @@ in
         timerConfig.OnCalendar = "daily";
       };
 
-      sops.age.keyFile = "/var/lib/sops/age-key.txt";
-
       sops.secrets = {
         "tailscale/auth-key" = {
-          sopsFile = ../../../secrets/vps/secrets.yaml;
+          sopsFile = ../../../secrets/erebus/secrets.yaml;
           key = "tailscale_auth_key";
           owner = "root";
           group = "root";
           mode = "0600";
         };
         "hermes/openrouter-api-key" = {
-          sopsFile = ../../../secrets/vps/secrets.yaml;
+          sopsFile = ../../../secrets/erebus/secrets.yaml;
           key = "hermes_openrouter_api_key";
           owner = "hermes";
           group = "hermes";

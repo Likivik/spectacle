@@ -86,14 +86,12 @@ in
       sops.secrets = {
         "tailscale/auth-key" = {
           sopsFile = ../../../secrets/erebus/secrets.yaml;
-          key = "tailscale/auth-key";
           owner = "root";
           group = "root";
           mode = "0600";
         };
         "hermes/opencode-go-api-key" = {
           sopsFile = ../../../secrets/erebus/secrets.yaml;
-          key = "hermes/opencode-go-api-key";
           owner = "hermes";
           group = "hermes";
           mode = "0600";

@@ -53,13 +53,7 @@ in
           group = "root";
           mode = "0600";
         };
-        "hermes/opencode-go-api-key" = {
-          sopsFile = ../../../secrets/erebus/secrets.yaml;
-          owner = "hermes";
-          group = "hermes";
-          mode = "0600";
-        };
-        "hermes/nanogpt-api-key" = {
+        "hermes/env" = {
           sopsFile = ../../../secrets/erebus/secrets.yaml;
           owner = "hermes";
           group = "hermes";
@@ -80,13 +74,9 @@ in
       services.tailscale.authKeyFile =
         config.sops.secrets."tailscale/auth-key".path;
 
-      services.hermes-agent.environment = { };
-
-      system.activationScripts."hermes-secrets-env" =
-        lib.stringAfter [ "hermes-agent-setup" ] ''
-          echo "OPENROUTER_API_KEY=$(${pkgs.coreutils}/bin/cat ${config.sops.secrets."hermes/opencode-go-api-key".path})" \
-            >> /var/lib/hermes/.hermes/.env
-        '';
+      services.hermes-agent.environmentFiles = [
+        config.sops.secrets."hermes/env".path
+      ];
     };
   };
 }

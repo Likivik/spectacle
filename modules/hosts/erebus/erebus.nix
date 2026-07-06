@@ -95,6 +95,7 @@ in
 
       services.tailscale.authKeyFile =
         config.sops.secrets."tailscale/auth-key".path;
+      services.tailscale.extraUpFlags = lib.mkAfter [ "--advertise-tags=tag:server" ];
 
       services.hermes-agent.environmentFiles = [
         config.sops.secrets."hermes/env".path

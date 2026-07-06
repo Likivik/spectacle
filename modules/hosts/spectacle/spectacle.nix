@@ -7,7 +7,7 @@
 
         den.aspects.desktop.desktopManagers.gnome
         den.aspects.firefox
-        den.aspects.desktop.common-core.peripherals-base
+        den.aspects.desktop.common-core
         den.aspects.torrserver
 
       ];

@@ -22,10 +22,12 @@
         wants = [ "network-online.target" ];
         serviceConfig.Type = "oneshot";
         script = ''
+          ip rule add fwmark 0x534e table ts-bypass 2>/dev/null || true
           GW_DEV=$(ip route show default | awk '{print $5}')
           GW_IP=$(ip route show default | awk '{print $3}')
-          ip rule add fwmark 0x534e table ts-bypass 2>/dev/null || true
-          ip route replace default via "$GW_IP" dev "$GW_DEV" table ts-bypass
+          if [ -n "$GW_DEV" ]; then
+            ip route replace default via "$GW_IP" dev "$GW_DEV" table ts-bypass
+          fi
         '';
       };
 

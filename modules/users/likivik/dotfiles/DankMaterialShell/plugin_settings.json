@@ -80,5 +80,17 @@
   },
   "ocrScanner": {
     "enabled": true
+  },
+  "vscodeLauncher": {
+    "enabled": true
+  },
+  "wallpaperDiscovery": {
+    "enabled": true
+  },
+  "tailscale": {
+    "enabled": true
+  },
+  "quickTote": {
+    "enabled": true
   }
 }

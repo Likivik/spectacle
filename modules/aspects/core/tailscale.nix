@@ -22,11 +22,11 @@
         wants = [ "network-online.target" ];
         serviceConfig.Type = "oneshot";
         script = ''
-          ${pkgs.iproute2}/bin/ip rule add fwmark 0x534e table ts-bypass 2>/dev/null || true
+          ${pkgs.iproute2}/bin/ip rule add fwmark 0x534e table 534 2>/dev/null || true
           GW_DEV=$(${pkgs.iproute2}/bin/ip route show default | ${pkgs.gawk}/bin/awk '{print $5}')
           GW_IP=$(${pkgs.iproute2}/bin/ip route show default | ${pkgs.gawk}/bin/awk '{print $3}')
           if [ -n "$GW_DEV" ]; then
-            ${pkgs.iproute2}/bin/ip route replace default via "$GW_IP" dev "$GW_DEV" table ts-bypass
+            ${pkgs.iproute2}/bin/ip route replace default via "$GW_IP" dev "$GW_DEV" table 534
           fi
         '';
       };
@@ -37,7 +37,7 @@
           if [ "$2" = "up" ]; then
             GW_DEV=$(${pkgs.iproute2}/bin/ip route show default | ${pkgs.gawk}/bin/awk '{print $5}')
             GW_IP=$(${pkgs.iproute2}/bin/ip route show default | ${pkgs.gawk}/bin/awk '{print $3}')
-            ${pkgs.iproute2}/bin/ip route replace default via "$GW_IP" dev "$GW_DEV" table ts-bypass
+            ${pkgs.iproute2}/bin/ip route replace default via "$GW_IP" dev "$GW_DEV" table 534
           fi
         '';
         type = "basic";

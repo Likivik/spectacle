@@ -181,3 +181,23 @@ A: Can happen if Ubuntu is reinstalled from the provider panel. Re-run `ssh-keyg
 
 **Q: 2FA for SSH?**  
 A: Tailscale mesh VPN (`lockSshToTailscale = true`) — SSH only listens on `tailscale0`, unreachable from public internet.
+
+---
+
+## 3. Remote management
+
+After a successful provision, deploy config changes from an admin host
+(traversal, serenity, etc):
+
+```bash
+nixos-rebuild switch --flake .#erebus \
+  --target-host likivik@148.253.214.185 \
+  --use-remote-sudo
+```
+
+`--use-remote-sudo` calls sudo on the target — `likivik` has `NOPASSWD` on erebus,
+so no password prompt. `nh os switch` needs `--elevation-strategy passwordless`
+for the same reason (`NH_ELEVATION_STRATEGY=passwordless` env var also works).
+
+Pre-flight: ensure you're on a branch pushed to GitHub — the flake is built
+from the remote Git tree, not from local files.

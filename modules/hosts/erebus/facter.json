@@ -261,7 +261,7 @@
           "/dev/disk/by-id/scsi-0QEMU_QEMU_CD-ROM_drive-scsi0-0-1-1",
           "/dev/disk/by-label/cidata",
           "/dev/disk/by-path/pci-0000:00:04.0-scsi-0:0:1:1",
-          "/dev/disk/by-uuid/2026-07-05-19-51-04-00",
+          "/dev/disk/by-uuid/2026-07-06-01-34-49-00",
           "/dev/sr0"
         ],
         "unix_device_name2": "/dev/sg0",
@@ -417,7 +417,7 @@
         "fpu_exception": false,
         "cpuid_level": 22,
         "write_protect": false,
-        "tlb_size": 32767,
+        "tlb_size": 31248,
         "clflush_size": 64,
         "cache_alignment": 64,
         "address_sizes": {
@@ -564,7 +564,7 @@
         "fpu_exception": false,
         "cpuid_level": 22,
         "write_protect": false,
-        "tlb_size": 32767,
+        "tlb_size": 31248,
         "clflush_size": 64,
         "cache_alignment": 64,
         "address_sizes": {
@@ -711,7 +711,7 @@
         "fpu_exception": false,
         "cpuid_level": 22,
         "write_protect": false,
-        "tlb_size": 32767,
+        "tlb_size": 31248,
         "clflush_size": 64,
         "cache_alignment": 64,
         "address_sizes": {
@@ -858,7 +858,7 @@
         "fpu_exception": false,
         "cpuid_level": 22,
         "write_protect": false,
-        "tlb_size": 32767,
+        "tlb_size": 31248,
         "clflush_size": 64,
         "cache_alignment": 64,
         "address_sizes": {

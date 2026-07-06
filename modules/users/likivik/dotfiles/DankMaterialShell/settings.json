@@ -44,7 +44,7 @@
   "blurBorderOpacity": 0.35,
   "wallpaperFillMode": "Fill",
   "blurredWallpaperLayer": false,
-  "blurWallpaperOnOverview": false,
+  "blurWallpaperOnOverview": true,
   "showLauncherButton": true,
   "showWorkspaceSwitcher": true,
   "showFocusedWindow": true,
@@ -531,6 +531,22 @@
         },
         {
           "id": "notificationButton",
+          "enabled": true
+        },
+        {
+          "id": "ocrScanner",
+          "enabled": true
+        },
+        {
+          "id": "quickTote",
+          "enabled": true
+        },
+        {
+          "id": "wallpaperDiscovery",
+          "enabled": true
+        },
+        {
+          "id": "tailscale",
           "enabled": true
         }
       ],

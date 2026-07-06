@@ -37,6 +37,8 @@ in
         networkConfig.DNS = [ "8.8.8.8" "8.8.4.4" ];
       };
 
+      nix.settings.trusted-users = [ "likivik" ];
+
       services.openssh = {
         enable = true;
         openFirewall = true;

@@ -34,15 +34,11 @@ nix eval .#nixosConfigurations.<hostname>.config.networking.hostName
 ```
 Add `--show-trace` if you need a full stack trace on error.
 
-### Full flake eval (all hosts, all outputs)
-```bash
-nix flake check --no-build --keep-going
-```
-
-### Dry build (resolve derivations for one host)
+### Dry build — catches eval + missing deps (single host)
 ```bash
 nix build .#nixosConfigurations.<hostname>.config.system.build.toplevel --dry-run
 ```
+Use `nix flake check --no-build --keep-going` instead if you need to check all hosts.
 
 ### Shell aliases for daily use
 ```bash

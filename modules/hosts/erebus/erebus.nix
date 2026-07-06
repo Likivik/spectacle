@@ -27,6 +27,16 @@ in
       systemd.network.enable = true;
       networking.useNetworkd = true;
 
+      systemd.network.networks."10-ens3" = {
+        matchConfig.Name = "ens3";
+        address = [ "148.253.214.185/32" ];
+        routes = [
+          { Gateway = "10.0.0.1"; }
+          { Destination = "10.0.0.1/32"; }
+        ];
+        networkConfig.DNS = [ "8.8.8.8" "8.8.4.4" ];
+      };
+
       services.openssh = {
         enable = true;
         openFirewall = true;
@@ -70,6 +80,7 @@ in
         };
       };
 
+      users.users.likivik.initialHashedPassword = "$6$1FZNn7nnzCyHhgke$jyU9Ou3/5F2IHWLMGPc/bCDMQctvmKRXWCT6SAmUjhnHXmiOVFMhh4vVFxAoHZ8izk.QhQoyFZlvut6WOxXgb0";
       users.users.likivik.openssh.authorizedKeys.keys = [
         "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDLeI2EqFsNLBPNIi/neXss0yZ3Q0vLevkiK5gfF5Fc+Zo0i9Nf0JPPkq3ak+uc5wJvumSvMAgO+gUUxDbQ6ieMZKCU6HSEhcQvjiHKczyYx+mDxxz6TXnd9TQRUFwmM/u/5kocl9PIwzjDnEdC/84H4sKiv9tmCy6Lv97VpdTYwkYerNWPm3wiapfGROHcS1WjKFOTD7+S++SQLDzir07W509b15HzgiP0Mk7Jdcc3axfIVl/FykGUQeYEFCram0XHvlDIB4yCb9rFxVACQXvUFgXLLb942lvoKeg5d2HbOxLXRVFlJJCnJlYQB3aKis983zjNmZ18Pm21YYvG6vmH traversal-likivik-2024-07-rsa"
         "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPyWUPBV/fxkioRPFJ5ws3XQYwMX0hzo6SmQSJkLSV5w likivik@gmail.com"

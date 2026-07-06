@@ -110,9 +110,20 @@ if [[ "$CONFIRM" =~ ^[Nn] ]]; then
   echo "Aborted."
   exit 0
 fi
-run exec nix run github:nix-community/nixos-anywhere -- \
+run nix run github:nix-community/nixos-anywhere -- \
   --flake .#erebus \
   --copy-host-keys \
   --generate-hardware-config nixos-facter \
     ./modules/hosts/erebus/facter.json \
   --target-host "root@$IP"
+
+# Planned improvements (TODO — post-MVP):
+# ──────────────────────────────────────────────
+# 1. Wait for reboot after nixos-anywhere, poll SSH every 5s (max 12 tries).
+# 2. Fail with ❌ if SSH doesn't come back (instead of letting user discover it).
+# 3. Use provider API (hosting-vds.com) to automate:
+#    - Reinstall Ubuntu via /servers/{id}/reinstall
+#    - Fetch primary_ip + gateway from the response
+#    - Inject IP/gateway into erebus.nix's static networkd config
+#    - Then run nixos-anywhere
+#    This would make redeploy fully one-shot.

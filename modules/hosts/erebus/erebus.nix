@@ -18,6 +18,15 @@ in
         ./_hardware-configuration.nix
       ];
 
+      boot.loader.grub = {
+        enable = true;
+        efiSupport = false;
+      };
+      boot.loader.systemd-boot.enable = lib.mkForce false;
+
+      systemd.network.enable = true;
+      networking.useNetworkd = true;
+
       services.openssh = {
         enable = true;
         openFirewall = true;

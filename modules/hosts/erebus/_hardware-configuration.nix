@@ -3,7 +3,7 @@
 # need to re-run facter. The first nixos-anywhere run will OVERWRITE this file.
 { ... }:
 {
-  boot.initrd.availableKernelModules = [ ];
+  boot.initrd.availableKernelModules = [ "virtio_pci" "virtio_blk" "virtio_scsi" "virtio_net" ];
   boot.initrd.kernelModules = [ ];
   boot.kernelModules = [ ];
   boot.extraModulePackages = [ ];

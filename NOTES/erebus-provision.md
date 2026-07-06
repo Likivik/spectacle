@@ -4,7 +4,25 @@
 **IP:** 148.253.214.185  
 **Theme:** Chthonic — servers that live in the dark
 
-## 1. Manual steps
+## 1. Automated (redeploy from scratch — VPS wiped)
+
+If Ubuntu was just reinstalled from the provider panel (new SSH host key):
+
+```bash
+./modules/hosts/erebus/redeploy.sh
+```
+
+This runs: clear host key → `ssh-copy-id` → fetch age pubkey → update `.sops.yaml` → re-encrypt secrets → commit. Then it prints the nixos-anywhere command.
+
+## 2. Manual steps (for reference)
+
+### Step 0: Install SSH key for passwordless root access
+
+```bash
+ssh-copy-id root@148.253.214.185
+```
+
+Enter root password one last time. Subsequent `ssh root@...` uses key auth.
 
 ### Step 1: Get age pubkey from VPS
 
@@ -43,6 +61,7 @@ sudo sops secrets/erebus/secrets.yaml
 
 ### Step 5: Pre-flight checklist
 
+- [ ] `ssh-copy-id root@148.253.214.185` — passwordless root access set up
 - [ ] `ssh root@148.253.214.185 lsblk` — disk device matches `_disko.nix`
 - [ ] Age pubkey added to `secrets/.sops.yaml` (&erebus `age1...`)
 - [ ] `git log -1` shows `.sops.yaml` commit
@@ -155,10 +174,10 @@ A: `ssh root@148.253.214.185 hostnamectl` — if it responds, VPS is unchanged (
 A: This exact flow — they built `--copy-host-keys` and `ssh-to-age` to solve this exact problem. No local keygen, no extra-files, one command.
 
 **Q: Is this reproducible for monthly re-creation?**  
-A: Yes. Each new VPS has its own SSH host key. You SSH in once, pipe to ssh-to-age, add to `.sops.yaml`, re-encrypt secrets, run nixos-anywhere with `--copy-host-keys`. About 8 steps, all documented above.
+A: Yes. Each new VPS has its own SSH host key. You SSH in once, pipe to ssh-to-age, add to `.sops.yaml`, re-encrypt secrets, run nixos-anywhere with `--copy-host-keys`. About 9 steps, all documented above.
 
 **Q: What if the VPS's SSH key changes between now and nixos-anywhere?**  
-A: Can't happen — nixos-anywhere runs immediately after getting the pubkey. The pubkey goes into `.sops.yaml` at the same moment the key is live.
+A: Can happen if Ubuntu is reinstalled from the provider panel. Re-run `ssh-keygen -R IP`, re-copy your SSH key, and repeat Steps 0-4.
 
 **Q: 2FA for SSH?**  
 A: Tailscale mesh VPN (`lockSshToTailscale = true`) — SSH only listens on `tailscale0`, unreachable from public internet.

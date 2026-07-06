@@ -13,7 +13,6 @@
       {
         users.users.${user.userName} =
           {
-            initialPassword = "vm";
             extraGroups = [
               "wheel" # to use `sudo`
               "networkmanager" # ethernet/wifi access

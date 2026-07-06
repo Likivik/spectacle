@@ -8,6 +8,11 @@
         content = {
           type = "gpt";
           partitions = {
+            BIOS = {
+              size = "1M";
+              type = "EF02";
+              attributes = [ 0 ];
+            };
             ESP = {
               size = "1G";
               type = "EF00";

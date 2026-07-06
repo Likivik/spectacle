@@ -110,65 +110,34 @@
         # table. The problem: Amnezia's client flushes routes when it starts or
         # reconnects, silently removing our entries.
         #
-        # Solution: a systemd timer that re-asserts both routes every 2 minutes.
+        # Solution: an NM dispatcher that re-asserts both routes on NM events
+        # (up, vpn-up, vpn-down), replacing the old polling timer.
         #   ┌─ Route                                ─ Why we need it ────────
         #   │ 46.148.234.215/32 via WiFi gateway    L2TP/IPsec handshake must
         #   │                                       reach the server directly,
         #   │                                       not enter the Amnezia tunnel
         #   │ 10.1.1.0/24 dev ppp*                  RDP traffic must go through
         #   │                                       the L2TP tunnel's ppp interface
-        systemd.services.ensure-l2tp-bypass = {
-          description = "Ensure L2TP VPN server IP bypasses Amnezia VPN tunnel";
-          after = [ "network-online.target" ];
-          wants = [ "network-online.target" ];
-          wantedBy = [ "multi-user.target" ];
-          serviceConfig = {
-            Type = "oneshot";
-            RemainAfterExit = true;
-          };
-          script =
-            let
-              ip = "${pkgs.iproute2}/bin/ip";
-              gawk = "${pkgs.gawk}/bin/awk";
-              coreutils = "${pkgs.coreutils}/bin";
-              gnugrep = "${pkgs.gnugrep}/bin/grep";
-            in ''
-              # Step 1 — find the real WiFi/ethernet default gateway
-              # We MUST skip routes that go through a VPN/tunnel interface
-              # (ppp, tun, tap, amn). When L2TP is active, it adds a default
-              # route via ppp1 that has no gateway IP — that would break the
-              # `ip route replace` command below.
-              GW_DEV=$(${ip} route show default 0.0.0.0/0 | ${gnugrep} -v -E 'dev (ppp|tun|tap|amn)' | ${coreutils}/head -1 | ${gawk} '{print $3, $5}')
-              set -- $GW_DEV
-              GW=$1 DEV=$2
-              if [ -n "$GW" ] && [ -n "$DEV" ]; then
-                # Step 2 — bypass Amnezia for the L2TP server IP
-                # /32 is more specific than Amnezia's /1 → kernel picks this route
-                ${ip} route replace 46.148.234.215/32 via "$GW" dev "$DEV"
-              fi
+        networking.networkmanager.dispatcherScripts = lib.mkIf config.networking.networkmanager.enable [{
+          source = pkgs.writeText "10-l2tp-bypass" ''
+            #!/bin/sh
+            case "$2" in
+              up|vpn-up|vpn-down)
+                GW_DEV=$(${pkgs.iproute2}/bin/ip route show default 0.0.0.0/0 | ${pkgs.gnugrep}/bin/grep -v -E 'dev (ppp|tun|tap|amn)' | ${pkgs.coreutils}/bin/head -1 | ${pkgs.gawk}/bin/awk '{print $3, $5}')
+                set -- $GW_DEV
+                GW=$1 DEV=$2
+                if [ -n "$GW" ] && [ -n "$DEV" ]; then
+                  ${pkgs.iproute2}/bin/ip route replace 46.148.234.215/32 via "$GW" dev "$DEV"
+                fi
 
-              # Step 3 — route RDP subnet through the L2TP tunnel
-              # /24 beats Amnezia's /1 by longest-prefix match.
-              # Loop over all active ppp* interfaces (ppp0, ppp1, …)
-              # in case the L2TP connection was re-established on a new device.
-              for pppdev in $(${ip} link show | ${gnugrep} -oP 'ppp\d+'); do
-                ${ip} route replace 10.1.1.0/24 dev "$pppdev"
-              done
-            '';
-        };
-
-        # Timer: re-asserts routes every 2 minutes as a safety net.
-        # Even after the NM dispatcher and the ppp* loop above run,
-        # AmneziaVPN's client can silently flush our routes when it
-        # re-establishes its tunnel. The timer catches that within 2 min.
-        systemd.timers.ensure-l2tp-bypass = {
-          description = "Periodically re-assert L2TP bypass route";
-          wantedBy = [ "timers.target" ];
-          timerConfig = {
-            OnBootSec = "2min";
-            OnUnitActiveSec = "2min";
-          };
-        };
+                for pppdev in $(${pkgs.iproute2}/bin/ip link show | ${pkgs.gnugrep}/bin/grep -oP 'ppp\d+'); do
+                  ${pkgs.iproute2}/bin/ip route replace 10.1.1.0/24 dev "$pppdev"
+                done
+                ;;
+            esac
+          '';
+          type = "basic";
+        }];
 
          # boot.kernel.sysctl = {
         #   "net.ipv4.conf.all.forwarding" = true;

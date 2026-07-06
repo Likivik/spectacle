@@ -113,6 +113,7 @@
           pcmanfm
           papirus-icon-theme
           tela-icon-theme
+          tesseract
           kdePackages.breeze-icons
           kdePackages.qt6ct
           kdePackages.okular

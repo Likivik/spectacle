@@ -7,6 +7,7 @@
       services.tailscale.extraUpFlags = [
         "--operator=likivik"
         "--accept-routes=true"
+        "--exit-node-allow-lan-access"
         "--fwmark=0x534e"
       ];
 

@@ -7,8 +7,6 @@
       services.tailscale.extraUpFlags = [
         "--operator=likivik"
         "--accept-routes=true"
-        "--exit-node-allow-lan-access"
-        "--fwmark=0x534e"
       ];
 
       networking.iproute2.rttablesExtraConfig = ''

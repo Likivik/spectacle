@@ -96,9 +96,21 @@ in
       services.tailscale.authKeyFile =
         config.sops.secrets."tailscale/auth-key".path;
       services.tailscale.extraUpFlags = lib.mkAfter [
-        "--advertise-tags=tag:server"
+        "--advertise-tags=tag:server,tag:exit-node"
         "--advertise-exit-node"
       ];
+
+      systemd.services.fix-ts-gro = {
+        # See https://tailscale.com/s/ethtool-config-udp-gro
+        description = "Fix UDP GRO forwarding for Tailscale exit node performance";
+        wants = [ "network-online.target" ];
+        after = [ "network-online.target" ];
+        wantedBy = [ "multi-user.target" ];
+        serviceConfig.Type = "oneshot";
+        script = ''
+          ${pkgs.ethtool}/bin/ethtool -K ens3 rx-udp-gro-forwarding on rx-gro-list off
+        '';
+      };
 
       services.hermes-agent.environmentFiles = [
         config.sops.secrets."hermes/env".path

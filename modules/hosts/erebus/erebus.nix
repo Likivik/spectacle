@@ -112,9 +112,54 @@ in
         '';
       };
 
-      services.hermes-agent.environmentFiles = [
-        config.sops.secrets."hermes/env".path
-      ];
+      services.hermes-agent = {
+        environmentFiles = [
+          config.sops.secrets."hermes/env".path
+        ];
+
+        environment = {
+          WHATSAPP_ENABLED = "true";
+          WHATSAPP_MODE = "self-chat";
+        };
+
+        settings = {
+          model = {
+            default = "anthropic/claude-sonnet-4-6";
+            provider = "openrouter";
+            base_url = "https://openrouter.ai/api/v1";
+          };
+
+          toolsets = [ "all" ];
+
+          max_turns = 100;
+
+          terminal = {
+            backend = "local";
+            timeout = 180;
+          };
+
+          memory = {
+            memory_enabled = true;
+            user_profile_enabled = true;
+          };
+
+          display = {
+            host = "0.0.0.0";
+            port = 9119;
+          };
+
+          compression = {
+            enabled = true;
+            threshold = 0.50;
+          };
+
+          session_reset = {
+            mode = "both";
+            idle_minutes = 1440;
+            at_hour = 4;
+          };
+        };
+      };
     };
   };
 }

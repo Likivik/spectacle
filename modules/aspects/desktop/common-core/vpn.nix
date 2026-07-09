@@ -58,6 +58,9 @@
           vpnFallback
           byedpi
           xray   # VLESS Reality engine (TUN-mode, managed via vpn-fallback v2ray)
+
+          zapret   # blockcheck, nfqws, tpws, mdig, ip2net
+          nftables # needed by blockcheck during DPI tests
         ];
 
          # v2raya replaced by xray-vless (TUN-mode VLESS Reality service below)

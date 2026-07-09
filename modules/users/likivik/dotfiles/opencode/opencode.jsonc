@@ -40,7 +40,7 @@
   },
   "agent": {
     "plan": {
-      "model": "opencode-go/qwen3.7-plus"
+      "model": "opencode-go/deepseek-v4-pro"
     },
     "build": {
       "model": "opencode-go/deepseek-v4-flash"

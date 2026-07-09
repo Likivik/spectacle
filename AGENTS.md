@@ -18,29 +18,45 @@ nix flake check --no-build --keep-going
 
 **Gotcha**: `nixos = { ... }:` discards module args. Capture `pkgs` explicitly: `nixos = { pkgs, ... }:`. Errors surface at build—`--dry-run` catches them.
 
-## `nh os switch` requires sudo — agent cannot run non-interactively
+## Deployment — `nh os switch`
 
-Two ways to handle this:
+Always check host first: `hostname -s` (traversal = here, erebus = VPS).
 
-**Manual (default):** Tell the user to run the command and paste the exact invocation.
+**Gotcha**: `.#erebus` on traversal without `--target-host` builds erebus config for traversal hardware — wrong machine.
 
-**Ghostty (agent spawns terminal):** Use `ghostty -e bash -c 'nh os switch --ask .#<host>; read -p "Press enter"'` — opens a new terminal window with a real TTY so sudo can prompt normally. Password stays local, never passes through agent output.
-
-## Quick check after changes — 3 commands for different needs
-
-### Syntax/layout check (fastest, single host)
+### Local (current machine)
 ```bash
-nix eval .#nixosConfigurations.<hostname>.config.networking.hostName
+nh os switch . --ask
 ```
-Add `--show-trace` if you need a full stack trace on error.
 
-### Dry build — catches eval + missing deps (single host)
+### Remote (erebus from traversal)
 ```bash
+nh os switch .#erebus --target-host likivik@148.253.214.185 --elevation-strategy passwordless
+```
+**Gotcha**: erebus has NOPASSWD sudo. Without `--elevation-strategy passwordless`, nh prompts for a remote password that doesn't exist → `Password cannot be empty` error. Add the flag above `--ask` if the target host uses passwordless sudo.
+
+### Ghostty (agent spawns terminal — local or remote)
+```bash
+# Local
+ghostty -e bash -c 'nh os switch . --ask; read -p "Press enter"'
+
+# Remote
+ghostty -e bash -c 'nh os switch .#erebus --target-host likivik@148.253.214.185 --elevation-strategy passwordless 2>&1 | tee /tmp/erebus-deploy.log; read -p "Press enter"'
+```
+
+### Verification (no deployment — agent can run)
+```bash
+# Single host — syntax/layout
+nix eval .#nixosConfigurations.<hostname>.config.networking.hostName  # --show-trace for full trace
+
+# Single host — dry build (catches eval + missing deps)
 nix build .#nixosConfigurations.<hostname>.config.system.build.toplevel --dry-run
-```
-Use `nix flake check --no-build --keep-going` instead if you need to check all hosts.
 
-### Shell aliases for daily use
+# All hosts — when shared modules change
+nix flake check --no-build --keep-going
+```
+
+### Shell aliases
 ```bash
 nix-eval-host() {
     local host="${1:-$(hostname -s)}"
@@ -52,22 +68,6 @@ nixos-switch-cn() {
     NIX_CONFIG='substituters = https://mirrors.ustc.edu.cn/nix-channels/store https://mirrors.tuna.tsinghua.edu.cn/nix-channels/store https://mirror.sjtu.edu.cn/nix-channels/store https://cache.nixos.org' \
       nh os switch --ask .#"$host"
 }
-```
-
-## If asked to switch to new config (applies changes to hardware)
-
-Two ways:
-
-**Ghostty (agent can run):**
-```bash
-ghostty -e bash -c 'nh os switch --ask .#hostname; read -p "Press enter"'
-ghostty -e bash -c 'nh os boot --ask .#hostname; read -p "Press enter"'  # staged for next reboot
-```
-
-**Manual (delegate to user):**
-```bash
-nh os switch --ask .#hostname
-nh os boot --ask .#hostname   # staged for next reboot
 ```
 
 ## Conventions
@@ -87,7 +87,7 @@ nh os boot --ask .#hostname   # staged for next reboot
 
 | Agent | Model | Mode | Cost/session | Role |
 |---|---|---|---|---|---|
-| plan | Qwen3.7 Plus | primary | ~$0.70 | Daily plan mode (Tab cycle default) |
+| plan | DeepSeek V4 Pro | primary | ~$0.70 | Daily plan mode (Tab cycle default) |
 | build | DeepSeek V4 Flash | primary | $0.15 | Implementation (Tab cycle) |
 | flagship-consultant | GLM-5.2 | subagent | $2.50 | Heavy sessions + escalation oracle (via @ or Task tool) |
 | plan-free | big-pickle (opencode-zen) | subagent | $0 (prompts logged) | Free tier plan fallback (via @ or Task tool) |

@@ -118,48 +118,31 @@ in
         ];
 
         environment = {
-          WHATSAPP_ENABLED = "true";
+          WHATSAPP_ENABLED = "false";
           WHATSAPP_MODE = "self-chat";
         };
 
-        settings = {
-          model = {
-            default = "anthropic/claude-sonnet-4-6";
-            provider = "openrouter";
-            base_url = "https://openrouter.ai/api/v1";
-          };
+        configFile = ./hermes-config.yaml;
+      };
 
-          toolsets = [ "all" ];
+      environment.systemPackages = [ pkgs.nodejs_22 ];
 
-          max_turns = 100;
+      systemd.services.hermes-dashboard = {
+        description = "Hermes Agent Dashboard";
+        after = [ "hermes-agent.service" ];
+        requires = [ "hermes-agent.service" ];
+        wantedBy = [ "multi-user.target" ];
 
-          terminal = {
-            backend = "local";
-            timeout = 180;
-          };
-
-          memory = {
-            memory_enabled = true;
-            user_profile_enabled = true;
-          };
-
-          display = {
-            host = "0.0.0.0";
-            port = 9119;
-          };
-
-          compression = {
-            enabled = true;
-            threshold = 0.50;
-          };
-
-          session_reset = {
-            mode = "both";
-            idle_minutes = 1440;
-            at_hour = 4;
-          };
+        serviceConfig = {
+          User = "hermes";
+          Group = "hermes";
+          Restart = "always";
+          RestartSec = 5;
+          Environment = "HERMES_HOME=/var/lib/hermes/.hermes";
+          ExecStart = "${config.services.hermes-agent.package}/bin/hermes dashboard --host 0.0.0.0 --port 9119 --no-open";
         };
       };
+
     };
   };
 }

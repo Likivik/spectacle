@@ -80,6 +80,12 @@ in
           group = "hermes";
           mode = "0600";
         };
+        "github/personal-access-token" = {
+          sopsFile = ../../../secrets/erebus/secrets.yaml;
+          owner = "hermes";
+          group = "hermes";
+          mode = "0600";
+        };
       };
 
       users.users.likivik.initialHashedPassword = "$6$1FZNn7nnzCyHhgke$jyU9Ou3/5F2IHWLMGPc/bCDMQctvmKRXWCT6SAmUjhnHXmiOVFMhh4vVFxAoHZ8izk.QhQoyFZlvut6WOxXgb0";
@@ -109,6 +115,29 @@ in
         serviceConfig.Type = "oneshot";
         script = ''
           ${pkgs.ethtool}/bin/ethtool -K ens3 rx-udp-gro-forwarding on rx-gro-list off
+        '';
+      };
+
+      systemd.services.setup-git-credential = {
+        description = "Write GitHub PAT to git credential store";
+        wantedBy = [ "hermes-agent.service" ];
+        before = [ "hermes-agent.service" ];
+        bindsTo = [ "sops-nix.service" ];
+        after = [ "sops-nix.service" ];
+        serviceConfig = {
+          Type = "oneshot";
+          User = "hermes";
+          Group = "hermes";
+        };
+        script = ''
+          CRED_FILE="/var/lib/hermes/.git-creds"
+          PAT_FILE="${config.sops.secrets."github/personal-access-token".path}"
+          if [ -s "$PAT_FILE" ]; then
+            TOKEN="$(cat "$PAT_FILE")"
+            printf 'https://likivik:%s@github.com\n' "$TOKEN" > "$CRED_FILE"
+            chmod 0600 "$CRED_FILE"
+            ${pkgs.git}/bin/git config --global credential.helper "store --file $CRED_FILE"
+          fi
         '';
       };
 

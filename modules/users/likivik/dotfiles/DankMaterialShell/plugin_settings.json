@@ -48,7 +48,13 @@
     ]
   },
   "dankBatteryAlerts": {
-    "enabled": true
+    "enabled": true,
+    "warningThreshold": 15,
+    "criticalThreshold": 10,
+    "enableWarningAlert": true,
+    "enableCriticalAlert": true,
+    "warningMessage": "Battery at ${level}% — consider charging",
+    "criticalMessage": "Battery at ${level}% — connect charger!"
   },
   "dankBitwarden": {
     "enabled": false,

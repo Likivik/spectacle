@@ -38,7 +38,7 @@ nh os switch .#erebus --target-host likivik@148.253.214.185 --elevation-strategy
 ### Ghostty (agent spawns terminal — local or remote)
 ```bash
 # Local
-ghostty -e bash -c 'nh os switch . --ask; read -p "Press enter"'
+ghostty -e bash -c 'nh os switch . --ask 2>&1 | tee /tmp/traversal-deploy.log; read -p "Press enter"'
 
 # Remote
 ghostty -e bash -c 'nh os switch .#erebus --target-host likivik@148.253.214.185 --elevation-strategy passwordless 2>&1 | tee /tmp/erebus-deploy.log; read -p "Press enter"'

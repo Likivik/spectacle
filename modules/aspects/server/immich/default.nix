@@ -9,10 +9,10 @@
         host = "0.0.0.0";
         port = 3001;
 
-        machineLearning.enable = true;
+        "machine-learning".enable = true;
 
         database.createDB = true;
-        redis.createLocally = true;
+        redis.enable = true;
       };
 
       services.immich.openFirewall = false;

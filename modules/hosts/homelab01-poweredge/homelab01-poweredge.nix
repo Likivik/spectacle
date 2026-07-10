@@ -1,18 +1,18 @@
 { den, inputs, lib, pkgs, ... }: {
-  imports = [
-    inputs.disko.nixosModules.disko
-    ./_disko.nix
-    ./_hardware-configuration.nix
-  ];
-
   den.aspects.homelab01-poweredge = {
     includes = [
       den.aspects.server.core
+      den.aspects.server.sops
       den.aspects.server.nextcloud
       den.aspects.server.immich
     ];
 
     nixos = { config, lib, pkgs, ... }: {
+      imports = [
+        inputs.disko.nixosModules.disko
+        ./_disko.nix
+        ./_hardware-configuration.nix
+      ];
       nix.settings.trusted-users = [ "likivik" ];
 
       services.openssh = {

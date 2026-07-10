@@ -107,6 +107,7 @@
         };
 
         environment.systemPackages = with pkgs; [
+          libnotify
           capitaine-cursors
           i2c-tools
           libinput # bongoCat plugin

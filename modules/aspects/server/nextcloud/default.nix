@@ -30,7 +30,7 @@
         };
 
         autoUpdateApps.enable = true;
-        autoUpdateApps.hour = 4;
+        autoUpdateApps.startAt = "*-*-* 04:00:00";
       };
 
       virtualisation.oci-containers = {

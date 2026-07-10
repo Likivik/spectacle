@@ -76,8 +76,14 @@ in
         };
         "hermes/env" = {
           sopsFile = ../../../secrets/erebus/secrets.yaml;
-          owner = "hermes";
-          group = "hermes";
+          owner = "hermes-credproxy";
+          group = "hermes-credproxy";
+          mode = "0600";
+        };
+        "authsome/mitmproxy-ca" = {
+          sopsFile = ../../../secrets/erebus/secrets.yaml;
+          owner = "root";
+          group = "root";
           mode = "0600";
         };
       };
@@ -101,7 +107,6 @@ in
       ];
 
       systemd.services.fix-ts-gro = {
-        # See https://tailscale.com/s/ethtool-config-udp-gro
         description = "Fix UDP GRO forwarding for Tailscale exit node performance";
         wants = [ "network-online.target" ];
         after = [ "network-online.target" ];
@@ -113,13 +118,10 @@ in
       };
 
       services.hermes-agent = {
-        environmentFiles = [
-          config.sops.secrets."hermes/env".path
-        ];
-
         environment = {
           WHATSAPP_ENABLED = "false";
           WHATSAPP_MODE = "self-chat";
+          NO_PROXY = "127.0.0.1,localhost";
         };
 
         configFile = ./hermes-config.yaml;

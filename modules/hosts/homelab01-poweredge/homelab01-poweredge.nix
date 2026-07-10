@@ -1,17 +1,48 @@
-{ den, inputs, ... }: {
+{ den, inputs, lib, pkgs, ... }: {
+  imports = [
+    inputs.disko.nixosModules.disko
+    ./_disko.nix
+    ./_hardware-configuration.nix
+  ];
+
   den.aspects.homelab01-poweredge = {
-    includes = [ den.aspects.core ];
-    nixos = {
-      fileSystems."/" = {
-        device = "tmpfs";
-        fsType = "tmpfs";
-        options = [ "mode=0755" ];
+    includes = [
+      den.aspects.server.core
+      den.aspects.server.nextcloud
+      den.aspects.server.immich
+    ];
+
+    nixos = { config, lib, pkgs, ... }: {
+      nix.settings.trusted-users = [ "likivik" ];
+
+      services.openssh = {
+        enable = true;
+        settings = {
+          PermitRootLogin = "no";
+          PasswordAuthentication = false;
+        };
       };
-      fileSystems."/boot" = {
-        device = "tmpfs";
-        fsType = "tmpfs";
-        options = [ "mode=0755" ];
+
+      users.users.likivik = {
+        isNormalUser = true;
+        extraGroups = [ "wheel" ];
       };
+
+      security.sudo.extraRules = [{
+        users = [ "likivik" ];
+        commands = [{ command = "ALL"; options = [ "NOPASSWD" ]; }];
+      }];
+
+      sops.secrets."nextcloud/admin-password" = {
+        sopsFile = ../../../secrets/homelab01-poweredge/secrets.yaml;
+        owner = "nextcloud";
+        group = "nextcloud";
+        mode = "0600";
+      };
+
+      boot.kernelParams = [ "elevator=none" ];
+
+      services.zfs.autoScrub.enable = true;
     };
   };
 }

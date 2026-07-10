@@ -43,29 +43,31 @@
           python313Packages.keyrings-alt
         ];
 
-        system.activationScripts."hermes-credproxy-ca" = lib.stringAfter (
-          lib.optional (config.system.activationScripts ? setupSecrets) "setupSecrets"
-        ) ''
-          MITM_DIR="/var/lib/hermes-credproxy/.mitmproxy"
-          COMBINED="/etc/ssl/certs/hermes-with-proxy-ca.crt"
+          system.activationScripts."hermes-credproxy-ca" = lib.stringAfter (
+            lib.optional (config.system.activationScripts ? setupSecrets) "setupSecrets"
+          ) ''
+            MITM_DIR="/var/lib/hermes-credproxy/.mitmproxy"
+            COMBINED="/etc/ssl/certs/hermes-with-proxy-ca.crt"
+            AWK="${pkgs.gawk}/bin/awk"
+            COREUTILS="${pkgs.coreutils}/bin"
 
-          cat "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt" > "$COMBINED"
-          chmod 0644 "$COMBINED"
+            "$COREUTILS/cat" "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt" > "$COMBINED"
+            "$COREUTILS/chmod" 0644 "$COMBINED"
 
-          ${lib.optionalString (caSecretPath != null) ''
-            if [ -f "${caSecretPath}" ]; then
-              mkdir -p "$MITM_DIR"
-              CERT=$(awk '/^-----BEGIN CERTIFICATE-----/{p=1} p; /^-----END CERTIFICATE-----/{p=0}' "${caSecretPath}")
-              KEY=$(awk '/^-----BEGIN.*PRIVATE KEY-----/{p=1} p; /^-----END.*PRIVATE KEY-----/{p=0}' "${caSecretPath}")
-              printf '%s\n%s\n' "$CERT" "$KEY" > "$MITM_DIR/mitmproxy-ca.pem"
-              chmod 0600 "$MITM_DIR/mitmproxy-ca.pem"
-              printf '%s\n' "$CERT" > "$MITM_DIR/mitmproxy-ca-cert.pem"
-              chmod 0644 "$MITM_DIR/mitmproxy-ca-cert.pem"
-              chown -R hermes-credproxy:hermes-credproxy "$MITM_DIR"
-              cat "$MITM_DIR/mitmproxy-ca-cert.pem" >> "$COMBINED"
-            fi
-          ''}
-        '';
+            ${lib.optionalString (caSecretPath != null) ''
+              if [ -f "${caSecretPath}" ]; then
+                "$COREUTILS/mkdir" -p "$MITM_DIR"
+                CERT=$("$AWK" '/^-----BEGIN CERTIFICATE-----/{p=1} p; /^-----END CERTIFICATE-----/{p=0}' "${caSecretPath}")
+                KEY=$("$AWK" '/^-----BEGIN.*PRIVATE KEY-----/{p=1} p; /^-----END.*PRIVATE KEY-----/{p=0}' "${caSecretPath}")
+                printf '%s\n%s\n' "$CERT" "$KEY" > "$MITM_DIR/mitmproxy-ca.pem"
+                "$COREUTILS/chmod" 0600 "$MITM_DIR/mitmproxy-ca.pem"
+                printf '%s\n' "$CERT" > "$MITM_DIR/mitmproxy-ca-cert.pem"
+                "$COREUTILS/chmod" 0644 "$MITM_DIR/mitmproxy-ca-cert.pem"
+                "$COREUTILS/chown" -R hermes-credproxy:hermes-credproxy "$MITM_DIR"
+                "$COREUTILS/cat" "$MITM_DIR/mitmproxy-ca-cert.pem" >> "$COMBINED"
+              fi
+            ''}
+          '';
 
         systemd.services.hermes-credproxy = {
           description = "Hermes Credential Proxy Daemon";

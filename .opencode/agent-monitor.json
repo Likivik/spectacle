@@ -1,0 +1,35 @@
+{
+  "autoDetectAgents": true,
+  "agentMappings": [
+    { "agentName": "plan", "domains": ["planning", "architecture"] },
+    { "agentName": "build", "domains": ["implementation", "nixos", "dotfiles"] },
+    { "agentName": "explore", "domains": ["research", "search", "codebase-exploration"] },
+    { "agentName": "flagship-consultant", "domains": ["architecture", "escalation", "nixos"] },
+    { "agentName": "plan-free", "domains": ["planning-fallback"] },
+    { "agentName": "reviewer", "domains": ["review", "diff", "nix-eval"] },
+    { "agentName": "den-expert", "domains": ["den-framework", "nixos", "entities", "aspects"] },
+    { "agentName": "nix-maid-expert", "domains": ["nix-maid", "maid-classes", "system-config"] }
+  ],
+  "domains": [
+    {
+      "name": "nixos",
+      "patterns": ["nixos", "nixpkgs", "configuration", "flake", "derivation", "nix build", "systemd", "module", "option"]
+    },
+    {
+      "name": "den-framework",
+      "patterns": ["den", "aspect", "entity", "battery", "topAspect", "host-aspect", "dendritic", "flake-file"]
+    },
+    {
+      "name": "dotfiles",
+      "patterns": ["dotfiles", "home-manager", "program", "dms-shell", "DankMaterialShell"]
+    },
+    {
+      "name": "architecture",
+      "patterns": ["architecture", "design", "refactor", "structure", "module", "cross-host"]
+    },
+    {
+      "name": "review",
+      "patterns": ["review", "diff", "check", "audit", "correctness", "syntax"]
+    }
+  ]
+}

@@ -9,7 +9,6 @@
       den.aspects.core.determinate-nix
       den.aspects.core.default-locale
       den.aspects.core.nix
-      den.aspects.core.ncro
     ];
   };
 
@@ -21,6 +20,7 @@
   };
   den.aspects.desktop.common-core = {
     includes = lib.mkDefault [
+      den.aspects.core.tailscale
       den.aspects.desktop.common-core.desktop-inbox
       den.aspects.desktop.common-core.filesystems-support
       den.aspects.desktop.common-core.networking
@@ -48,22 +48,33 @@
 
   den.aspects.dev = {
     includes = lib.mkDefault [
+      den.aspects.sops-cli
       den.aspects.flatpak-build
       den.aspects.android
-      den.aspects.audiobookshelf
       den.aspects.dev-fonts
+      den.aspects.git
       den.aspects.direnv
       den.aspects.docker
+      # den.aspects.hindsight
+      den.aspects.opencode
+      den.aspects.omp
       den.aspects.qt-inspection
       den.aspects.shell-commands
       den.aspects.bash
       # den.aspects.elvish
       # den.aspects.zsh
       den.aspects.ssh
-      den.aspects.stash
+      # den.aspects.stash
       den.aspects.virtualization
+      den.aspects.vscodium
     ];
   };
 
   den.aspects.server = {};
+  den.aspects.server.core = {
+    includes = lib.mkDefault [
+      den.aspects.core
+      den.aspects.core.tailscale
+    ];
+  };
 }

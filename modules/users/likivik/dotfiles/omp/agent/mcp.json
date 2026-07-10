@@ -1,0 +1,61 @@
+{
+  "$schema": "https://raw.githubusercontent.com/can1357/oh-my-pi/main/packages/coding-agent/src/config/mcp-schema.json",
+  "mcpServers": {
+    "mnemosyne": {
+      "command": "nix",
+      "args": [
+        "shell",
+        "nixpkgs#python3",
+        "nixpkgs#python313Packages.pipx",
+        "-c",
+        "pipx",
+        "run",
+        "--spec",
+        "mnemosyne-memory[mcp]",
+        "--with",
+        "mnemosyne-hermes",
+        "--with",
+        "fastembed",
+        "--with",
+        "numpy",
+        "--",
+        "mnemosyne",
+        "mcp"
+      ],
+      "env": {
+        "LD_LIBRARY_PATH": "/run/current-system/sw/share/nix-ld/lib"
+      }
+    },
+    "nixos": {
+      "command": "nix",
+      "args": [
+        "shell",
+        "github:utensils/mcp-nixos",
+        "-c",
+        "mcp-nixos"
+      ]
+    },
+    "github": {
+      "command": "nix",
+      "args": [
+        "shell",
+        "nixpkgs#nodejs",
+        "-c",
+        "npx",
+        "-y",
+        "@modelcontextprotocol/server-github"
+      ]
+    },
+    "context7": {
+      "command": "nix",
+      "args": [
+        "shell",
+        "nixpkgs#nodejs",
+        "-c",
+        "npx",
+        "-y",
+        "@upstash/context7-mcp"
+      ]
+    }
+  }
+}

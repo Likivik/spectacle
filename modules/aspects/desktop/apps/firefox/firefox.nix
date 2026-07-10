@@ -1,36 +1,27 @@
-{ den, config, ... }:
+{ den, lib, ... }:
 {
 
   den.aspects.firefox = {
 
-    homeManager =
-    { pkgs, config, user, ... }:
-    {
+    nixos = { pkgs, ... }: {
       programs.firefox = {
         enable = true;
         package = pkgs.firefox;
-        configPath = "${config.xdg.configHome}/mozilla/firefox";
         languagePacks = [
-          "ru_RU"
+          "ru"
           "en-US"
         ];
-        nativeMessagingHosts = [
+        nativeMessagingHosts.packages = [
           pkgs.firefoxpwa-unwrapped
           pkgs.kdePackages.plasma-browser-integration
         ];
-        # pkcs11Modules = [  ];
         policies = {
-          # Updates & Background Services
           AppAutoUpdate = false;
           BackgroundAppUpdate = false;
-
-          # Feature Disabling
           DisableProfileImport = true;
           DisablePocket = true;
           NoDefaultBookmarks = true;
           OfferToSaveLoginsDefault = false;
-
-          # # UI and Behavior
           DontCheckDefaultBrowser = true;
           HardwareAcceleration = true;
           OfferToSaveLogins = false;
@@ -49,30 +40,60 @@
             Snippets = false;
             Locked = false;
           };
-        };
 
-        profiles.default = {
-          id = 0;
-          isDefault = true;
-          name = "defaultNix";
-          userChrome = ./userChrome.css;
-          extensions = {
-            settings = {
-              # sidebery = {
-              #   settings = {
-              #     sidebarCSS = "#root.root {--frame-fg: #813d9cff;}";
-              #   };
-              # };
+          Preferences = {
+            "extensions.autoDisableScopes" = {
+              Value = 0;
+              Status = "user";
+            };
+            "browser.theme.content-theme" = {
+              Value = 2;
+              Status = "user";
+            };
+            "browser.theme.toolbar-theme" = {
+              Value = 3;
+              Status = "user";
+            };
+            "browser.shell.checkDefaultBrowser" = {
+              Value = false;
+              Status = "user";
             };
           };
         };
       };
 
-      home.sessionVariables = {
+      environment.sessionVariables = {
         MOZ_USE_XINPUT2 = "1";
       };
     };
 
+    maid = { pkgs, ... }: let
+      profilesIni = pkgs.writeText "firefox-profiles.ini" ''
+        [General]
+        StartWithLastProfile=1
+        Version=2
+
+        [Profile0]
+        Name=likivik
+        IsRelative=1
+        Path=likivik
+        Default=1
+
+        [Profile1]
+        Name=gov-sign
+        IsRelative=1
+        Path=gov-sign
+      '';
+    in {
+      systemd.tmpfiles.dynamicRules = [
+        "d {{xdg_config_home}}/mozilla/firefox 0755 - - -"
+        "d {{xdg_config_home}}/mozilla/firefox/gov-sign 0755 - - -"
+        "d {{xdg_config_home}}/mozilla/firefox/likivik 0755 - - -"
+        "C+ {{xdg_config_home}}/mozilla/firefox/profiles.ini 0644 - - - ${profilesIni}"
+      ];
+
+      file.xdg_config."mozilla/firefox/likivik/chrome/userChrome.css".source = ./userChrome.css;
+    };
   };
 
 }

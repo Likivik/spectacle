@@ -1,0 +1,168 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "",
+  "autoshare": false,
+  "autoupdate": false,
+  "plugin": [
+    "@tarquinen/opencode-dcp@latest",
+    "@simonwjackson/opencode-direnv",
+    "./plugins/mnemosyne-bridge.ts",
+    "./plugins/system-context.ts",
+    "opencode-throughput@latest",
+    "@ramtinj95/opencode-tokenscope@latest",
+    "opencode-simple-notify",
+    "opencode-research-papers",
+    /*
+     * Plannotator: user-managed workflow → submit_plan tool registered, no agent nudges it.
+     * Evoke manually via /plannotator-review, /plannotator-annotate, /plannotator-last, /plannotator-archive.
+     * Requires `plannotator` CLI on PATH.
+     * Gotcha: plugin array is read at opencode startup. Config changes only apply after restart.
+     */
+    ["@plannotator/opencode@latest", {
+      "workflow": "user-managed"
+    }],
+    // Disabled plugins (take effect on next opencode restart):
+    /* 2026-06-26: blocks git branch -D cleanup; use manual judgment */
+    // "cc-safety-net",
+    /* had some issues, possibly redundant with tokenscope; re-evaluate */
+    // "opencode-token-monitor@latest",
+    /* 2026-06-26: replaced by auto-worktree plugin (which never worked); re-evaluate */
+    // "@ykaratkou/opencode-worktree@latest"
+  ],
+  "permission": {
+    "edit": "ask",
+    "codesearch": "allow",
+    "websearch": "allow"
+  },
+  "compaction": {
+    "auto": true,
+    "prune": true
+  },
+  "agent": {
+    "plan": {
+      "model": "opencode-go/deepseek-v4-pro"
+    },
+    "build": {
+      "model": "opencode-go/deepseek-v4-flash"
+    },
+    "explore": {
+      "model": "opencode-go/deepseek-v4-flash",
+      "mode": "subagent"
+    },
+    "flagship-consultant": {
+      "model": "opencode-go/glm-5.2",
+      "mode": "subagent",
+      "steps": 40
+    },
+    "plan-free": {
+      "model": "opencode/big-pickle",
+      "mode": "subagent",
+      "permission": {
+        "edit": "ask",
+        "bash": "ask"
+      },
+      "steps": 20
+    },
+    "den-expert": {
+      "model": "opencode-go/deepseek-v4-flash",
+      "mode": "subagent",
+      "permission": {
+        "edit": "allow",
+        "bash": "allow",
+        "task": "deny"
+      },
+      "steps": 30
+    },
+    "nix-maid-expert": {
+      "model": "opencode-go/deepseek-v4-flash",
+      "mode": "subagent",
+      "permission": {
+        "edit": "allow",
+        "bash": "allow",
+        "task": "deny"
+      },
+      "steps": 30
+    },
+    "reviewer": {
+      "model": "opencode-go/deepseek-v4-pro",
+      "mode": "subagent",
+      "permission": {
+        "edit": "deny",
+        "bash": {
+          "git diff*": "allow",
+          "nix eval*": "allow",
+          "nix flake check*": "allow",
+          "*": "deny"
+        },
+        "task": "deny"
+      },
+      "steps": 15
+    }
+  },
+  "mcp": {
+    "mnemosyne": {
+      "type": "local",
+      "enabled": true,
+      "command": [
+        "nix",
+        "shell",
+        "nixpkgs#python3",
+        "nixpkgs#python313Packages.pipx",
+        "-c",
+        "pipx",
+        "run",
+        "--spec",
+        "mnemosyne-memory[mcp]",
+        "--with",
+        "mnemosyne-hermes",
+        "--with",
+        "fastembed",
+        "--with",
+        "numpy",
+        "--",
+        "mnemosyne",
+        "mcp"
+      ],
+      "environment": {
+        "LD_LIBRARY_PATH": "/run/current-system/sw/share/nix-ld/lib"
+      }
+    },
+    "nixos": {
+      "type": "local",
+      "enabled": true,
+      "command": [
+        "nix",
+        "shell",
+        "github:utensils/mcp-nixos",
+        "-c",
+        "mcp-nixos"
+      ]
+    },
+    "github": {
+      "type": "local",
+      "enabled": true,
+      "command": [
+        "nix",
+        "shell",
+        "nixpkgs#nodejs",
+        "-c",
+        "npx",
+        "-y",
+        "@modelcontextprotocol/server-github"
+      ]
+    },
+    "context7": {
+      "type": "local",
+      "enabled": true,
+      "command": [
+        "nix",
+        "shell",
+        "nixpkgs#nodejs",
+        "-c",
+        "npx",
+        "-y",
+        "@upstash/context7-mcp"
+      ]
+    }
+  }
+}

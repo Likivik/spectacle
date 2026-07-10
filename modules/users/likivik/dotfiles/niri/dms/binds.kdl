@@ -1,0 +1,101 @@
+binds {
+    // ── Launcher ──
+    Super+D { spawn "dms" "ipc" "call" "launcher" "toggle"; }
+    Super+0 { spawn "dms" "ipc" "call" "launcher" "toggle"; }
+
+    // ── Keyboard Layouts ──
+    Ctrl+Space { switch-layout "0"; }
+    Super+Space { switch-layout "1"; }
+
+    // ── Window Navigation (Vim-style) ──
+    Super+H { focus-column-left; }
+    Super+J { focus-window-or-workspace-down; }
+    Super+K { focus-window-or-workspace-up; }
+    Super+L { focus-column-right; }
+
+    // ── Move Windows ──
+    Super+Shift+H { move-column-left; }
+    Super+Shift+J { move-window-down; }
+    Super+Shift+K { move-window-up; }
+    Super+Shift+L { move-column-right; }
+
+    // ── Window Management ──
+    Super+Q { close-window; }
+    Super+F { fullscreen-window; }
+    Super+Shift+F { toggle-window-floating; }
+    Super+T { toggle-column-tabbed-display; }
+
+    // ── Column Layout ──
+    Super+R { switch-preset-column-width; }
+    Super+Shift+R { switch-preset-window-height; }
+    Super+C { center-column; }
+    Super+Shift+C { center-visible-columns; }
+    Super+Minus { set-column-width "-10"; }
+    Super+Equal { set-column-width "+10"; }
+    Super+Shift+Minus { set-window-height "-10"; }
+    Super+Shift+Equal { set-window-height "+10"; }
+
+    // ── Workspaces ──
+    Super+1 { focus-workspace "1"; }
+    Super+2 { focus-workspace "2"; }
+    Super+3 { focus-workspace "3"; }
+    Super+4 { focus-workspace "4"; }
+    Super+5 { focus-workspace "5"; }
+    Super+6 { focus-workspace "6"; }
+    Super+7 { focus-workspace "7"; }
+    Super+8 { focus-workspace "8"; }
+    Super+9 { focus-workspace "9"; }
+    Super+Shift+1 { move-column-to-workspace "1"; }
+    Super+Shift+2 { move-column-to-workspace "2"; }
+    Super+Shift+3 { move-column-to-workspace "3"; }
+    Super+Shift+4 { move-column-to-workspace "4"; }
+    Super+Shift+5 { move-column-to-workspace "5"; }
+    Super+Shift+6 { move-column-to-workspace "6"; }
+    Super+Shift+7 { move-column-to-workspace "7"; }
+    Super+Shift+8 { move-column-to-workspace "8"; }
+    Super+Shift+9 { move-column-to-workspace "9"; }
+
+    // ── Overview ──
+    Super+Tab { toggle-overview; }
+
+    // ── Multi-Monitor ──
+    Super+BracketLeft  { focus-monitor-left; }
+    Super+BracketRight { focus-monitor-right; }
+    Super+Shift+BracketLeft  { move-column-to-monitor-left; }
+    Super+Shift+BracketRight { move-column-to-monitor-right; }
+
+    // ── DMS Tools ──
+    Super+slash { spawn "dms" "ipc" "call" "spotlight" "toggle"; }
+    Super+V { spawn "dms" "ipc" "call" "clipboard" "toggle"; }
+    Super+comma { spawn "dms" "ipc" "call" "settings" "focusOrToggle"; }
+    Super+N { spawn "dms" "ipc" "call" "notepad" "toggle"; }
+    Super+M { spawn "dms" "ipc" "call" "processlist" "focusOrToggle"; }
+    Super+S { spawn "niri-float-sticky" "-ipc" "toggle_sticky"; }
+    Super+O { spawn "dms" "ipc" "call" "keybinds" "toggle" "niri"; }
+    Super+Y { spawn "dms" "ipc" "call" "dankdash" "wallpaper"; }
+    Super+Escape { toggle-keyboard-shortcuts-inhibit; }
+
+    // ── System Actions ──
+    Super+Alt+L { spawn "dms" "ipc" "call" "lock" "lock"; }
+    Super+Shift+E { quit; }
+    Super+Shift+O { power-off-monitors; }
+
+    // ── Screenshots ──
+    Print { spawn "dms" "screenshot"; }
+    Alt+Print { spawn "dms" "screenshot" "full"; }
+
+    // ── Audio ──
+    XF86AudioRaiseVolume   { spawn "dms" "ipc" "call" "audio" "increment" "5"; }
+    XF86AudioLowerVolume   { spawn "dms" "ipc" "call" "audio" "decrement" "5"; }
+    XF86AudioMute          { spawn "dms" "ipc" "call" "audio" "mute"; }
+    XF86AudioMicMute       { spawn "dms" "ipc" "call" "audio" "micmute"; }
+
+    // ── Brightness ──
+    XF86MonBrightnessUp    { spawn "dms" "ipc" "call" "brightness" "increment" "5" ""; }
+    XF86MonBrightnessDown  { spawn "dms" "ipc" "call" "brightness" "decrement" "5" ""; }
+
+    // ── Media ──
+    XF86AudioPlay          { spawn "dms" "ipc" "call" "mpris" "playPause"; }
+    XF86AudioNext          { spawn "dms" "ipc" "call" "mpris" "next"; }
+    XF86AudioPrev          { spawn "dms" "ipc" "call" "mpris" "previous"; }
+}

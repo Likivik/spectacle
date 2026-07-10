@@ -12,6 +12,7 @@
 
       den.aspects.dev
 
+      den.aspects.cprocsp
       den.aspects.firefox
     ];
 

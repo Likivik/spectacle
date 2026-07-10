@@ -129,3 +129,19 @@ should now contain .nix-maid-test (proving host-aspects projected the host's mai
 
 ## If you change initial password - vm needs to be recreated
 (because initial password was set to previous value on first creation, so you need to delete the .qcow2 file and nix run .#hostname again)
+
+## Systems Overview
+
+### Hosts
+
+- **serenity** — Main Desktop PC
+- **traversal** — Main Laptop
+- **spectacle** — Small box connected to TV for watching shows, movies, and browsing
+- **homelab01-poweredge** — Backups aggregator from all other machines, mirrored ZFS pool w/ bit-rot prevention, off-site backup push
+- **devbox01** — Experimentation sandbox for local servers (torrents, media, Nextcloud, Notes, etc.); promoted to "prod" after validation
+- **nixosrouter** — NixOS router + WiFi, nftables-based
+
+### Users
+
+- **likivik** — Desktop/laptop/spectacle user. Development, office, main daily driver
+- **watcher** — Default user for spectacle

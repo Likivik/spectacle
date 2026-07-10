@@ -56,6 +56,13 @@
       };
     };
 
+    erebus = {
+      description = "Hermes agent VPS hosted at hosting-vds.com (Sofia, BG)";
+      users = {
+        likivik = { };
+      };
+    };
+
   };
 
 }

@@ -12,6 +12,7 @@
     # nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0.1"; # flakehub unstable
     # nixpkgs.url = "https://flakehub.com/f/DeterminateSystems/nixpkgs-weekly/0.1";
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+    nixpkgs-master.url = "github:NixOS/nixpkgs/master";
     # # Replace github:NixOS/nixpkgs/nixos-unstable
     # nixpkgs.url = "git+https://tsinghua.edu.cn";
     # den.url = "github:vic/den";
@@ -28,7 +29,26 @@
     determinate.url = "https://flakehub.com/f/DeterminateSystems/determinate/*";
     nix-maid.url = "github:viperML/nix-maid";
     nixfmt-rs.url = "github:Mic92/nixfmt-rs";
-    ncro.url = "github:feel-co/ncro";
+    sops-nix = {
+      url = "github:Mic92/sops-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    nixos-anywhere = {
+      url = "github:nix-community/nixos-anywhere";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    disko = {
+      url = "github:nix-community/disko";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    hermes-agent = {
+      url = "github:NousResearch/hermes-agent";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    llm-agents = {
+      url = "github:numtide/llm-agents.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
 
   };
 }

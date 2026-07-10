@@ -1,30 +1,133 @@
-binds {
-    // Launcher
-    Super+Super_L { spawn-sh "noctalia msg panel-toggle launcher"; }
-    // Control Center (overrides niri default Super+S screenshot)
-    Super+S { spawn-sh "noctalia msg panel-toggle control-center"; }
-    // Settings
-    Super+Comma { spawn-sh "noctalia msg settings-toggle"; }
-    // Lock screen
-    Super+Escape { spawn-sh "noctalia msg screen-lock"; }
-    // Theme toggle
-    Super+T { spawn-sh "noctalia msg theme-mode-toggle"; }
-    // Clipboard history
-    Super+V { spawn-sh "noctalia msg panel-toggle clipboard"; }
-    // Dock toggle
-    Super+D { spawn-sh "noctalia msg dock-toggle"; }
-    // Do Not Disturb
-    Super+N { spawn-sh "noctalia msg notification-dnd-toggle"; }
-    // Session menu
-    Super+X { spawn-sh "noctalia msg panel-toggle session"; }
-
-    // Media keys
-    XF86AudioRaiseVolume { spawn "noctalia" "msg" "volume-up"; }
-    XF86AudioLowerVolume { spawn "noctalia" "msg" "volume-down"; }
-    XF86AudioMute { spawn "noctalia" "msg" "volume-mute"; }
-    XF86MonBrightnessUp { spawn "noctalia" "msg" "brightness-up"; }
-    XF86MonBrightnessDown { spawn "noctalia" "msg" "brightness-down"; }
+layout {
+    gaps 5
+    background-color "transparent"
+    preset-column-widths { proportion 0.333; proportion 0.5; proportion 0.667; proportion 1.0; }
 }
 
-// Autostart Noctalia
-spawn-at-startup "noctalia"
+layer-rule {
+    match namespace="^quickshell$"
+    place-within-backdrop true
+}
+
+layer-rule {
+    match namespace="dms:blurwallpaper"
+    place-within-backdrop true
+}
+
+environment {
+    XDG_CURRENT_DESKTOP "niri"
+    RADV_PERFTEST "cswt"
+    QT_QPA_PLATFORM "wayland"
+    ELECTRON_OZONE_PLATFORM_HINT "auto"
+    QT_QPA_PLATFORMTHEME "qt6ct"
+    QT_QPA_PLATFORMTHEME_QT6 "qt6ct"
+}
+
+input {
+    keyboard {
+        xkb {
+            layout "us,ru"
+            options "ctrl:swap_lalt_lctl"
+        }
+        track-layout "global"
+    }
+
+    touchpad {
+        tap
+        natural-scroll
+        scroll-method "two-finger"
+        scroll-factor horizontal=2.0 vertical=1.0
+        accel-speed 0.2
+
+        accel-profile "adaptive"
+        // accel-profile "flat"
+    }
+    mouse
+}
+
+// Disable the hot corners.
+gestures {
+    hot-corners {
+        off
+    }
+}
+
+window-rule {
+    match app-id=r"^org\.gnome\."
+    draw-border-with-background false
+    geometry-corner-radius 12
+    clip-to-geometry false
+}
+
+window-rule {
+    match app-id=r"^org\.wezfurlong\.wezterm$"
+    match app-id="Alacritty"
+    match app-id="zen"
+    match app-id="com.mitchellh.ghostty"
+    match app-id="kitty"
+    draw-border-with-background false
+}
+
+window-rule {
+    geometry-corner-radius 12
+    clip-to-geometry true
+}
+
+window-rule {
+    match app-id=r"org.quickshell$"
+    open-floating true
+}
+
+window-rule {
+    match app-id="xdg-desktop-portal-kde"
+    default-column-width { proportion 0.5; }
+    default-window-height { proportion 0.8; }
+}
+
+spawn-at-startup "niri-float-sticky"
+
+binds {
+    Super_L { spawn "dms" "ipc" "call" "launcher" "toggle"; }
+}
+
+include "dms/colors.kdl"
+include "dms/layout.kdl"
+include "dms/alttab.kdl"
+include "dms/binds.kdl"
+
+include "dms/cursor.kdl"
+
+include "dms/outputs.kdl"
+
+animations {
+    slowdown 1.0
+    overview-open-close {
+        off
+ curve "cubic-bezier" 0.17 0.67 0.83 0.67 ;
+    }
+    workspace-switch {
+        off
+    }
+}
+output "eDP-1" {
+    mode "2560x1600@120.001"
+
+    scale 1.25
+
+    transform "normal"
+    position x=0 y=0
+}
+hotkey-overlay {
+    skip-at-startup
+}
+overview {
+    workspace-shadow {
+        off
+    }
+}
+
+debug {
+    honor-xdg-activation-with-invalid-serial
+}
+
+include "dms/windowrules.kdl"

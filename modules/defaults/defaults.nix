@@ -22,6 +22,13 @@
       nixos = {
         home-manager.useGlobalPkgs = true;
         home-manager.useUserPackages = true;
+        home-manager.backupFileExtension = "backup";
+        # HM's wayland module creates systemd tray.target that conflicts with
+        # NixOS-managed ~/.config/systemd/user/ (read-only store symlink).
+        # Override here for all users. No HM services depend on tray.target.
+        home-manager.sharedModules = [
+          { systemd.user.targets = lib.mkForce {}; }
+        ];
       };
     }
   ];

@@ -3,6 +3,10 @@
   "instructions": [
     "AGENTS.md"
   ],
+  "plugin": [
+    "opencode-agent-monitor",
+    "./.opencode/plugins/auto-worktree.ts"
+  ],
   "permission": {
     "NOTES/": "ask",
     "bash": {
@@ -11,34 +15,13 @@
     },
     "edit": {
    	  "*" : "ask"
+    },
+    "external_directory": {
+      "/nix/**": "allow",
+      "/tmp/**": "allow",
+      "~/**": "allow"
     }
   },
-  "lsp": {},
-  "mcp": {
-    "nixos": {
-      "type": "local",
-      "enabled": true,
-      "command": [
-        "nix",
-        "shell",
-        "github:utensils/mcp-nixos",
-        "-c",
-        "mcp-nixos"
-      ]
-    },
-    "github": {
-      "type": "local",
-      "enabled": true,
-      "command": [
-        "nix",
-        "shell",
-        "nixpkgs#nodejs",
-        "-c",
-        "npx",
-        "-y",
-        "@modelcontextprotocol/server-github"
-      ]
-    }
-  }
+  "lsp": {}
 
 }

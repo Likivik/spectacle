@@ -1,0 +1,22 @@
+modelRoles:
+  default: opencode-go/deepseek-v4-flash
+  plan: opencode-go/minimax-m3
+  smol: opencode-go/deepseek-v4-flash
+  slow: opencode-go/glm-5.2
+
+memory:
+  backend: mnemopi
+
+mnemopi:
+  dbPath: ~/.hermes/mnemosyne/data/mnemosyne.db
+  scoping: per-project-tagged
+
+tools:
+  approvalMode: write
+  approval:
+    bash: prompt
+    edit: prompt
+
+compaction:
+  enabled: true
+  midTurnEnabled: true

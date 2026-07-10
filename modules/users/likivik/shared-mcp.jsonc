@@ -1,0 +1,76 @@
+{
+  "$schema": "https://raw.githubusercontent.com/can1357/oh-my-pi/main/packages/coding-agent/src/config/mcp-schema.json",
+  // ────────────────────────────────────────────────────────────────
+  // Canonical MCP server definitions
+  // Source of truth for opencode, omp, and future tools.
+  //
+  // Schema: omp mcp.json format (command + args + env)
+  //
+  // TODO: make tools consume this file directly instead of
+  // duplicating inline. See NOTES/TODO.md for the tracking item.
+  // ────────────────────────────────────────────────────────────────
+  "mcpServers": {
+    // Hermes/Mnemosyne — persistent memory backend.
+    // Opens existing ~/.hermes/mnemosyne/data/mnemosyne.db non-destructively.
+    // Schema-compatible tables/columns/FTS5/vec0.
+    "mnemosyne": {
+      "command": "nix",
+      "args": [
+        "shell",
+        "nixpkgs#python3",
+        "nixpkgs#python313Packages.pipx",
+        "-c",
+        "pipx",
+        "run",
+        "--spec",
+        "mnemosyne-memory[mcp]",
+        "--with",
+        "mnemosyne-hermes",
+        "--with",
+        "fastembed",
+        "--with",
+        "numpy",
+        "--",
+        "mnemosyne",
+        "mcp"
+      ],
+      "env": {
+        "LD_LIBRARY_PATH": "/run/current-system/sw/share/nix-ld/lib"
+      }
+    },
+    // NixOS — search nixpkgs packages/options, NixOS docs
+    "nixos": {
+      "command": "nix",
+      "args": [
+        "shell",
+        "github:utensils/mcp-nixos",
+        "-c",
+        "mcp-nixos"
+      ]
+    },
+    // GitHub — issues, PRs, repos, search
+    "github": {
+      "command": "nix",
+      "args": [
+        "shell",
+        "nixpkgs#nodejs",
+        "-c",
+        "npx",
+        "-y",
+        "@modelcontextprotocol/server-github"
+      ]
+    },
+    // Context7 — library docs and code examples (up-to-date API refs)
+    "context7": {
+      "command": "nix",
+      "args": [
+        "shell",
+        "nixpkgs#nodejs",
+        "-c",
+        "npx",
+        "-y",
+        "@upstash/context7-mcp"
+      ]
+    }
+  }
+}

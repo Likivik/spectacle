@@ -76,14 +76,32 @@ in
         };
         "hermes/env" = {
           sopsFile = ../../../secrets/erebus/secrets.yaml;
+          owner = "hermes";
+          group = "hermes";
+          mode = "0600";
+        };
+        "hermes-credproxy/mitmproxy-ca" = {
+          sopsFile = ../../../secrets/erebus/secrets.yaml;
           owner = "hermes-credproxy";
           group = "hermes-credproxy";
           mode = "0600";
         };
-        "authsome/mitmproxy-ca" = {
+        "hermes-credproxy/github/pat-spectacle" = {
           sopsFile = ../../../secrets/erebus/secrets.yaml;
-          owner = "root";
-          group = "root";
+          owner = "hermes-credproxy";
+          group = "hermes-credproxy";
+          mode = "0600";
+        };
+        "hermes-credproxy/llm-providers/openrouter/api-key" = {
+          sopsFile = ../../../secrets/erebus/secrets.yaml;
+          owner = "hermes-credproxy";
+          group = "hermes-credproxy";
+          mode = "0600";
+        };
+        "hermes-credproxy/llm-providers/opencode/api-key2" = {
+          sopsFile = ../../../secrets/erebus/secrets.yaml;
+          owner = "hermes-credproxy";
+          group = "hermes-credproxy";
           mode = "0600";
         };
       };
@@ -118,6 +136,10 @@ in
       };
 
       services.hermes-agent = {
+        environmentFiles = [
+          config.sops.secrets."hermes/env".path
+        ];
+
         environment = {
           WHATSAPP_ENABLED = "false";
           WHATSAPP_MODE = "self-chat";
@@ -141,6 +163,7 @@ in
           Restart = "always";
           RestartSec = 5;
           Environment = "HERMES_HOME=/var/lib/hermes/.hermes";
+          EnvironmentFile = config.sops.secrets."hermes/env".path;
           ExecStart = "${config.services.hermes-agent.package}/bin/hermes dashboard --host 0.0.0.0 --port 9119 --no-open";
         };
       };

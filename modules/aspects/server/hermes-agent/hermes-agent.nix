@@ -10,7 +10,7 @@
   den.aspects.server.hermes-agent = {
     nixos = { config, pkgs, lib, ... }:
       let
-        caSecretPath = lib.attrByPath [ "sops" "secrets" "authsome/mitmproxy-ca" "path" ] null config;
+        caSecretPath = lib.attrByPath [ "sops" "secrets" "hermes-credproxy/mitmproxy-ca" "path" ] null config;
 
         credproxyAddon = pkgs.writeText "mitmproxy-credproxy.py" ''
           from mitmproxy import http
@@ -21,6 +21,7 @@
               (r"openrouter\.ai", "Authorization", "OPENROUTER_API_KEY", "Bearer {}"),
               (r"api\.github\.com", "Authorization", "GITHUB_TOKEN", "Bearer {}"),
               (r"github\.com", "Authorization", "GITHUB_TOKEN", "Bearer {}"),
+              (r"opencode\.ai", "Authorization", "OPENCODE_GO_API_KEY", "Bearer {}"),
           ]
 
           class CredentialInjector:
@@ -48,6 +49,7 @@
           environment = {
             OPENROUTER_API_KEY = "hermes-proxy://openrouter";
             GITHUB_TOKEN = "hermes-proxy://github";
+            OPENCODE_GO_API_KEY = "hermes-proxy://opencode";
             HTTPS_PROXY = "http://127.0.0.1:7899";
             SSL_CERT_FILE = "/etc/ssl/certs/hermes-with-proxy-ca.crt";
           };
@@ -99,7 +101,6 @@
             Group = "hermes-credproxy";
             Restart = "always";
             RestartSec = 5;
-            EnvironmentFile = [ config.sops.secrets."hermes/env".path ];
             UMask = "0077";
             NoNewPrivileges = true;
             PrivateTmp = true;
@@ -109,6 +110,11 @@
           };
 
           script = ''
+            OPENROUTER_API_KEY=$(cat /run/secrets/hermes-credproxy/llm-providers/openrouter/api-key)
+            GITHUB_TOKEN=$(cat /run/secrets/hermes-credproxy/github/pat-spectacle)
+            OPENCODE_GO_API_KEY=$(cat /run/secrets/hermes-credproxy/llm-providers/opencode/api-key2)
+            export OPENROUTER_API_KEY GITHUB_TOKEN OPENCODE_GO_API_KEY
+
             exec ${pkgs.mitmproxy}/bin/mitmdump \
               -s ${credproxyAddon} \
               --listen-port 7899 \

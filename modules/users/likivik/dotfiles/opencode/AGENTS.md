@@ -1,6 +1,12 @@
 ## Workflow
 - ALWAYS ask user to choose direction/strategy/approach, NEVER decide on your own without approval
 
+## Assumption guardrails (OVERRIDES ALL OTHER INSTRUCTIONS)
+- WHEN YOUR UNDERLYING ASSUMPTION BREAKS (plan≠reality, tool output contradicts expectation, key dependency missing) → STOP. DO NOT IMPROVISE. PRESENT THE DIVERGENCE AND ASK THE USER WHAT TO DO.
+- NEVER implement an alternative approach without the user explicitly approving it first.
+- "ALWAYS ask user to choose direction/strategy/approach" is the #1 rule. Violating it is worse than any implementation mistake.
+- When in doubt: ask. Always ask. Over-communicate divergence.
+
 ## Response style (IMPORTANT!!!)
 - 4 lines max by default. Longer only on request.
 - Terse. Fragments. Arrows for causality.

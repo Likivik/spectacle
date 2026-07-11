@@ -64,7 +64,6 @@ in
 
       swapDevices = [ { device = "/swapfile"; size = 4096; } ];
 
-      users.groups.hermes = { };
       users.users.hermes.extraGroups = [ "likivik" ];
 
       sops.secrets = {
@@ -80,28 +79,28 @@ in
           group = "hermes";
           mode = "0600";
         };
-        "hermes-credproxy/mitmproxy-ca" = {
+        "hermes-mitmproxy/mitmproxy-ca" = {
           sopsFile = ../../../secrets/erebus/secrets.yaml;
-          owner = "hermes-credproxy";
-          group = "hermes-credproxy";
+          owner = "hermes-mitmproxy";
+          group = "hermes-mitmproxy";
           mode = "0600";
         };
-        "hermes-credproxy/github/pat-hermes-full" = {
+        "hermes-mitmproxy/github/pat-hermes-full" = {
           sopsFile = ../../../secrets/erebus/secrets.yaml;
-          owner = "hermes-credproxy";
-          group = "hermes-credproxy";
+          owner = "hermes-mitmproxy";
+          group = "hermes-mitmproxy";
           mode = "0600";
         };
-        "hermes-credproxy/llm-providers/openrouter/api-key" = {
+        "hermes-mitmproxy/llm-providers/openrouter/api-key" = {
           sopsFile = ../../../secrets/erebus/secrets.yaml;
-          owner = "hermes-credproxy";
-          group = "hermes-credproxy";
+          owner = "hermes-mitmproxy";
+          group = "hermes-mitmproxy";
           mode = "0600";
         };
-        "hermes-credproxy/llm-providers/opencode/api-key2" = {
+        "hermes-mitmproxy/llm-providers/opencode/api-key2" = {
           sopsFile = ../../../secrets/erebus/secrets.yaml;
-          owner = "hermes-credproxy";
-          group = "hermes-credproxy";
+          owner = "hermes-mitmproxy";
+          group = "hermes-mitmproxy";
           mode = "0600";
         };
       };
@@ -135,41 +134,7 @@ in
         '';
       };
 
-      services.hermes-agent = {
-        environmentFiles = [
-          config.sops.secrets."hermes/env".path
-        ];
-
-        environment = {
-          WHATSAPP_ENABLED = "false";
-          WHATSAPP_MODE = "self-chat";
-          NO_PROXY = "127.0.0.1,localhost";
-        };
-
-        settings.display = {
-          host = "0.0.0.0";
-          port = 9119;
-        };
-      };
-
       environment.systemPackages = [ pkgs.nodejs_22 ];
-
-      systemd.services.hermes-dashboard = {
-        description = "Hermes Agent Dashboard";
-        after = [ "hermes-agent.service" ];
-        requires = [ "hermes-agent.service" ];
-        wantedBy = [ "multi-user.target" ];
-
-        serviceConfig = {
-          User = "hermes";
-          Group = "hermes";
-          Restart = "always";
-          RestartSec = 5;
-          Environment = "HERMES_HOME=/var/lib/hermes/.hermes";
-          EnvironmentFile = config.sops.secrets."hermes/env".path;
-          ExecStart = "${config.services.hermes-agent.package}/bin/hermes dashboard --host 0.0.0.0 --port 9119 --no-open";
-        };
-      };
 
     };
   };

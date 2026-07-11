@@ -112,20 +112,6 @@ nixos-switch-cn() {
   chore(serenity): clean up serenity host (remove nvidia config, add portal, consolidate includes)
   ```
 
-## Agent skills
-
-### Issue tracker
-
-Issues live as GitHub issues in this repo. See `docs/agents/issue-tracker.md`.
-
-### Triage labels
-
-Default label set (five canonical roles). See `docs/agents/triage-labels.md`.
-
-### Domain docs
-
-Single-context repo — no CONTEXT.md or docs/adr/ yet (created lazily). See `docs/agents/domain.md`.
-
 ## Memory (Mnemosyne MCP)
 
 Canonical Mnemosyne reference (tools, triggers, importance, scope) in `~/.config/opencode/AGENTS.md`.

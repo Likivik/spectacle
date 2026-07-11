@@ -14,25 +14,30 @@
 
         credproxyAddon = pkgs.writeText "mitmproxy-credproxy.py" ''
           from mitmproxy import http
+          from mitmproxy import ctx
           import os
           import re
 
           CREDENTIALS = [
-              (r"openrouter\.ai", "Authorization", "OPENROUTER_API_KEY", "Bearer {}"),
-              (r"api\.github\.com", "Authorization", "GITHUB_TOKEN", "Bearer {}"),
-              (r"github\.com", "Authorization", "GITHUB_TOKEN", "Bearer {}"),
-              (r"opencode\.ai", "Authorization", "OPENCODE_GO_API_KEY", "Bearer {}"),
+              (r"openrouter\.ai", "authorization", "OPENROUTER_API_KEY", "Bearer {}"),
+              (r"api\.github\.com", "authorization", "GITHUB_TOKEN", "Bearer {}"),
+              (r"github\.com", "authorization", "GITHUB_TOKEN", "Bearer {}"),
+              (r"opencode\.ai", "authorization", "OPENCODE_GO_API_KEY", "Bearer {}"),
           ]
 
           class CredentialInjector:
               def request(self, flow: http.HTTPFlow) -> None:
                   url = flow.request.pretty_url
+                  ctx.log.info(f"CREDPROXY: url={url}")
                   for pattern, header, env_var, value_format in CREDENTIALS:
                       if re.search(pattern, url):
                           value = os.environ.get(env_var)
+                          ctx.log.info(f"CREDPROXY: matched {pattern}, env={env_var}, has_val={bool(value)}")
                           if value:
+                              ctx.log.info(f"CREDPROXY: injecting {header} for {pattern}")
                               flow.request.headers[header] = value_format.format(value)
                           break
+                  ctx.log.info(f"CREDPROXY: final auth={flow.request.headers.get(\"authorization\", \"<NOT SET>\")[:20]}")
 
           addons = [CredentialInjector()]
         '';

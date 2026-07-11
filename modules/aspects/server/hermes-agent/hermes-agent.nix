@@ -11,7 +11,30 @@
     nixos = { config, pkgs, lib, ... }:
       let
         caSecretPath = lib.attrByPath [ "sops" "secrets" "authsome/mitmproxy-ca" "path" ] null config;
-        hermes-bin = "${config.services.hermes-agent.package}/bin/hermes";
+
+        credproxyAddon = pkgs.writeText "mitmproxy-credproxy.py" ''
+          from mitmproxy import http
+          import os
+          import re
+
+          CREDENTIALS = [
+              (r"openrouter\.ai", "Authorization", "OPENROUTER_API_KEY", "Bearer {}"),
+              (r"api\.github\.com", "Authorization", "GITHUB_TOKEN", "Bearer {}"),
+              (r"github\.com", "Authorization", "GITHUB_TOKEN", "Bearer {}"),
+          ]
+
+          class CredentialInjector:
+              def request(self, flow: http.HTTPFlow) -> None:
+                  url = flow.request.pretty_url
+                  for pattern, header, env_var, value_format in CREDENTIALS:
+                      if re.search(pattern, url):
+                          value = os.environ.get(env_var)
+                          if value:
+                              flow.request.headers[header] = value_format.format(value)
+                          break
+
+          addons = [CredentialInjector()]
+        '';
       in
       {
         imports = [ inputs.hermes-agent.nixosModules.default ];
@@ -39,35 +62,31 @@
         };
         users.groups.hermes-credproxy = { };
 
-        environment.systemPackages = with pkgs; [
-          python313Packages.keyrings-alt
-        ];
+        system.activationScripts."hermes-credproxy-ca" = lib.stringAfter (
+          lib.optional (config.system.activationScripts ? setupSecrets) "setupSecrets"
+        ) ''
+          MITM_DIR="/var/lib/hermes-credproxy/.mitmproxy"
+          COMBINED="/etc/ssl/certs/hermes-with-proxy-ca.crt"
+          AWK="${pkgs.gawk}/bin/awk"
+          COREUTILS="${pkgs.coreutils}/bin"
 
-          system.activationScripts."hermes-credproxy-ca" = lib.stringAfter (
-            lib.optional (config.system.activationScripts ? setupSecrets) "setupSecrets"
-          ) ''
-            MITM_DIR="/var/lib/hermes-credproxy/.mitmproxy"
-            COMBINED="/etc/ssl/certs/hermes-with-proxy-ca.crt"
-            AWK="${pkgs.gawk}/bin/awk"
-            COREUTILS="${pkgs.coreutils}/bin"
+          "$COREUTILS/cat" "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt" > "$COMBINED"
+          "$COREUTILS/chmod" 0644 "$COMBINED"
 
-            "$COREUTILS/cat" "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt" > "$COMBINED"
-            "$COREUTILS/chmod" 0644 "$COMBINED"
-
-            ${lib.optionalString (caSecretPath != null) ''
-              if [ -f "${caSecretPath}" ]; then
-                "$COREUTILS/mkdir" -p "$MITM_DIR"
-                CERT=$("$AWK" '/^-----BEGIN CERTIFICATE-----/{p=1} p; /^-----END CERTIFICATE-----/{p=0}' "${caSecretPath}")
-                KEY=$("$AWK" '/^-----BEGIN.*PRIVATE KEY-----/{p=1} p; /^-----END.*PRIVATE KEY-----/{p=0}' "${caSecretPath}")
-                printf '%s\n%s\n' "$CERT" "$KEY" > "$MITM_DIR/mitmproxy-ca.pem"
-                "$COREUTILS/chmod" 0600 "$MITM_DIR/mitmproxy-ca.pem"
-                printf '%s\n' "$CERT" > "$MITM_DIR/mitmproxy-ca-cert.pem"
-                "$COREUTILS/chmod" 0644 "$MITM_DIR/mitmproxy-ca-cert.pem"
-                "$COREUTILS/chown" -R hermes-credproxy:hermes-credproxy "$MITM_DIR"
-                "$COREUTILS/cat" "$MITM_DIR/mitmproxy-ca-cert.pem" >> "$COMBINED"
-              fi
-            ''}
-          '';
+          ${lib.optionalString (caSecretPath != null) ''
+            if [ -f "${caSecretPath}" ]; then
+              "$COREUTILS/mkdir" -p "$MITM_DIR"
+              CERT=$("$AWK" '/^-----BEGIN CERTIFICATE-----/{p=1} p; /^-----END CERTIFICATE-----/{p=0}' "${caSecretPath}")
+              KEY=$("$AWK" '/^-----BEGIN.*PRIVATE KEY-----/{p=1} p; /^-----END.*PRIVATE KEY-----/{p=0}' "${caSecretPath}")
+              printf '%s\n%s\n' "$CERT" "$KEY" > "$MITM_DIR/mitmproxy-ca.pem"
+              "$COREUTILS/chmod" 0600 "$MITM_DIR/mitmproxy-ca.pem"
+              printf '%s\n' "$CERT" > "$MITM_DIR/mitmproxy-ca-cert.pem"
+              "$COREUTILS/chmod" 0644 "$MITM_DIR/mitmproxy-ca-cert.pem"
+              "$COREUTILS/chown" -R hermes-credproxy:hermes-credproxy "$MITM_DIR"
+              "$COREUTILS/cat" "$MITM_DIR/mitmproxy-ca-cert.pem" >> "$COMBINED"
+            fi
+          ''}
+        '';
 
         systemd.services.hermes-credproxy = {
           description = "Hermes Credential Proxy Daemon";
@@ -80,10 +99,6 @@
             Group = "hermes-credproxy";
             Restart = "always";
             RestartSec = 5;
-            Environment = [
-              "PYTHON_KEYRING_BACKEND=keyrings.alt.UncEncryptedKeyring"
-              "PYTHONPATH=${pkgs.python313Packages.keyrings-alt}/${pkgs.python313.sitePackages}"
-            ];
             EnvironmentFile = [ config.sops.secrets."hermes/env".path ];
             UMask = "0077";
             NoNewPrivileges = true;
@@ -94,13 +109,12 @@
           };
 
           script = ''
-            if [ -n "''${OPENROUTER_API_KEY:-}" ]; then
-              echo "$OPENROUTER_API_KEY" | ${hermes-bin} cred-proxy add openrouter || true
-            fi
-            if [ -n "''${GITHUB_TOKEN:-}" ]; then
-              echo "$GITHUB_TOKEN" | ${hermes-bin} cred-proxy add github || true
-            fi
-            exec ${hermes-bin} cred-proxy start --port 7899
+            exec ${pkgs.mitmproxy}/bin/mitmdump \
+              -s ${credproxyAddon} \
+              --listen-port 7899 \
+              --set web_port=- \
+              --no-web \
+              --set block_global=false
           '';
         };
       };

@@ -146,7 +146,10 @@ in
           NO_PROXY = "127.0.0.1,localhost";
         };
 
-        configFile = ./hermes-config.yaml;
+        settings.display = {
+          host = "0.0.0.0";
+          port = 9119;
+        };
       };
 
       environment.systemPackages = [ pkgs.nodejs_22 ];

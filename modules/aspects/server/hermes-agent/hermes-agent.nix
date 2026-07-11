@@ -13,33 +13,30 @@
         caSecretPath = lib.attrByPath [ "sops" "secrets" "hermes-credproxy/mitmproxy-ca" "path" ] null config;
 
         credproxyAddon = pkgs.writeText "mitmproxy-credproxy.py" ''
+          import os, sys, re
           from mitmproxy import http
-          from mitmproxy import ctx
-          import os
-          import re
 
-          CREDENTIALS = [
-              (r"openrouter\.ai", "authorization", "OPENROUTER_API_KEY", "Bearer {}"),
-              (r"api\.github\.com", "authorization", "GITHUB_TOKEN", "Bearer {}"),
-              (r"github\.com", "authorization", "GITHUB_TOKEN", "Bearer {}"),
-              (r"opencode\.ai", "authorization", "OPENCODE_GO_API_KEY", "Bearer {}"),
+          CREDS = [
+              (re.compile(r'openrouter\.ai'), 'authorization', 'OPENROUTER_API_KEY', 'Bearer {}'),
+              (re.compile(r'api\.github\.com'), 'authorization', 'GITHUB_TOKEN', 'Bearer {}'),
+              (re.compile(r'github\.com'), 'authorization', 'GITHUB_TOKEN', 'Bearer {}'),
+              (re.compile(r'opencode\.ai'), 'authorization', 'OPENCODE_GO_API_KEY', 'Bearer {}'),
           ]
 
-          class CredentialInjector:
-              def request(self, flow: http.HTTPFlow) -> None:
-                  url = flow.request.pretty_url
-                  ctx.log.info(f"CREDPROXY: url={url}")
-                  for pattern, header, env_var, value_format in CREDENTIALS:
-                      if re.search(pattern, url):
-                          value = os.environ.get(env_var)
-                          ctx.log.info(f"CREDPROXY: matched {pattern}, env={env_var}, has_val={bool(value)}")
-                          if value:
-                              ctx.log.info(f"CREDPROXY: injecting {header} for {pattern}")
-                              flow.request.headers[header] = value_format.format(value)
+          class Injector:
+              def request(self, f):
+                  u = f.request.pretty_url
+                  for p, h, k, fmt in CREDS:
+                      if p.search(u):
+                          v = os.environ.get(k)
+                          if v:
+                              f.request.headers[h] = fmt.format(v)
+                              sys.stderr.write('CREDPROXY: injected ' + k[:12] + ' for ' + u[:50] + '\n')
+                          else:
+                              sys.stderr.write('CREDPROXY: MISSING_ENV ' + k + '\n')
                           break
-                  ctx.log.info(f"CREDPROXY: final auth={flow.request.headers.get(\"authorization\", \"<NOT SET>\")[:20]}")
 
-          addons = [CredentialInjector()]
+          addons = [Injector()]
         '';
       in
       {

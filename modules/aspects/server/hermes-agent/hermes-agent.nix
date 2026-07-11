@@ -112,8 +112,6 @@
             exec ${pkgs.mitmproxy}/bin/mitmdump \
               -s ${credproxyAddon} \
               --listen-port 7899 \
-              --set web_port=- \
-              --no-web \
               --set block_global=false
           '';
         };

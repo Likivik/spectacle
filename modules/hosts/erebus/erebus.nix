@@ -86,7 +86,7 @@ in
           group = "hermes-credproxy";
           mode = "0600";
         };
-        "hermes-credproxy/github/pat-spectacle" = {
+        "hermes-credproxy/github/pat-hermes-full" = {
           sopsFile = ../../../secrets/erebus/secrets.yaml;
           owner = "hermes-credproxy";
           group = "hermes-credproxy";

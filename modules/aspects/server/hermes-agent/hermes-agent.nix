@@ -113,7 +113,7 @@
 
           script = ''
             OPENROUTER_API_KEY=$(cat /run/secrets/hermes-credproxy/llm-providers/openrouter/api-key)
-            GITHUB_TOKEN=$(cat /run/secrets/hermes-credproxy/github/pat-spectacle)
+            GITHUB_TOKEN=$(cat /run/secrets/hermes-credproxy/github/pat-hermes-full)
             OPENCODE_GO_API_KEY=$(cat /run/secrets/hermes-credproxy/llm-providers/opencode/api-key2)
             export OPENROUTER_API_KEY GITHUB_TOKEN OPENCODE_GO_API_KEY
 

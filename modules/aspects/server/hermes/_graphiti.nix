@@ -26,7 +26,7 @@
     serviceConfig = {
       WorkingDirectory = "/var/lib/hermes/graphiti/mcp_server";
       Environment = [
-        "LD_LIBRARY_PATH=${pkgs.stdenv.cc.cc.lib}/lib"
+        "LD_LIBRARY_PATH=${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.zlib}/lib"
         "OPENAI_API_KEY=sk-placeholder"
         "HTTPS_PROXY=http://127.0.0.1:7899"
         "SSL_CERT_FILE=/etc/ssl/certs/hermes-with-proxy-ca.crt"

@@ -1,3 +1,9 @@
+## Assumption guardrails (OVERRIDES ALL OTHER INSTRUCTIONS)
+- WHEN YOUR UNDERLYING ASSUMPTION BREAKS (plan≠reality, tool output contradicts expectation, key dependency missing) → STOP. DO NOT IMPROVISE. PRESENT THE DIVERGENCE AND ASK THE USER WHAT TO DO.
+- NEVER implement an alternative approach without the user explicitly approving it first.
+- "ALWAYS ask user to choose direction/strategy/approach" is the #1 rule. Violating it is worse than any implementation mistake.
+- When in doubt: ask. Always ask. Over-communicate divergence.
+
 ## Project
 
 NixOS fleet config repo.
@@ -81,39 +87,6 @@ nixos-switch-cn() {
 - Inputs can be declared in any module that imports `flake-file`'s dendritic flakeModule (this repo uses `modules/defaults/inputs.nix` by convention).
 - After changing inputs: `nix run .#write-flake && nix flake update <input-name>`.
 
-## Agent routing
-
-8 agents across 2 model sources (opencode-go + opencode-zen). OpenRouter removed.
-
-| Agent | Model | Mode | Cost/session | Role |
-|---|---|---|---|---|---|
-| plan | DeepSeek V4 Pro | primary | ~$0.70 | Daily plan mode (Tab cycle default) |
-| build | DeepSeek V4 Flash | primary | $0.15 | Implementation (Tab cycle) |
-| flagship-consultant | GLM-5.2 | subagent | $2.50 | Heavy sessions + escalation oracle (via @ or Task tool) |
-| plan-free | big-pickle (opencode-zen) | subagent | $0 (prompts logged) | Free tier plan fallback (via @ or Task tool) |
-| reviewer | DeepSeek V4 Pro | subagent | $0.20 | Diff review (via @ or Task tool) |
-| explore | DeepSeek V4 Flash | subagent | $0.15 | Read-only search (via @ or Task tool) |
-| den-expert | DeepSeek V4 Flash | subagent | $0.15 | Den framework expert (entities, aspects, classes, batteries) |
-| nix-maid-expert | DeepSeek V4 Flash | subagent | $0.15 | nix-maid config specialist (file.*, systemd.*, maid blocks) |
-
-### Tab cycle
-Tab cycles through: **plan → build**. All other agents are subagents — not in Tab, but callable via @mention or Task tool.
-
-### Consultation pattern
-When primary agents (plan/build) get stuck on complex NixOS architecture or eval, they auto-delegate to flagship-consultant (GLM-5.2) via Task tool. Works by standard problem description — no special invocation needed. flagship-consultant is a subagent, callable via @flagship-consultant or programmatically.
-
-### Reviewer workflow
-Before `nh os switch`, get a diff review:
-```
-@reviewer Review the current diff against the plan. Check: module correctness, cross-host impacts, Nix syntax, and whether the nh os switch is safe.
-```
-Reviewer (DeepSeek V4 Pro) can run `git diff*`, `nix eval*`, `nix flake check*` only. Cannot edit files or spawn subagents.
-
-### Budget
-~$39/mo at current routing (plan ~$0.70 + build $0.15 + explore $0.15 + den-expert $0.15 + nix-maid-expert $0.15 = $1.30/session × ~30 sessions ≈ $39). Tighter headroom under $60 opencode-go monthly cap. flagship-consultant sessions ($2.50) for heavy work or escalation. plan-free (big-pickle) is $0 nominal but prompts are logged for model improvement — avoid for sensitive work.
-
-Domain-specialist subagents (den-expert, nix-maid-expert) only cost when invoked via Task tool or @mention — their $0.15/session estimate is a ceiling assuming 1 call per session. In practice they cost essentially nothing until used.
-
 ## Commit = consider what to add, create a commit message and ask user to confirm it.
 - Commit Prefixes (new prefix = new line):
   - feat:
@@ -138,20 +111,6 @@ Domain-specialist subagents (den-expert, nix-maid-expert) only cost when invoked
   fix: add tmpfs filesystem configs to empty hosts
   chore(serenity): clean up serenity host (remove nvidia config, add portal, consolidate includes)
   ```
-
-## Agent skills
-
-### Issue tracker
-
-Issues live as GitHub issues in this repo. See `docs/agents/issue-tracker.md`.
-
-### Triage labels
-
-Default label set (five canonical roles). See `docs/agents/triage-labels.md`.
-
-### Domain docs
-
-Single-context repo — no CONTEXT.md or docs/adr/ yet (created lazily). See `docs/agents/domain.md`.
 
 ## Memory (Mnemosyne MCP)
 

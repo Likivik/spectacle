@@ -4,7 +4,8 @@
   "autoshare": false,
   "autoupdate": false,
   "plugin": [
-    "@tarquinen/opencode-dcp@latest",
+    /* 2026-07-11: disabled per user request */
+    // "@tarquinen/opencode-dcp@latest",
     "@simonwjackson/opencode-direnv",
     "./plugins/mnemosyne-bridge.ts",
     "./plugins/system-context.ts",
@@ -40,7 +41,7 @@
   },
   "agent": {
     "plan": {
-      "model": "opencode-go/deepseek-v4-pro"
+      "model": "opencode-go/qwen3.7-plus"
     },
     "build": {
       "model": "opencode-go/deepseek-v4-flash"

@@ -32,7 +32,7 @@
         "SSL_CERT_FILE=/etc/ssl/certs/hermes-with-proxy-ca.crt"
         "NO_PROXY=127.0.0.1,localhost"
       ];
-      ExecStart = "${pkgs.bash}/bin/bash -c 'UV_PYTHON=${pkgs.python312}/bin/python3 && exec ${pkgs.uv}/bin/uv run main.py --transport http --host 127.0.0.1 --port 8000'";
+      ExecStart = "${pkgs.bash}/bin/bash -c 'UV_PYTHON_PREFERENCE=only-system UV_PYTHON_DOWNLOADS=never UV_PYTHON=${pkgs.python312}/bin/python3 && exec ${pkgs.uv}/bin/uv run main.py --transport http --host 127.0.0.1 --port 8000'";
       Restart = "on-failure";
       RestartSec = 5;
     };

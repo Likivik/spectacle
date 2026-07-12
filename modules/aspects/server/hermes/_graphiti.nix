@@ -1,6 +1,4 @@
-{ config, pkgs, lib }: let
-  openrouterKeyPath = lib.attrByPath [ "sops" "secrets" "hermes-mitmproxy/llm-providers/openrouter/api-key" "path" ] null config;
-in {
+{ config, pkgs, lib }: {
   systemd.user.services.falkordb = {
     description = "FalkorDB Graph Database";
     after = [ "network.target" ];
@@ -19,8 +17,8 @@ in {
 
   systemd.user.services.graphiti-mcp = {
     description = "Graphiti MCP Server";
-    after = [ "falkordb.service" ];
-    wants = [ "falkordb.service" ];
+    after = [ "falkordb.service" "llama-cpp.service" ];
+    wants = [ "falkordb.service" "llama-cpp.service" ];
     wantedBy = [ "default.target" ];
 
     unitConfig.ConditionUser = "hermes";
@@ -29,6 +27,7 @@ in {
       WorkingDirectory = "/var/lib/hermes/graphiti/mcp_server";
       Environment = [
         "LD_LIBRARY_PATH=${pkgs.stdenv.cc.cc.lib}/lib"
+        "OPENAI_API_KEY=sk-placeholder"
         "HTTPS_PROXY=http://127.0.0.1:7899"
         "SSL_CERT_FILE=/etc/ssl/certs/hermes-with-proxy-ca.crt"
         "NO_PROXY=127.0.0.1,localhost"
@@ -50,29 +49,27 @@ in {
     fi
     chown -R hermes:hermes /var/lib/hermes/graphiti
 
-    ${lib.optionalString (openrouterKeyPath != null) ''
-      sudo -u hermes bash -c 'cd /var/lib/hermes/graphiti/mcp_server && UV_PYTHON=${pkgs.python312}/bin/python3 ${pkgs.uv}/bin/uv sync' || true
+    ${pkgs.sudo}/bin/sudo -u hermes bash -c 'cd /var/lib/hermes/graphiti/mcp_server && UV_PYTHON=${pkgs.python312}/bin/python3 ${pkgs.uv}/bin/uv sync' || true
 
-      _openrouter_key="$(cat "${openrouterKeyPath}")"
-      mkdir -p /var/lib/hermes/graphiti/mcp_server/config
-      cat > /var/lib/hermes/graphiti/mcp_server/config/config.yaml << CONFIGEOF
-  llm:
-    provider: "openai"
-    model: "deepseek/deepseek-v4-flash:free"
-    providers:
-      openai:
-        api_url: "https://openrouter.ai/api/v1"
-        api_key: "$_openrouter_key"
+    mkdir -p /var/lib/hermes/graphiti/mcp_server/config
+    cat > /var/lib/hermes/graphiti/mcp_server/config/config.yaml << CONFIGEOF
+llm:
+  provider: "openai"
+  model: "openrouter/free"
+  providers:
+    openai:
+      api_url: "https://openrouter.ai/api/v1"
+      api_key: "hermes-proxy://openrouter"
 
-  embedder:
-    provider: "openai"
-    model: "text-embedding-3-small"
-    providers:
-      openai:
-        api_url: "https://openrouter.ai/api/v1"
-        api_key: "$_openrouter_key"
-  CONFIGEOF
-      chown -R hermes:hermes /var/lib/hermes/graphiti/mcp_server/config
-    ''}
+embedder:
+  provider: "openai"
+  model: "bge-m3"
+  dimensions: 1024
+  providers:
+    openai:
+      api_url: "http://127.0.0.1:8081/v1"
+      api_key: "hermes-proxy://llama"
+CONFIGEOF
+    chown -R hermes:hermes /var/lib/hermes/graphiti/mcp_server/config
   '';
 }

@@ -13,9 +13,11 @@
 
       mitmproxyConfig = import ./_mitmproxy.nix { inherit config pkgs lib; };
       graphitiConfig = import ./_graphiti.nix { inherit config pkgs lib; };
+      llamaConfig = import ./_llama.nix { inherit config pkgs lib; };
     in lib.mkMerge [
       mitmproxyConfig
       graphitiConfig
+      llamaConfig
       {
         users.groups.hermes = { };
         users.users.hermes = {

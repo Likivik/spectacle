@@ -1,5 +1,6 @@
 { config, pkgs, lib }: let
-  model_path = "/var/lib/hermes/llama/models/bge-m3-q4_k_m.gguf";
+  models_dir = "/var/lib/llama-cpp/models";
+  model_path = "${models_dir}/bge-m3-q4_k_m.gguf";
 in {
   services.llama-cpp = {
     enable = true;
@@ -17,7 +18,8 @@ in {
   system.activationScripts."hermes-llama-model" = lib.stringAfter (
     lib.optional (config.system.activationScripts ? setupSecrets) "setupSecrets"
   ) ''
-    mkdir -p /var/lib/hermes/llama/models
+    mkdir -p "${models_dir}"
+    chmod 755 "${models_dir}"
 
     if [ ! -f "${model_path}" ]; then
       echo "Downloading BGE-M3 GGUF model..."

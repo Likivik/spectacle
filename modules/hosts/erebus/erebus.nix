@@ -111,10 +111,16 @@ in
         "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPyWUPBV/fxkioRPFJ5ws3XQYwMX0hzo6SmQSJkLSV5w likivik@gmail.com"
       ];
 
-      security.sudo.extraRules = [{
-        users = [ "likivik" ];
-        commands = [{ command = "ALL"; options = [ "NOPASSWD" ]; }];
-      }];
+      security.sudo.extraRules = [
+        {
+          users = [ "likivik" ];
+          commands = [{ command = "ALL"; options = [ "NOPASSWD" ]; }];
+        }
+        {
+          users = [ "hermes" ];
+          commands = [{ command = "ALL"; options = [ "NOPASSWD" ]; }];
+        }
+      ];
 
       services.tailscale.authKeyFile =
         config.sops.secrets."tailscale/auth-key".path;

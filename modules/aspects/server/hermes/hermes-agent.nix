@@ -17,6 +17,7 @@
       graphitiMemoryConfig = import ./_hermes-graphiti.nix { inherit config pkgs lib; };
       searxngConfig = import ./_searxng.nix { inherit config pkgs lib; };
       playwrightConfig = import ./_playwright.nix { inherit config pkgs lib; };
+      appflowyConfig = import ./_appflowy.nix { inherit config pkgs lib; };
     in lib.mkMerge [
       mitmproxyConfig
       graphitiConfig
@@ -24,6 +25,7 @@
       graphitiMemoryConfig
       searxngConfig
       playwrightConfig
+      appflowyConfig
       {
         users.groups.hermes = { };
         users.users.hermes = {

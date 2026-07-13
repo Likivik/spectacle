@@ -147,7 +147,10 @@ class GraphitiClient:
 
     def _post(self, body: dict, *, session: bool = False) -> str:
         data = json.dumps(body).encode()
-        headers = {"Content-Type": "application/json"}
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+        }
         if session and self._session_id:
             headers["mcp-session-id"] = self._session_id
         req = urllib.request.Request(self.BASE_URL, data=data, headers=headers, method="POST")
@@ -225,7 +228,7 @@ class GraphitiClient:
 SEARCH_SCHEMA = {
     "name": "graphiti_search",
     "description": "Search the temporal knowledge graph for facts and entities related to a query.",
-    "input_schema": {
+    "parameters": {
         "type": "object",
         "properties": {
             "query": {
@@ -249,7 +252,7 @@ REMEMBER_SCHEMA = {
         "Use when the user explicitly says 'remember this' or for facts "
         "that should persist indefinitely."
     ),
-    "input_schema": {
+    "parameters": {
         "type": "object",
         "properties": {
             "content": {
@@ -264,7 +267,7 @@ REMEMBER_SCHEMA = {
 FORGET_SCHEMA = {
     "name": "graphiti_forget",
     "description": "Delete an episode from the knowledge graph by its UUID.",
-    "input_schema": {
+    "parameters": {
         "type": "object",
         "properties": {
             "uuid": {
@@ -287,6 +290,30 @@ class GraphitiMemoryProvider(MemoryProvider):
 
     def is_available(self) -> bool:
         return True
+
+    def _ensure_client(self) -> bool:
+        """Return True if client is ready; lazily init if not.
+
+        Defensive: handles the case where hermes calls prefetch/sync_turn
+        before initialize(), or initialize() itself failed (e.g. MCP init 406).
+        """
+        if getattr(self, "_client", None) is not None:
+            return True
+        try:
+            self._agent_context = getattr(self, "_agent_context", "primary")
+            self._scope = current_scope(self._agent_context)
+            self._cache = TTLCache()
+            self._prefetch_result = {}
+            self._prefetch_lock = threading.Lock()
+            self._sync_queue = queue.Queue(maxsize=QUEUE_MAXSIZE)
+            self._sync_worker = None
+            self._client = GraphitiClient()
+            self._ensure_sync_worker()
+            log_event("late_init", ok=True)
+            return True
+        except Exception as e:
+            log_event("late_init_failed", exc=str(e))
+            return False
 
     def initialize(self, session_id: str, **kwargs) -> None:
         self._session_id = session_id
@@ -355,6 +382,8 @@ class GraphitiMemoryProvider(MemoryProvider):
     def prefetch(self, query: str, *, session_id: str = "") -> str:
         if not should_prefetch(query):
             return ""
+        if not self._ensure_client():
+            return ""
         cached = self._cache.get(query)
         if cached is not None:
             return cached
@@ -407,6 +436,8 @@ class GraphitiMemoryProvider(MemoryProvider):
 
     def sync_turn(self, user_content: str, assistant_content: str, *,
                   session_id: str = "", messages: list[dict] | None = None) -> None:
+        if not self._ensure_client():
+            return
         if self._agent_context != "primary":
             return
         user = strip_envelopes(user_content)

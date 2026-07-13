@@ -17,6 +17,12 @@
             u = f.request.pretty_url
             for p, h, k, fmt in CREDS:
                 if p.search(u):
+                    # Skip if Authorization header already present —
+                    # git sends Basic auth (username:token), gh may send
+                    # Bearer. Overwriting breaks git push/pull.
+                    if h in f.request.headers:
+                        sys.stderr.write('MITMPROXY: skip ' + k[:12] + ' (auth present) for ' + u[:50] + '\n')
+                        break
                     v = os.environ.get(k)
                     if v:
                         f.request.headers[h] = fmt.format(v)

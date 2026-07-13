@@ -20,7 +20,7 @@ in {
     ln -sf "${graphitiPlugin}/lib" "$PLUGIN_DIR"
     chown -h hermes:hermes "$PLUGIN_DIR"
 
-    if ! ${pkgs.gnugrep}/bin/grep -qE "^memory\.provider:" /var/lib/hermes/.hermes/config.yaml 2>/dev/null; then
+    if ! ${pkgs.gnugrep}/bin/grep -q "provider: graphiti" /var/lib/hermes/.hermes/config.yaml 2>/dev/null; then
       ${pkgs.sudo}/bin/sudo -u hermes ${pkgs.bash}/bin/bash -c '
         export HOME=/var/lib/hermes
         export HERMES_HOME=/var/lib/hermes/.hermes

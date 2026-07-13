@@ -175,7 +175,18 @@ class GraphitiClient:
         match = re.search(r"data: (.+)", text, re.DOTALL)
         if not match:
             raise RuntimeError(f"graphiti-mcp non-SSE response: {text[:200]}")
-        return json.loads(match.group(1))
+        result = json.loads(match.group(1))
+        # Unwrap MCP tool call responses: extract content[0].text
+        # The MCP server returns: {"result": {"content": [{"type": "text", "text": "{...}"}]}}
+        # Callers expect the inner data dict directly.
+        if method == "tools/call" and "result" in result:
+            content = result["result"].get("content", [])
+            if content and isinstance(content[0], dict) and "text" in content[0]:
+                try:
+                    result = json.loads(content[0]["text"])
+                except (json.JSONDecodeError, IndexError):
+                    pass
+        return result
 
     def _initialize(self) -> None:
         self._call("initialize", {
@@ -340,7 +351,9 @@ class GraphitiMemoryProvider(MemoryProvider):
 
     def _format_results(self, nodes: dict, facts: dict) -> str:
         lines: list[str] = []
-        node_result = nodes.get("result", {})
+        # Handle both MCP envelope {"result": {"nodes": [...]}} and
+        # unwrapped format {"nodes": [...]} after _call extracts content.
+        node_result = nodes.get("result", nodes)
         if isinstance(node_result, dict) and "nodes" in node_result:
             for n in node_result["nodes"]:
                 name = n.get("name", "")
@@ -355,7 +368,7 @@ class GraphitiMemoryProvider(MemoryProvider):
                     parts.append(f"({labels})")
                 if parts:
                     lines.append("  " + " — ".join(parts))
-        fact_result = facts.get("result", {})
+        fact_result = facts.get("result", facts)
         if isinstance(fact_result, dict) and "facts" in fact_result:
             for f in fact_result["facts"]:
                 fact_text = f.get("fact", "")

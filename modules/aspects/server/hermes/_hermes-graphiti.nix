@@ -19,10 +19,9 @@ in {
     mkdir -p "/var/lib/hermes/.hermes/plugins"
     ln -sf "${graphitiPlugin}/lib" "$PLUGIN_DIR"
     chown -h hermes:hermes "$PLUGIN_DIR"
-    chmod -R a+rX "$PLUGIN_DIR"
 
-    if ! grep -qE "^memory\.provider:" /var/lib/hermes/.hermes/config.yaml 2>/dev/null; then
-      ${pkgs.sudo}/bin/sudo -u hermes bash -c '
+    if ! ${pkgs.gnugrep}/bin/grep -qE "^memory\.provider:" /var/lib/hermes/.hermes/config.yaml 2>/dev/null; then
+      ${pkgs.sudo}/bin/sudo -u hermes ${pkgs.bash}/bin/bash -c '
         export HOME=/var/lib/hermes
         export HERMES_HOME=/var/lib/hermes/.hermes
         export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$(id -u)/bus"

@@ -2,34 +2,60 @@
   caSecretPath = lib.attrByPath [ "sops" "secrets" "hermes-mitmproxy/mitmproxy-ca" "path" ] null config;
 
   mitmproxyAddon = pkgs.writeText "mitmproxy-addon.py" ''
-    import os, sys, re
+    import os, sys, base64
     from mitmproxy import http
 
-    CREDS = [
-        (re.compile(r'openrouter\.ai'), 'authorization', 'OPENROUTER_API_KEY', 'Bearer {}'),
-        (re.compile(r'api\.github\.com'), 'authorization', 'GITHUB_TOKEN', 'Bearer {}'),
-        (re.compile(r'github\.com'), 'authorization', 'GITHUB_TOKEN', 'Bearer {}'),
-        (re.compile(r'opencode\.ai'), 'authorization', 'OPENCODE_GO_API_KEY', 'Bearer {}'),
+    # GitHub hosts by auth scheme (from tend project pattern)
+    # Git smart-HTTP uses Basic auth; REST API uses Bearer/token
+    GITHUB_BASIC_HOSTS = {"github.com", "codeload.github.com"}
+    GITHUB_TOKEN_HOSTS = {"api.github.com", "uploads.github.com", "raw.githubusercontent.com"}
+
+    # Other services (all use Bearer)
+    BEARER_SERVICES = [
+        ("openrouter.ai", "OPENROUTER_API_KEY"),
+        ("opencode.ai", "OPENCODE_GO_API_KEY"),
     ]
 
     class Injector:
+        def __init__(self):
+            # Pre-compute GitHub Basic auth header
+            gh_token = os.environ.get("GITHUB_TOKEN", "")
+            if gh_token:
+                self._gh_basic = "Basic " + base64.b64encode(
+                    f"x-access-token:{gh_token}".encode()
+                ).decode()
+                self._gh_token = gh_token
+            else:
+                self._gh_basic = None
+                self._gh_token = None
+
         def request(self, f):
-            u = f.request.pretty_url
-            for p, h, k, fmt in CREDS:
-                if p.search(u):
-                    # Skip if Authorization header already present —
-                    # git sends Basic auth (username:token), gh may send
-                    # Bearer. Overwriting breaks git push/pull.
-                    if h in f.request.headers:
-                        sys.stderr.write('MITMPROXY: skip ' + k[:12] + ' (auth present) for ' + u[:50] + '\n')
+            host = f.request.host.lower()
+
+            # GitHub: inject based on host
+            if host in GITHUB_BASIC_HOSTS:
+                if self._gh_basic:
+                    f.request.headers["Authorization"] = self._gh_basic
+                    sys.stderr.write(f"MITMPROXY: injected GITHUB_BASIC for {host}\n")
+                else:
+                    sys.stderr.write("MITMPROXY: MISSING_ENV GITHUB_TOKEN\n")
+            elif host in GITHUB_TOKEN_HOSTS:
+                if self._gh_token:
+                    f.request.headers["Authorization"] = f"token {self._gh_token}"
+                    sys.stderr.write(f"MITMPROXY: injected GITHUB_TOKEN for {host}\n")
+                else:
+                    sys.stderr.write("MITMPROXY: MISSING_ENV GITHUB_TOKEN\n")
+            else:
+                # Other services: Bearer auth
+                for pattern, env_key in BEARER_SERVICES:
+                    if pattern in host:
+                        v = os.environ.get(env_key)
+                        if v:
+                            f.request.headers["Authorization"] = f"Bearer {v}"
+                            sys.stderr.write(f"MITMPROXY: injected {env_key} for {host}\n")
+                        else:
+                            sys.stderr.write(f"MITMPROXY: MISSING_ENV {env_key}\n")
                         break
-                    v = os.environ.get(k)
-                    if v:
-                        f.request.headers[h] = fmt.format(v)
-                        sys.stderr.write('MITMPROXY: injected ' + k[:12] + ' for ' + u[:50] + '\n')
-                    else:
-                        sys.stderr.write('MITMPROXY: MISSING_ENV ' + k + '\n')
-                    break
 
     addons = [Injector()]
   '';

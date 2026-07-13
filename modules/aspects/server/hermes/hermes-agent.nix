@@ -15,11 +15,15 @@
       graphitiConfig = import ./_graphiti.nix { inherit config pkgs lib; };
       llamaConfig = import ./_llama.nix { inherit config pkgs lib; };
       graphitiMemoryConfig = import ./_hermes-graphiti.nix { inherit config pkgs lib; };
+      searxngConfig = import ./_searxng.nix { inherit config pkgs lib; };
+      playwrightConfig = import ./_playwright.nix { inherit config pkgs lib; };
     in lib.mkMerge [
       mitmproxyConfig
       graphitiConfig
       llamaConfig
       graphitiMemoryConfig
+      searxngConfig
+      playwrightConfig
       {
         users.groups.hermes = { };
         users.users.hermes = {

@@ -68,15 +68,15 @@ def should_prefetch(query: str, min_length: int = 8) -> bool:
 def current_scope(agent_context: str) -> str:
     base = "likivik"
     if "hermes" in agent_context.lower():
-        return f"{base}:hermes"
+        return f"{base}_hermes"
     if "opencode" in agent_context.lower():
-        return f"{base}:opencode"
+        return f"{base}_opencode"
     return base
 
 
 def cascading_scopes(scope: str) -> list[str]:
-    parts = scope.split(":")
-    return [":".join(parts[:i]) for i in range(len(parts), 0, -1)]
+    parts = scope.split("_")
+    return ["_".join(parts[:i]) for i in range(len(parts), 0, -1)]
 
 
 # ── Observability ──────────────────────────────────────────────────────

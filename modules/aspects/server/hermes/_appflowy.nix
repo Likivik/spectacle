@@ -16,6 +16,9 @@ in {
       WorkingDirectory = appflowy-dir;
       ExecStart = "${pkgs.docker-compose}/bin/docker-compose up --remove-orphans";
       ExecStop = "${pkgs.docker-compose}/bin/docker-compose down";
+      Environment = [
+        "PATH=${pkgs.podman}/bin:${pkgs.docker-compose}/bin:${pkgs.coreutils}/bin:${pkgs.gnugrep}/bin:${pkgs.findutils}/bin:${pkgs.bash}/bin"
+      ];
       Restart = "on-failure";
       RestartSec = 10;
     };

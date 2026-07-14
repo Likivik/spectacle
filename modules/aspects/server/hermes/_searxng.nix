@@ -11,6 +11,7 @@
         safe_search = 0;
         autocomplete = "google";
         default_lang = "en";
+        formats = [ "html" "json" ];
       };
       engines = [
         { name = "google"; engine = "google"; shortcut = "g"; }

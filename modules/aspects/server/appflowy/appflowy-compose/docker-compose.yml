@@ -171,6 +171,8 @@ services:
   admin_frontend:
     restart: on-failure
     image: appflowyinc/admin_frontend:${APPFLOWY_ADMIN_FRONTEND_VERSION:-latest}
+    ports:
+      - "${ADMIN_FRONTEND_PORT:-3000}:3000"
     environment:
       - APPFLOWY_GOTRUE_BASE_URL=${APPFLOWY_GOTRUE_BASE_URL:-http://gotrue:9999}
       - APPFLOWY_BASE_URL=${APPFLOWY_BASE_URL:-http://appflowy_cloud:8000}
@@ -282,6 +284,8 @@ services:
   appflowy_web:
     restart: on-failure
     image: appflowyinc/appflowy_web:${APPFLOWY_WEB_VERSION:-latest}
+    ports:
+      - "${APPFLOWY_WEB_PORT:-3001}:3000"
     depends_on:
       appflowy_cloud:
         condition: service_healthy

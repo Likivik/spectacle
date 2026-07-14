@@ -9,7 +9,11 @@
 
   den.aspects.server.hermes-agent = {
     nixos = { config, pkgs, lib, ... }: let
-      hermes-pkg = inputs.hermes-agent.packages.${pkgs.system}.messaging;
+      hermes-pkg = inputs.hermes-agent.packages.${pkgs.system}.messaging.overrideAttrs (old: {
+        propagatedBuildInputs = (old.propagatedBuildInputs or []) ++ [
+          pkgs.python312Packages.anthropic
+        ];
+      });
 
       mitmproxyConfig = import ./_mitmproxy.nix { inherit config pkgs lib; };
       graphitiConfig = import ./_graphiti.nix { inherit config pkgs lib; };

@@ -9,11 +9,8 @@
 
   den.aspects.server.hermes-agent = {
     nixos = { config, pkgs, lib, ... }: let
-      hermes-pkg = inputs.hermes-agent.packages.${pkgs.system}.messaging.overrideAttrs (old: {
-        propagatedBuildInputs = (old.propagatedBuildInputs or []) ++ [
-          pkgs.python312Packages.anthropic
-        ];
-      });
+      hermes-pkg = inputs.hermes-agent.packages.${pkgs.system}.messaging;
+      anthropic-py = pkgs.python312.withPackages (ps: [ ps.anthropic ]);
 
       mitmproxyConfig = import ./_mitmproxy.nix { inherit config pkgs lib; };
       graphitiConfig = import ./_graphiti.nix { inherit config pkgs lib; };
@@ -96,6 +93,7 @@ Environment=NO_PROXY=127.0.0.1,localhost
 Environment=WHATSAPP_ENABLED=false
 Environment=WHATSAPP_MODE=self-chat
 EnvironmentFile=/run/secrets/hermes/env
+Environment=PYTHONPATH=${anthropic-py}/${anthropic-py.sitePackages}
 DROPEOF
           chown -R hermes:hermes /var/lib/hermes/.config/systemd/user/hermes-gateway.service.d
           chmod 644 /var/lib/hermes/.config/systemd/user/hermes-gateway.service.d/override.conf

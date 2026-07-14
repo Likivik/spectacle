@@ -1,10 +1,23 @@
 name: affine
 services:
+  caddy:
+    image: caddy:latest
+    container_name: affine_caddy
+    restart: unless-stopped
+    ports:
+      - '${CADDY_PORT:-3443}:3443'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - ${SSL_CERT_PATH}:/certs/cert.pem
+      - ${SSL_KEY_PATH}:/certs/key.pem
+    depends_on:
+      - affine
+
   affine:
     image: ghcr.io/toeverything/affine:${AFFINE_REVISION:-stable}
     container_name: affine_server
-    ports:
-      - '${PORT:-3010}:3010'
+    expose:
+      - '3010'
     depends_on:
       redis:
         condition: service_healthy

@@ -54,6 +54,7 @@ in
         interfaces.tailscale0.allowedTCPPorts = [
           9119
           8642
+          3443
         ];
         interfaces.tailscale0.allowedUDPPorts = [ 41641 ];
       } // (if lockSshToTailscale then {

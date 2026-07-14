@@ -8,6 +8,7 @@ in
       den.aspects.core
       den.aspects.core.tailscale
       den.aspects.server.hermes-agent
+      den.aspects.server.appflowy
       den.aspects.server.sops
     ];
 

@@ -51,7 +51,7 @@
 
     ${pkgs.sudo}/bin/sudo -u hermes bash -c 'cd /var/lib/hermes/graphiti/mcp_server && UV_PYTHON=${pkgs.python312}/bin/python3 ${pkgs.uv}/bin/uv sync' || true
 
-    sed -i 's/pythonVersion = "3.10"/pythonVersion = "3.12"/' /var/lib/hermes/graphiti/mcp_server/pyproject.toml || true
+    ${pkgs.gnused}/bin/sed -i 's/pythonVersion = "3.10"/pythonVersion = "3.12"/' /var/lib/hermes/graphiti/mcp_server/pyproject.toml || true
 
     mkdir -p /var/lib/hermes/graphiti/mcp_server/config
     cat > /var/lib/hermes/graphiti/mcp_server/config/config.yaml << CONFIGEOF

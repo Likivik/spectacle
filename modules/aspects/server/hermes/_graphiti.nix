@@ -7,8 +7,12 @@
     unitConfig.ConditionUser = "hermes";
 
     serviceConfig = {
-      ExecStartPre = "${pkgs.podman}/bin/podman rm -f falkordb || true";
-      ExecStart = "${pkgs.podman}/bin/podman run --rm --name falkordb -p 127.0.0.1:6379:6379 -v /var/lib/hermes/falkordb-data:/data falkordb/falkordb-server:edge-alpine";
+      # Use - prefix to ignore non-zero exit (systemd doesn't run shell; || true is a shell construct)
+      ExecStartPre = "-${pkgs.podman}/bin/podman rm -f falkordb";
+      # Volume mount: container data dir is /var/lib/falkordb/data (not /data)
+      # Pass --save args to enable RDB persistence (survives container restarts)
+      # Pass --dir to write dump.rdb to the bind-mounted volume
+      ExecStart = "${pkgs.podman}/bin/podman run --rm --name falkordb -p 127.0.0.1:6379:6379 -v /var/lib/hermes/falkordb-data:/var/lib/falkordb/data falkordb/falkordb-server:edge-alpine --save 900 1 --save 300 10 --save 60 10000 --dir /var/lib/falkordb/data";
       ExecStop = "${pkgs.podman}/bin/podman stop falkordb";
       Restart = "on-failure";
       RestartSec = 5;

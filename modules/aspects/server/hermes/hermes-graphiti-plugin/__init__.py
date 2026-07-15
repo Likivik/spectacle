@@ -319,6 +319,9 @@ class GraphitiMemoryProvider(MemoryProvider):
             self._sync_queue = queue.Queue(maxsize=QUEUE_MAXSIZE)
             self._sync_worker = None
             self._client = GraphitiClient()
+            self._turn_counter = 0
+            self._turn_buffer = []
+            self._sync_batch_every = 25
             self._ensure_sync_worker()
             log_event("late_init", ok=True)
             return True
@@ -336,6 +339,9 @@ class GraphitiMemoryProvider(MemoryProvider):
         self._sync_queue: queue.Queue[tuple[str, str]] = queue.Queue(maxsize=QUEUE_MAXSIZE)
         self._sync_worker: threading.Thread | None = None
         self._client = GraphitiClient()
+        self._turn_counter: int = 0
+        self._turn_buffer: list[str] = []
+        self._sync_batch_every: int = kwargs.get("sync_batch_every", 25)
         self._ensure_sync_worker()
 
     def system_prompt_block(self) -> str:
@@ -459,8 +465,19 @@ class GraphitiMemoryProvider(MemoryProvider):
         body = f"User: {user}\nAssistant: {assistant_content}"
         if len(body) > MAX_EPISODE_CHARS:
             body = body[:MAX_EPISODE_CHARS]
+
+        # Batch turns to limit OpenRouter API calls (free tier rate limits)
+        self._turn_counter += 1
+        self._turn_buffer.append(body)
+        if self._turn_counter % self._sync_batch_every != 0:
+            return
+        # Flush buffered turns as one episode
         name = f"turn-{(session_id or 'noctx')[-8:]}-{int(time.time() * 1000)}"
-        self._enqueue_sync(name, body)
+        combined = "\n---\n".join(self._turn_buffer)
+        if len(combined) > MAX_EPISODE_CHARS:
+            combined = combined[:MAX_EPISODE_CHARS]
+        self._turn_buffer.clear()
+        self._enqueue_sync(name, combined)
 
     def get_tool_schemas(self):
         return [SEARCH_SCHEMA, REMEMBER_SCHEMA, FORGET_SCHEMA]

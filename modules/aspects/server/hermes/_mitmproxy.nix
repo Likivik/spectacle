@@ -51,8 +51,17 @@
                     if pattern in host:
                         v = os.environ.get(env_key)
                         if v:
-                            f.request.headers["Authorization"] = f"Bearer {v}"
-                            sys.stderr.write(f"MITMPROXY: injected {env_key} for {host}\n")
+                            # Anthropic Messages endpoint needs x-api-key header
+                            # (e.g. OpenCode Go: qwen3.7-max, qwen3.7-plus)
+                            # vs chat/completions which uses Authorization: Bearer
+                            if f.request.path.endswith("/v1/messages"):
+                                f.request.headers["x-api-key"] = v
+                                # Also set anthropic-version for Discover API compliance
+                                f.request.headers["anthropic-version"] = "2023-06-01"
+                                sys.stderr.write(f"MITMPROXY: injected {env_key} as x-api-key for {host}{f.request.path}\n")
+                            else:
+                                f.request.headers["Authorization"] = f"Bearer {v}"
+                                sys.stderr.write(f"MITMPROXY: injected {env_key} for {host}\n")
                         else:
                             sys.stderr.write(f"MITMPROXY: MISSING_ENV {env_key}\n")
                         break

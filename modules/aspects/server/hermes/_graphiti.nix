@@ -21,8 +21,7 @@
 
   systemd.user.services.graphiti-mcp = {
     description = "Graphiti MCP Server";
-    after = [ "falkordb.service" "llama-cpp.service" ];
-    wants = [ "falkordb.service" "llama-cpp.service" ];
+    after = [ "falkordb.service" ];
     wantedBy = [ "default.target" ];
 
     unitConfig.ConditionUser = "hermes";

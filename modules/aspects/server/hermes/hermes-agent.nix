@@ -10,7 +10,7 @@
   den.aspects.server.hermes-agent = {
     nixos = { config, pkgs, lib, ... }: let
       hermes-pkg = inputs.hermes-agent.packages.${pkgs.system}.messaging;
-      anthropic-py = pkgs.python312.withPackages (ps: [ ps.anthropic ]);
+      anthropic-py = pkgs.python312.withPackages (ps: [ ps.pip ]);
 
       mitmproxyConfig = import ./_mitmproxy.nix { inherit config pkgs lib; };
       graphitiConfig = import ./_graphiti.nix { inherit config pkgs lib; };
@@ -89,11 +89,13 @@ Environment=GITHUB_TOKEN=hermes-proxy://github
 Environment=OPENCODE_GO_API_KEY=hermes-proxy://opencode
 Environment=HTTPS_PROXY=http://127.0.0.1:7899
 Environment=SSL_CERT_FILE=/etc/ssl/certs/hermes-with-proxy-ca.crt
+Environment=REQUESTS_CA_BUNDLE=/etc/ssl/certs/hermes-with-proxy-ca.crt
 Environment=NO_PROXY=127.0.0.1,localhost
 Environment=WHATSAPP_ENABLED=false
 Environment=WHATSAPP_MODE=self-chat
 EnvironmentFile=/run/secrets/hermes/env
 Environment=PYTHONPATH=${anthropic-py}/${anthropic-py.sitePackages}
+Environment=HERMES_LAZY_INSTALL_TARGET=/var/lib/hermes/.hermes/lazy-packages
 DROPEOF
           chown -R hermes:hermes /var/lib/hermes/.config/systemd/user/hermes-gateway.service.d
           chmod 644 /var/lib/hermes/.config/systemd/user/hermes-gateway.service.d/override.conf
@@ -111,7 +113,7 @@ DROPEOF
           mkdir -p /var/lib/hermes/{.hermes,workspace}
           chown hermes:hermes /var/lib/hermes /var/lib/hermes/.hermes /var/lib/hermes/workspace
           chmod 2770 /var/lib/hermes /var/lib/hermes/.hermes /var/lib/hermes/workspace
-          for _subdir in cron sessions logs memories plugins; do
+          for _subdir in cron sessions logs memories plugins lazy-packages; do
             mkdir -p "/var/lib/hermes/.hermes/$_subdir"
             chown hermes:hermes "/var/lib/hermes/.hermes/$_subdir"
             chmod 2770 "/var/lib/hermes/.hermes/$_subdir"

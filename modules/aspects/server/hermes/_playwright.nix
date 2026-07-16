@@ -6,7 +6,7 @@
   ) ''
     # Install Playwright browsers (Chromium, Firefox, WebKit)
     # Runs as hermes user so browsers go in hermes' cache
-    ${pkgs.sudo}/bin/sudo -u hermes bash -c '
+    ${pkgs.sudo}/bin/sudo -u hermes ${pkgs.bash}/bin/bash -c '
       export HOME=/var/lib/hermes
       export PLAYWRIGHT_BROWSERS_PATH=/var/lib/hermes/.cache/ms-playwright
       mkdir -p /var/lib/hermes/.cache/ms-playwright

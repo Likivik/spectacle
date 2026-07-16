@@ -8,7 +8,6 @@ in
       den.aspects.core
       den.aspects.core.tailscale
       den.aspects.server.hermes-agent
-      den.aspects.server.affine
       den.aspects.server.sops
     ];
 
@@ -142,7 +141,7 @@ in
         '';
       };
 
-      environment.systemPackages = [ pkgs.nodejs_22 ];
+      environment.systemPackages = [ pkgs.nodejs_22 pkgs.uv ];
 
     };
   };

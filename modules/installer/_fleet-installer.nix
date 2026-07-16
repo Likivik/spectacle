@@ -9,7 +9,9 @@
   # --- Console access ---
   # Password for the live user (login at physical console)
   users.users.nixos = {
-    initialPassword = "nixos";
+    password = lib.mkForce "nixos";
+    initialHashedPassword = lib.mkForce null;
+    hashedPassword = lib.mkForce null;
     isNormalUser = true;
     extraGroups = [ "wheel" "networkmanager" ];
   };
@@ -38,6 +40,7 @@
   # Ensure network is up on boot (DHCP on all wired interfaces)
   networking.networkmanager.enable = true;
   networking.useDHCP = lib.mkDefault true;
+  networking.firewall.enable = lib.mkForce false;
 
   # --- Fleet deployment tools ---
   environment.systemPackages = with pkgs; [

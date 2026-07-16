@@ -1,7 +1,5 @@
 # Fleet installer ISO — reusable for all bare-metal deploys
-# Build: nix build .#nixosConfigurations.installer.config.system.build.isoImage
-#   or:  nix-build '<nixpkgs/nixos>' -A config.system.build.isoImage \
-#          -I nixos-config=modules/installer/fleet-installer.nix
+# Build: nix build .#packages.x86_64-linux.installer
 { config, lib, pkgs, modulesPath, ... }:
 {
   imports = [

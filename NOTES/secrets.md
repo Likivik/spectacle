@@ -17,25 +17,31 @@ age-keygen -y ~/likivik-nixos-sops-recovery-key.txt > ~/likivik-nixos-sops-recov
 
 ### 2. Generate TPM keys on each machine
 
+**⚠️ IMPORTANT: Use `--legacy` flag.** age-plugin-tpm v1.0.0+ defaults to
+`p256tag` format (`age1tag1...`), but SOPS doesn't support it yet
+([getsops/sops#2129](https://github.com/getsops/sops/issues/2129)).
+SOPS looks for `age-plugin-tag` which doesn't exist as a standalone binary.
+Always use `--legacy` to generate `age1tpm1...` keys which work everywhere.
+
 **Serenity** (desktop):
 ```sh
 sudo mkdir -p /var/lib/sops
 sudo nix shell nixpkgs#age-plugin-tpm --command \
-  age-plugin-tpm --generate -o /var/lib/sops/tpm-identity.txt
+  age-plugin-tpm --generate --legacy -o /var/lib/sops/tpm-identity.txt
 sudo nix shell nixpkgs#age-plugin-tpm --command \
   age-plugin-tpm -y /var/lib/sops/tpm-identity.txt
 ```
-Paste the recipient into `.sops.yaml` as `&serenity`.
+Paste the recipient (`age1tpm1...`) into `.sops.yaml` as `&serenity`.
 
-**Traversal** (laptop): paste as `&traversal`.
+**Traversal** (laptop): same process, paste as `&traversal`.
 
-**VPS**: after first NixOS deploy (see `vps-deploy.md`):
+**VPS (erebus)**: after first NixOS deploy:
 ```sh
 sudo mkdir -p /var/lib/sops
-sudo age-plugin-tpm --generate -o /var/lib/sops/tpm-identity.txt
+sudo age-plugin-tpm --generate --legacy -o /var/lib/sops/tpm-identity.txt
 sudo age-plugin-tpm -y /var/lib/sops/tpm-identity.txt
 ```
-Paste as `&vps`. Then migrate from ssh-to-age to TPM.
+Paste as `&erebus`. Then migrate from ssh-to-age to TPM.
 
 ### 3. TPM migration on vps
 

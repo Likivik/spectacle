@@ -35,8 +35,8 @@
       };
     };
 
-    homelab01-poweredge = {
-      description = "homelab01";
+    poweredge = {
+      description = "poweredge";
       users = {
         likivik = { };
       };

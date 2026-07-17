@@ -1,5 +1,5 @@
 { den, inputs, lib, pkgs, ... }: {
-  den.aspects.homelab01-poweredge = {
+  den.aspects.poweredge = {
     includes = [
       den.aspects.server.core
       den.aspects.server.sops
@@ -34,7 +34,7 @@
       }];
 
       sops.secrets."nextcloud/admin-password" = {
-        sopsFile = ../../../secrets/homelab01-poweredge/secrets.yaml;
+        sopsFile = ../../../secrets/poweredge/secrets.yaml;
         owner = "nextcloud";
         group = "nextcloud";
         mode = "0600";

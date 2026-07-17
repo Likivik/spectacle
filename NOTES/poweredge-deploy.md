@@ -1,4 +1,4 @@
-# homelab01-poweredge — Deployment Notes
+# poweredge — Deployment Notes
 
 ## Hardware
 
@@ -15,8 +15,8 @@ HDD ×2 (ZFS)   → /tank/data/{nextcloud, immich} (mirror, lz4, atime=off)
 ```
 
 All access via **Tailscale**. No public HTTP exposure for now.
-- nextcloud: `http://homelab01-poweredge:80`
-- immich:     `http://homelab01-poweredge:3001`
+- nextcloud: `http://poweredge:80`
+- immich:     `http://poweredge:3001`
 - collabora:  internal only (CODE container bound to localhost:9980)
 
 ## Files created in this commit
@@ -33,10 +33,10 @@ All access via **Tailscale**. No public HTTP exposure for now.
 
 | File | Notes |
 |------|-------|
-| `modules/hosts/homelab01-poweredge/homelab01-poweredge.nix` | Includes `nextcloud` + `immich`. **Not** `cloudflare-tunnel`. |
-| `modules/hosts/homelab01-poweredge/_disko.nix` | Partitioning — replace `REPLACE_WITH_*_ID` placeholders with real `/dev/disk/by-id/` paths |
-| `modules/hosts/homelab01-poweredge/_hardware-configuration.nix` | Placeholder — will be overwritten by nixos-anywhere |
-| `secrets/homelab01-poweredge/secrets.yaml` | Encrypted secrets (see below) |
+| `modules/hosts/poweredge/poweredge.nix` | Includes `nextcloud` + `immich`. **Not** `cloudflare-tunnel`. |
+| `modules/hosts/poweredge/_disko.nix` | Partitioning — replace `REPLACE_WITH_*_ID` placeholders with real `/dev/disk/by-id/` paths |
+| `modules/hosts/poweredge/_hardware-configuration.nix` | Placeholder — will be overwritten by nixos-anywhere |
+| `secrets/poweredge/secrets.yaml` | Encrypted secrets (see below) |
 
 ## Prerequisites before deploy
 
@@ -61,19 +61,19 @@ nix-shell -p ssh-to-age --run 'ssh-to-age < ~/poweredge-ssh.pub'
 # → outputs age1... key
 
 # Add this key to secrets/.sops.yaml under keys:
-#   &homelab01-poweredge age1...
+#   &poweredge age1...
 #
 # And add a creation_rule:
-#   - path_regex: homelab01-poweredge/.*\.yaml$
+#   - path_regex: poweredge/.*\.yaml$
 #     key_groups:
 #       - age:
 #           - *recovery
 #           - *traversal
-#           - *homelab01-poweredge
+#           - *poweredge
 
 # Create the secrets file:
-mkdir -p secrets/homelab01-poweredge
-sops secrets/homelab01-poweredge/secrets.yaml
+mkdir -p secrets/poweredge
+sops secrets/poweredge/secrets.yaml
 # Add:
 #   nextcloud/admin-password: <your-password>
 ```
@@ -98,16 +98,16 @@ ip addr  # find the IP
 
 # 3. From traversal, deploy via nixos-anywhere:
 nix run github:nix-community/nixos-anywhere -- \
-  --flake .#homelab01-poweredge \
-  --generate-hardware-config nixos-facter ./modules/hosts/homelab01-poweredge/_hardware-configuration.nix \
+  --flake .#poweredge \
+  --generate-hardware-config nixos-facter ./modules/hosts/poweredge/_hardware-configuration.nix \
   root@<poweredge-ip>
 
 # 4. After deploy, from traversal:
-git add modules/hosts/homelab01-poweredge/_hardware-configuration.nix
-git commit -m "chore(homelab01-poweredge): add hardware config"
+git add modules/hosts/poweredge/_hardware-configuration.nix
+git commit -m "chore(poweredge): add hardware config"
 
 # 5. Verify:
-nix build .#nixosConfigurations.homelab01-poweredge.config.system.build.toplevel --dry-run
+nix build .#nixosConfigurations.poweredge.config.system.build.toplevel --dry-run
 ```
 
 ## Known issues / gotchas

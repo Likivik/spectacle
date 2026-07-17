@@ -42,6 +42,12 @@
 
       boot.kernelParams = [ "elevator=none" ];
 
+      # 8GB swapfile on root SSD
+      swapDevices = [{
+        device = "/swapfile";
+        size = 8192; # 8GB
+      }];
+
       services.zfs.autoScrub.enable = true;
     };
   };

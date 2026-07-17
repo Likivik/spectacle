@@ -91,6 +91,23 @@ sops secrets/poweredge/secrets.yaml
 
 ## Deploy
 
+### Automated (recommended)
+
+```bash
+# From traversal — one command does everything:
+./scripts/deploy-poweredge.sh
+
+# Or skip LAN scan if you already know the IP:
+./scripts/deploy-poweredge.sh --ip 192.168.1.50
+
+# Preview what would happen without executing:
+./scripts/deploy-poweredge.sh --dry-run
+```
+
+The script handles: LAN discovery → SSH key extraction → disk ID detection → disko update → sops config → secrets creation → nixos-anywhere → verification → git commit.
+
+### Manual
+
 ```bash
 # 1. Boot PowerEdge from NixOS ISO (use minimal ISO)
 # 2. Get network connectivity

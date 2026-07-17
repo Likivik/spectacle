@@ -94,17 +94,28 @@ sops secrets/poweredge/secrets.yaml
 ### Automated (recommended)
 
 ```bash
-# From traversal — one command does everything:
+# Interactive — shows every command, explains it, asks for approval:
 ./scripts/deploy-poweredge.sh
 
-# Or skip LAN scan if you already know the IP:
+# Skip LAN scan if you already know the IP:
 ./scripts/deploy-poweredge.sh --ip 192.168.1.50
 
-# Preview what would happen without executing:
-./scripts/deploy-poweredge.sh --dry-run
+# Non-interactive (auto-approve all steps):
+./scripts/deploy-poweredge.sh --yes
 ```
 
-The script handles: LAN discovery → SSH key extraction → disk ID detection → disko update → sops config → secrets creation → nixos-anywhere → verification → git commit.
+The script walks through 9 steps interactively:
+1. Preflight checks (tools, git state)
+2. LAN discovery (nmap scan + NixOS detection)
+3. SSH host key extraction → age key conversion
+4. Disk ID discovery (lsblk + by-id mapping)
+5. `_disko.nix` update with real disk paths
+6. `.sops.yaml` update with poweredge age key
+7. Secrets creation (nextcloud password + tailscale auth key)
+8. `nixos-anywhere` deployment (partition + install + reboot)
+9. Post-deploy verification (SSH, tailscale, nextcloud, sops, swap)
+
+Each step shows the command, explains what it does, and waits for [Y/n].
 
 ### Manual
 

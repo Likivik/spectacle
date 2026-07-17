@@ -59,7 +59,7 @@
           # Browser --------------------------------------------------------------------------------
           typora
           obsidian
-          zettlr
+
           joplin-desktop
 
           # Browser Add-ons
@@ -144,7 +144,7 @@
           qbittorrent
           contrast # Colorpicker - only one I found that works with wayland on kde6
 
-          gnome-boxes
+
 
           lite-xl
 

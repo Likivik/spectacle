@@ -57,15 +57,15 @@
       den.aspects.docker
       # den.aspects.hindsight
       den.aspects.opencode
-      den.aspects.omp
-      den.aspects.qt-inspection
+      # den.aspects.omp
+      # den.aspects.qt-inspection
       den.aspects.shell-commands
       den.aspects.bash
       # den.aspects.elvish
       # den.aspects.zsh
       den.aspects.ssh
       # den.aspects.stash
-      den.aspects.virtualization
+      # den.aspects.virtualization
       den.aspects.vscodium
     ];
   };

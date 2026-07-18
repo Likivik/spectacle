@@ -9,7 +9,7 @@ ssh-to-age (bootstrap), then migrates to TPM.
 
 ```sh
 age-keygen -o ~/likivik-nixos-sops-recovery-key.txt
-age-keygen -y ~/likivik-nixos-sops-recovery-key.txt > ~/likivik-nixos-sops-recovery-key.txt.pub
+age-keygen --convert ~/likivik-nixos-sops-recovery-key.txt > ~/likivik-nixos-sops-recovery-key.txt.pub
 ```
 
 - **Private key**: encrypt with a strong password, store in Bitwarden.
@@ -17,41 +17,33 @@ age-keygen -y ~/likivik-nixos-sops-recovery-key.txt > ~/likivik-nixos-sops-recov
 
 ### 2. Generate TPM keys on each machine
 
-**⚠️ IMPORTANT: Use `--legacy` flag.** age-plugin-tpm v1.0.0+ defaults to
-`p256tag` format (`age1tag1...`), but SOPS doesn't support it yet
+**⚠️ IMPORTANT: ** age-plugin-tpm v1.0.0+ defaults to
+`p256tag` format (`age1tag1...`) when converting to recipient, but SOPS doesn't support it yet
 ([getsops/sops#2129](https://github.com/getsops/sops/issues/2129)).
-SOPS looks for `age-plugin-tag` which doesn't exist as a standalone binary.
-Always use `--legacy` to generate `age1tpm1...` keys which work everywhere.
+when extracting public part(recipient) - `sudo age-plugin-tpm --convert --tpm-recipient` - --tpm-recipient is the important part. The whole issue is just a recipients format. that's it.
 
 **Serenity** (desktop):
 ```sh
+
+# 1) create folder
 sudo mkdir -p /var/lib/sops
-sudo nix shell nixpkgs#age-plugin-tpm --command \
-  age-plugin-tpm --generate --legacy -o /var/lib/sops/tpm-identity.txt
-sudo nix shell nixpkgs#age-plugin-tpm --command \
-  age-plugin-tpm -y /var/lib/sops/tpm-identity.txt
+
+# 2) generate actual tpm key
+sudo age-plugin-tpm --generate -o /var/lib/sops/tpm-identity.txt
+
+# 3) extract the private part in the format you want/need (--tpm-recipient for current version of sops as of 18-07-2026)
+sudo age-plugin-tpm --convert --tpm-recipient /var/lib/sops/tpm-identity.txt
+
+# 4) manually copy the public part to .sops.yaml
+
+# 5) use recovery key to update allowed keys (you need recovery passed as env, or ssh from another pc. but you need to decrypt before you encrypt with newly generated file)
+sudo SOPS_AGE_KEY_FILE=/tmp/recovery-key.txt sops updatekeys secrets/erebus/secrets.yaml
 ```
-Paste the recipient (`age1tpm1...`) into `.sops.yaml` as `&serenity`.
 
-**Traversal** (laptop): same process, paste as `&traversal`.
+## Encrypt a file
+`sops --encrypt --in-place secrets.yaml`
 
-**VPS (erebus)**: after first NixOS deploy:
-```sh
-sudo mkdir -p /var/lib/sops
-sudo age-plugin-tpm --generate --legacy -o /var/lib/sops/tpm-identity.txt
-sudo age-plugin-tpm -y /var/lib/sops/tpm-identity.txt
-```
-Paste as `&erebus`. Then migrate from ssh-to-age to TPM.
 
-### 3. TPM migration on vps
-
-Once the vps TPM identity exists:
-1. Add its pubkey to `.sops.yaml` as `&vps`
-2. `sops --rotate --in-place secrets/vps/secrets.yaml`
-3. Edit `modules/aspects/server/sops/sops.nix`:
-   - Comment `age.sshKeyPaths`
-   - Uncomment `age.keyFile` + `age.plugins`
-4. Commit, push, rebuild on vps
 
 ## Daily workflow
 

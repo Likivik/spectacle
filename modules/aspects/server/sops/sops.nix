@@ -21,6 +21,8 @@
         age.plugins = [ pkgs.age-plugin-tpm ];
         defaultSopsFile = lib.mkForce null;
       };
+
+      environment.systemPackages = [ pkgs.age ];
     };
   };
 }

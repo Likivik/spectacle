@@ -4,7 +4,7 @@
     disk = {
       ssd = {
         type = "disk";
-        device = "/dev/disk/by-id/REPLACE_WITH_SSD_ID";
+        device = "/dev/disk/by-id/ata-CT240BX500SSD1_2023E401B128";
         content = {
           type = "gpt";
           partitions = {
@@ -31,7 +31,7 @@
       };
       hdd1 = {
         type = "disk";
-        device = "/dev/disk/by-id/REPLACE_WITH_HDD1_ID";
+        device = "/dev/disk/by-id/ata-ST4000VN006-3CW104_WW60T7FC";
         content = {
           type = "gpt";
           partitions = {
@@ -47,7 +47,7 @@
       };
       hdd2 = {
         type = "disk";
-        device = "/dev/disk/by-id/REPLACE_WITH_HDD2_ID";
+        device = "/dev/disk/by-id/ata-TOSHIBA_HDWG440_4230A03FFZ0G";
         content = {
           type = "gpt";
           partitions = {

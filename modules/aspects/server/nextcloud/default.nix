@@ -2,7 +2,11 @@
 
 {
   den.aspects.server.nextcloud = {
-    nixos = { config, lib, pkgs, ... }: {
+    nixos = { config, lib, pkgs, ... }:
+    let
+      ncVersion = builtins.head (builtins.split "\\." config.services.nextcloud.package.version);
+      ncApps = pkgs."nextcloud${ncVersion}Packages".apps;
+    in {
       virtualisation.podman.enable = lib.mkDefault true;
 
       services.nextcloud = {
@@ -11,10 +15,25 @@
         home = "/var/lib/nextcloud";
         datadir = "/tank/data/nextcloud";
 
+        package = pkgs.nextcloud33;
+
         https = true;
         configureRedis = true;
 
         database.createLocally = true;
+
+        maxUploadSize = "16G";
+
+        imaginary.enable = true;
+
+        poolSettings = {
+          "pm" = "dynamic";
+          "pm.max_children" = "120";
+          "pm.start_servers" = "12";
+          "pm.min_spare_servers" = "6";
+          "pm.max_spare_servers" = "18";
+          "pm.max_requests" = "500";
+        };
 
         config = {
           dbtype = lib.mkDefault "pgsql";
@@ -24,9 +43,12 @@
 
         appstoreEnable = true;
 
+        settings.default_phone_region = "RU";
+
         extraAppsEnable = true;
         extraApps = {
-          inherit (pkgs.nextcloud32Packages.apps) calendar contacts notes tasks richdocuments;
+          inherit (ncApps) calendar contacts notes tasks richdocuments
+            deck collectives mail news bookmarks;
         };
 
         autoUpdateApps.enable = true;
@@ -49,9 +71,6 @@
       };
 
       services.nextcloud.phpOptions = {
-        "memory_limit" = "1024M";
-        "upload_max_filesize" = "16G";
-        "post_max_size" = "16G";
         "max_execution_time" = "3600";
         "max_input_time" = "3600";
         "opcache.enable" = "1";

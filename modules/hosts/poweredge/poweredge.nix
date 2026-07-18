@@ -26,6 +26,15 @@
       users.users.likivik = {
         isNormalUser = true;
         extraGroups = [ "wheel" ];
+        hashedPassword = "$y$j9T$CflOiBqf7adw8VPM1HjjD0$I.UH24kDyF8m75kAe3c4pO87oujxnUah7vBIDuTetR9";
+        openssh.authorizedKeys.keys = [
+          # erebus
+          "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEhOOKKg6lHLhp2x3lAIg6bFheG8SlN+vsnFeTtIRBLo root@bistre-prase24161"
+          # traversal
+          "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDLeI2EqFsNLBPNIi/neXss0yZ3Q0vLevkiK5gfF5Fc+Zo0i9Nf0JPPkq3ak+uc5wJvumSvMAgO+gUUxDbQ6ieMZKCU6HSEhcQvjiHKczyYx+mDxxz6TXnd9TQRUFwmM/u/5kocl9PIwzjDnEdC/84H4sKiv9tmCy6Lv97VpdTYwkYerNWPm3wiapfGROHcS1WjKFOTD7+S++SQLDzir07W509b15HzgiP0Mk7Jdcc3axfIVl/FykGUQeYEFCram0XHvlDIB4yCb9rFxVACQXvUFgXLLb942lvoKeg5d2HbOxLXRVFlJJCnJlYQB3aKis983zjNmZ18Pm21YYvG6vmH traversal-likivik-2024-07-rsa"
+          # likivik@gmail.com
+          "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPyWUPBV/fxkioRPFJ5ws3XQYwMX0hzo6SmQSJkLSV5w likivik@gmail.com"
+        ];
       };
 
       security.sudo.extraRules = [{
@@ -39,6 +48,20 @@
         group = "nextcloud";
         mode = "0600";
       };
+
+      sops.secrets."tailscale/auth-key" = {
+        sopsFile = ../../../secrets/poweredge/secrets.yaml;
+        owner = "root";
+        group = "root";
+        mode = "0400";
+      };
+
+      services.tailscale.authKeyFile =
+        config.sops.secrets."tailscale/auth-key".path;
+      services.tailscale.extraUpFlags = lib.mkAfter [
+        "--advertise-tags=tag:server,tag:exit-node"
+        "--advertise-exit-node"
+      ];
 
       boot.kernelParams = [ "elevator=none" ];
 

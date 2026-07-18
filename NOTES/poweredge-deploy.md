@@ -2,10 +2,13 @@
 
 ## Hardware
 
-- Dell PowerEdge (model TBD)
-- 240 GB SSD (slow SATA SSD)
-- 2× 2 TB HDD (ZFS mirror for data)
-- RAM: needs upgrade (recommend ≥16 GB)
+- Dell PowerEdge T110 II
+- Intel Xeon E31220 @ 3.10GHz (4C/4T)
+- 8 GB RAM (needs upgrade — recommend ≥16 GB)
+- 240 GB SSD (Crucial BX500, SATA)
+- 2× 4 TB HDD (Seagate ST4000VN006 + Toshiba HDWG440, ZFS mirror)
+- Matrox G200eW (embedded video)
+- Broadcom BCM5722 (embedded NIC)
 
 ## Architecture
 
@@ -34,8 +37,9 @@ All access via **Tailscale**. No public HTTP exposure for now.
 | File | Notes |
 |------|-------|
 | `modules/hosts/poweredge/poweredge.nix` | Includes `nextcloud` + `immich`. **Not** `cloudflare-tunnel`. |
-| `modules/hosts/poweredge/_disko.nix` | Partitioning — replace `REPLACE_WITH_*_ID` placeholders with real `/dev/disk/by-id/` paths |
-| `modules/hosts/poweredge/_hardware-configuration.nix` | Placeholder — will be overwritten by nixos-anywhere |
+| `modules/hosts/poweredge/_disko.nix` | Partitioning — uses confirmed `/dev/disk/by-id/` paths |
+| `modules/hosts/poweredge/_hardware-configuration.nix` | Nix wrapper: `hardware.facter.reportPath = ./facter.json;` |
+| `modules/hosts/poweredge/facter.json` | Hardware report from nixos-facter (auto-generated) |
 | `secrets/poweredge/secrets.yaml` | Encrypted secrets (see below) |
 
 ## Prerequisites before deploy
@@ -43,17 +47,12 @@ All access via **Tailscale**. No public HTTP exposure for now.
 ### Hardware prep
 1. Install RAM (≥8 GB minimum, 16 GB recommended)
 2. Connect power + network
-3. Identify actual disk device IDs (run `ls -la /dev/disk/by-id/` on the NixOS ISO)
-
-### DNS / Domain (optional — for now Tailscale is enough)
-1. Buy domain (e.g. `likivik.com`)
-2. Add to Cloudflare DNS (change nameservers)
-3. Create Cloudflare Tunnel → get tunnel token → put in sops secrets
+3. Boot from NixOS minimal ISO (USB)
 
 ### Secrets setup
 
 ```bash
-# After machine is booted, from the NixOS ISO:
+# After machine is booted from NixOS ISO:
 cat /etc/ssh/ssh_host_ed25519_key.pub  # get the SSH public key
 
 # On traversal (or any machine with sops):
@@ -98,7 +97,7 @@ sops secrets/poweredge/secrets.yaml
 ./scripts/deploy-poweredge.sh
 
 # Skip LAN scan if you already know the IP:
-./scripts/deploy-poweredge.sh --ip 192.168.1.50
+./scripts/deploy-poweredge.sh --ip 192.168.0.20
 
 # Non-interactive (auto-approve all steps):
 ./scripts/deploy-poweredge.sh --yes
@@ -124,22 +123,33 @@ Each step shows the command, explains what it does, and waits for [Y/n].
 # 2. Get network connectivity
 ip addr  # find the IP
 
-# 3. From traversal, deploy via nixos-anywhere:
+# 3. From serenity (or any flake host), deploy via nixos-anywhere:
 nix run github:nix-community/nixos-anywhere -- \
   --flake .#poweredge \
-  --generate-hardware-config nixos-facter ./modules/hosts/poweredge/_hardware-configuration.nix \
-  root@<poweredge-ip>
+  --generate-hardware-config nixos-facter ./modules/hosts/poweredge/facter.json \
+  --copy-host-keys \
+  --target-host root@<poweredge-ip>
 
-# 4. After deploy, from traversal:
-git add modules/hosts/poweredge/_hardware-configuration.nix
-git commit -m "chore(poweredge): add hardware config"
+# 4. After deploy, commit generated files:
+git add modules/hosts/poweredge/facter.json
+git commit -m "feat(poweredge): add facter.json and hardware config"
 
 # 5. Verify:
 nix build .#nixosConfigurations.poweredge.config.system.build.toplevel --dry-run
 ```
+
+## Disk layout (confirmed via nixos-facter)
+
+| Slot | by-id path | Model | Size | Role |
+|------|-----------|-------|------|------|
+| SATA-1 | `ata-CT240BX500SSD1_2023E401B128` | Crucial BX500 | 240 GB | OS (ext4) |
+| SATA-3 | `ata-ST4000VN006-3CW104_WW60T7FC` | Seagate IronWolf | 4 TB | ZFS mirror |
+| SATA-4 | `ata-TOSHIBA_HDWG440_4230A03FFZ0G` | Toshiba MG07 | 4 TB | ZFS mirror |
+| USB | `usb-JetFlash_Transcend_128GB_...` | Ventoy | 128 GB | Install media (ignore) |
 
 ## Known issues / gotchas
 
 - **Disko ZFS**: the `_disko.nix` uses disko's ZFS support. If `disko.zfs` doesn't recognize the pool syntax, simplify to partitioning without ZFS and create the pool manually post-install.
 - **Nextcloud app versions**: `pkgs.nextcloud32Packages.apps` depends on the current nixpkgs version. If 25.11 ships a different version, adjust `services.nextcloud.package` and the apps reference.
 - **PowerEdge RAID controller**: If the HDDs are connected via a PERC controller in RAID mode, they'll appear as a single virtual disk (e.g., `/dev/sda`). Switch the controller to HBA mode or pass disks through to get individual disk access for ZFS.
+- **by-id vs by-path**: `/dev/disk/by-id/` was empty on the NixOS ISO but nixos-facter found the paths via sysfs. If by-id disappears again after reboot, fall back to by-path in `_disko.nix`.

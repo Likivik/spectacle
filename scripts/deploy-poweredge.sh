@@ -12,7 +12,7 @@ set -euo pipefail
 HOSTNAME="poweredge"
 HOST_DIR="modules/hosts/${HOSTNAME}"
 DISKO_FILE="${HOST_DIR}/_disko.nix"
-HARDWARE_FILE="${HOST_DIR}/_hardware-configuration.nix"
+FACTER_FILE="${HOST_DIR}/facter.json"
 SOPS_YAML="secrets/.sops.yaml"
 SECRETS_DIR="secrets/${HOSTNAME}"
 SECRETS_FILE="${SECRETS_DIR}/secrets.yaml"
@@ -337,11 +337,13 @@ if [[ ! -f "$SECRETS_FILE" ]] || [[ "$choice" == "y" ]]; then
     echo "# poweredge secrets — managed by deploy-poweredge.sh"
     echo "# After deploy, re-encrypt with poweredge's SSH host key:"
     echo "#   sops updatekeys -y ${SECRETS_FILE}"
-    echo "nextcloud/admin-password: ${NC_PASSWORD}"
+    echo "nextcloud:"
+    echo "  admin-password: ${NC_PASSWORD}"
+    echo "tailscale:"
     if [[ -n "$TS_KEY" ]]; then
-      echo "tailscale/auth-key: ${TS_KEY}"
+      echo "  auth-key: ${TS_KEY}"
     else
-      echo "tailscale/auth-key: tskey-REPLACE_ME"
+      echo "  auth-key: tskey-REPLACE_ME"
     fi
   } > "$SECRETS_FILE"
 
@@ -363,12 +365,16 @@ echo ""
 echo -e "  ${BOLD}This takes 10-15 minutes.${NC}"
 echo ""
 
+DEPLOY_CMD=(
+  nix run github:nix-community/nixos-anywhere --
+  --flake ".#${HOSTNAME}"
+  --generate-hardware-config nixos-facter "./${FACTER_FILE}"
+  --copy-host-keys
+  --target-host "root@${TARGET_IP}"
+)
+
 echo "  Command that will run:"
-echo -e "  ${DIM}nix run github:nix-community/nixos-anywhere -- \\"
-echo -e "    --flake .#${HOSTNAME} \\"
-echo -e "    --generate-hardware-config nixos-facter ./${HARDWARE_FILE} \\"
-echo -e "    --copy-host-keys \\"
-echo -e "    root@${TARGET_IP}${NC}"
+echo -e "  ${DIM}${DEPLOY_CMD[*]}${NC}"
 echo ""
 
 read -rp "  Ready to deploy? [y/N]: " choice
@@ -379,11 +385,7 @@ fi
 
 echo ""
 info "Starting deployment..."
-nix run github:nix-community/nixos-anywhere -- \
-  --flake ".#${HOSTNAME}" \
-  --generate-hardware-config nixos-facter "./${HARDWARE_FILE}" \
-  --copy-host-keys \
-  "root@${TARGET_IP}" \
+"${DEPLOY_CMD[@]}" \
   || fail "nixos-anywhere deployment failed!"
 
 ok "nixos-anywhere completed successfully!"
@@ -423,13 +425,13 @@ for check in \
 done
 
 # ─── Step 9: Commit generated files ──────────────────────────────────
-header "Step 9: Commit generated hardware config"
+header "Step 9: Commit generated files"
 
-explain "nixos-anywhere updated _hardware-configuration.nix with real hardware data."
+explain "nixos-anywhere generated facter.json with real hardware data."
 explain "We need to commit this so future rebuilds don't need to re-run facter."
 
-approve "Stage and commit hardware config + disko layout" \
-  git -C "$REPO_DIR" add "$HARDWARE_FILE" "$DISKO_FILE" "$SECRETS_FILE" && \
+approve "Stage and commit facter.json + disko layout" \
+  git -C "$REPO_DIR" add "$FACTER_FILE" "$DISKO_FILE" "$SECRETS_FILE" && \
   git -C "$REPO_DIR" commit -m "feat(poweredge): add hardware config, disk layout, and secrets"
 
 # ─── Done ─────────────────────────────────────────────────────────────

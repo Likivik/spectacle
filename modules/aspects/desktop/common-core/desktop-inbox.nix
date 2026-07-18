@@ -14,15 +14,8 @@
           Host *
             AddKeysToAgent yes
             IdentityFile /home/likivik/.ssh/id_ed25519
-
-          Host *
-            AddKeysToAgent yes
             IdentityFile /home/likivik/.ssh/id_rsa
-
-          Host *
-            AddKeysToAgent yes
             IdentityFile /home/likivik/.ssh/id_serenityOne2023-09-01
-
         '';
       };
 

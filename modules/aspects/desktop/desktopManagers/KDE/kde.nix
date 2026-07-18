@@ -3,6 +3,7 @@
   den.aspects.desktop.desktopManagers.kde = {
     includes = [
       den.aspects.kde-extras
+      den.aspects.kde-vscode-ssh-askpass
     ];
     nixos =
       { config, pkgs, ... }:

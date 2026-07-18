@@ -165,12 +165,17 @@ else
   fi
 fi
 
+# Purge any stale known_hosts entry for this IP (e.g. from a previous host)
+info "Removing stale SSH host key for ${TARGET_IP} (if any)..."
+ssh-keygen -R "$TARGET_IP" 2>/dev/null || true
+ok "known_hosts cleaned"
+
 # ─── Step 2: SSH host key → age key ───────────────────────────────────
 header "Step 2: Extract SSH host key and convert to age key"
 
-explain "We need poweredge's SSH host key to set up sops encryption."
-explain "This key lets sops-nix decrypt secrets on first boot using the"
-explain "SSH host key that nixos-anywhere preserves with --copy-host-keys."
+explain "We need poweredge's SSH host key to derive an age key for sops."
+explain "Servers use ssh-to-age permanently — the age key is derived from"
+explain "the SSH ed25519 host key that nixos-anywhere preserves with --copy-host-keys."
 
 CMD_SSH_KEY="ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 root@${TARGET_IP} cat /etc/ssh/ssh_host_ed25519_key.pub"
 approve "Fetch poweredge's SSH public key from the live ISO" \
@@ -274,7 +279,7 @@ else
   explain "Adding creation rule so sops encrypts poweredge secrets with these keys..."
   cat >> "$SOPS_YAML" <<CREATION_RULE
 
-  # Poweredge — decrypted via SSH host key on first boot, then TPM after
+  # Poweredge — decrypted via SSH host key (ssh-to-age)
   - path_regex: poweredge/.*\\.yaml\$
     key_groups:
       - age:

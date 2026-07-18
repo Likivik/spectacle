@@ -2,8 +2,10 @@
 
 ## Key setup
 
-Each machine needs a unique age identity. The vps starts with
-ssh-to-age (bootstrap), then migrates to TPM.
+Each machine needs a unique age identity.
+- **Desktops** (serenity, traversal): TPM-sealed keys via age-plugin-tpm.
+- **Servers** (erebus, poweredge): ssh-to-age — derived from the host's SSH
+  ed25519 key. No TPM migration needed.
 
 ### 1. Generate the RECOVERY key (on any machine, one-time)
 
@@ -15,7 +17,7 @@ age-keygen --convert ~/likivik-nixos-sops-recovery-key.txt > ~/likivik-nixos-sop
 - **Private key**: encrypt with a strong password, store in Bitwarden.
 - **Public key** (`.pub`): paste into `secrets/.sops.yaml` as `&recovery`.
 
-### 2. Generate TPM keys on each machine
+### 2. Generate TPM keys (desktops only)
 
 **⚠️ IMPORTANT: ** age-plugin-tpm v1.0.0+ defaults to
 `p256tag` format (`age1tag1...`) when converting to recipient, but SOPS doesn't support it yet
@@ -40,10 +42,21 @@ sudo age-plugin-tpm --convert --tpm-recipient /var/lib/sops/tpm-identity.txt
 sudo SOPS_AGE_KEY_FILE=/tmp/recovery-key.txt sops updatekeys secrets/erebus/secrets.yaml
 ```
 
+### 3. Server keys (ssh-to-age)
+
+Servers use ssh-to-age — no generation needed. The age public key is derived
+from the host's SSH ed25519 key:
+
+```sh
+ssh root@<server-ip> cat /etc/ssh/ssh_host_ed25519_key.pub | ssh-to-age
+# → age1...
+```
+
+Paste the result into `secrets/.sops.yaml` under `keys:` as `&<hostname>`.
+This is permanent — no TPM migration.
+
 ## Encrypt a file
 `sops --encrypt --in-place secrets.yaml`
-
-
 
 ## Daily workflow
 
@@ -52,7 +65,7 @@ via direnv:
 
 ```sh
 cd /Storage/Git/spectacle          # direnv loads .envrc
-sudo sops secrets/vps/secrets.yaml # decrypts using TPM, opens $EDITOR
+sudo sops secrets/erebus/secrets.yaml  # opens $EDITOR, sops decrypts/encrypts
 # edit plaintext → save → sops encrypts
 ```
 
@@ -70,11 +83,11 @@ Editor setup:
 
 ## Adding a new secret
 
-1. `sudo sops secrets/vps/secrets.yaml` — add the new key-value
-2. Declare in `modules/hosts/vps/vps.nix`:
+1. `sudo sops secrets/erebus/secrets.yaml` — add the new key-value
+2. Declare in `modules/hosts/erebus/erebus.nix`:
    ```nix
    "new-service/api-key" = {
-     sopsFile = ../../../secrets/vps/secrets.yaml;
+     sopsFile = ../../../secrets/erebus/secrets.yaml;
      key = "new_service_api_key";
      owner = "new-service-user";
      group = "new-service-user";
@@ -82,11 +95,15 @@ Editor setup:
    };
    ```
 3. Reference: `config.sops.secrets."new-service/api-key".path`
-4. `nh os switch .#vps`
+4. `nh os switch .#erebus`
 
 ## Security model
 
 Each secret mounts at `/run/secrets/<name>` with per-service ACLs.
-TPM-sealed keys can't be extracted from the TPM — even root on a
-compromised machine can't steal them. Recovery key in Bitwarden
-(passphrase-locked) is the only backdoor.
+
+- **Desktops**: TPM-sealed keys can't be extracted from the TPM — even root
+  on a compromised machine can't steal them.
+- **Servers**: ssh-to-age derives the key from the host SSH ed25519 key.
+  The key lives on disk but is protected by SSH host key permissions.
+
+Recovery key in Bitwarden (passphrase-locked) is the only backdoor.

@@ -54,7 +54,7 @@ All access via **Tailscale**. No public HTTP exposure for now.
 
 ```bash
 # After machine is booted, from the NixOS ISO:
-cat /etc/ssh/ssh_host_ed25519.pub  # get the SSH public key
+cat /etc/ssh/ssh_host_ed25519_key.pub  # get the SSH public key
 
 # On traversal (or any machine with sops):
 nix-shell -p ssh-to-age --run 'ssh-to-age < ~/poweredge-ssh.pub'

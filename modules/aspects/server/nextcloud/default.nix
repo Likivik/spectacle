@@ -51,7 +51,7 @@
             deck collectives mail news bookmarks;
         };
 
-        autoUpdateApps.enable = true;
+        autoUpdateApps.enable = false;
         autoUpdateApps.startAt = "*-*-* 04:00:00";
       };
 

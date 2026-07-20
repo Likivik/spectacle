@@ -74,6 +74,7 @@
       }];
 
       boot.supportedFilesystems = [ "zfs" ];
+      boot.zfs.forceImportRoot = false;
       boot.zfs.extraPools = [ "tank" ];
       networking.hostId = "5a099923";
 

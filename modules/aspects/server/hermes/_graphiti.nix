@@ -38,6 +38,8 @@
       ExecStart = "${pkgs.bash}/bin/bash -c 'exec .venv/bin/python3 main.py --transport http --host 127.0.0.1 --port 8000'";
       Restart = "on-failure";
       RestartSec = 5;
+      StandardOutput = "append:/var/lib/hermes/.hermes/logs/graphiti-mcp.log";
+      StandardError = "append:/var/lib/hermes/.hermes/logs/graphiti-mcp.log";
     };
   };
 

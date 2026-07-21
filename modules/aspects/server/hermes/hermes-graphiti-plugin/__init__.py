@@ -106,21 +106,38 @@ class GraphitiMetrics:
         self.session_reinits = 0
         self.flushes = 0
         self.latencies: list[float] = []
+        self.max_queue_depth = 0
+        self.search_relevance_hits = 0
+        self.search_relevance_misses = 0
 
     def record_latency(self, ms: float) -> None:
         self.latencies.append(ms)
         if len(self.latencies) > 50:
             self.latencies.pop(0)
 
+    def record_queue_depth(self, depth: int) -> None:
+        if depth > self.max_queue_depth:
+            self.max_queue_depth = depth
+
+    def record_search_relevance(self, has_results: bool) -> None:
+        if has_results:
+            self.search_relevance_hits += 1
+        else:
+            self.search_relevance_misses += 1
+
     def summary(self) -> str:
         total_prefetch = self.prefetch_ok + self.prefetch_error + self.prefetch_empty
         avg_lat = sum(self.latencies) / len(self.latencies) if self.latencies else 0
+        total_search = self.search_relevance_hits + self.search_relevance_misses
+        relevance_pct = self.search_relevance_hits * 100 // max(total_search, 1)
         return (
             f"prefetch: {self.prefetch_ok}/{total_prefetch} ok, "
             f"{self.prefetch_empty} empty, {self.prefetch_error} errors | "
             f"search: {self.search_ok} ok, {self.search_empty} empty | "
             f"writes: {self.write_ok} ok, {self.write_error} errors | "
             f"flushes: {self.flushes} | reinits: {self.session_reinits} | "
+            f"relevance: {relevance_pct}% ({self.search_relevance_hits}/{total_search}) | "
+            f"max_queue: {self.max_queue_depth} | "
             f"avg_latency: {avg_lat:.0f}ms"
         )
 
@@ -452,6 +469,7 @@ class GraphitiMemoryProvider(MemoryProvider):
                     self._prefetch_result[query] = packed
                 if packed:
                     self._metrics.prefetch_ok += 1
+                    self._metrics.record_search_relevance(bool(packed.strip()))
                 else:
                     self._metrics.prefetch_empty += 1
             except Exception as e:
@@ -513,6 +531,7 @@ class GraphitiMemoryProvider(MemoryProvider):
                 pass
             log_event("sync_turn", captured=False, reason="queue_full")
         self._ensure_sync_worker()
+        self._metrics.record_queue_depth(self._sync_queue.qsize())
 
     def sync_turn(self, user_content: str, assistant_content: str, *,
                   session_id: str = "", messages: list[dict] | None = None) -> None:

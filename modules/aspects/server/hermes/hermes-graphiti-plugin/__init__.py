@@ -28,6 +28,13 @@ CACHE_TTL_SECS = 30
 CACHE_MAXSIZE = 256
 QUEUE_MAXSIZE = 200
 
+# ── Priority signals (for smart flush) ────────────────────────────────
+PRIORITY_PATTERNS = re.compile(
+    r"remember|запомни|save this|don'?t forget|deploy|mistake|bug|fixed|"
+    r"decided|always|never|prefer|hate|important|critical|blocker",
+    re.IGNORECASE,
+)
+
 # ── Smart gate ─────────────────────────────────────────────────────────
 
 SYNTHETIC_PATTERNS = re.compile(
@@ -65,13 +72,14 @@ def should_prefetch(query: str, min_length: int = 8) -> bool:
 
 # ── Scopes ─────────────────────────────────────────────────────────────
 
-def current_scope(agent_context: str) -> str:
-    base = "likivik"
-    if "hermes" in agent_context.lower():
-        return f"{base}_hermes"
-    if "opencode" in agent_context.lower():
-        return f"{base}_opencode"
-    return base
+def current_scope(agent_context: str = "", project: str = "", sub: str = "") -> str:
+    """Scope hierarchy: likivik → likivik_{project} → likivik_{project}_{sub}
+    Default: likivik (user-level, where existing data lives)."""
+    if project and sub:
+        return f"likivik_{project}_{sub}"
+    if project:
+        return f"likivik_{project}"
+    return "likivik"
 
 
 def cascading_scopes(scope: str) -> list[str]:
@@ -82,6 +90,41 @@ def cascading_scopes(scope: str) -> list[str]:
 # ── Observability ──────────────────────────────────────────────────────
 
 LOG_PATH = Path(os.environ.get("HERMES_HOME", "/var/lib/hermes/.hermes")) / "logs" / "graphiti-plugin.log"
+
+
+class GraphitiMetrics:
+    """Tracks operation counts and latencies for health monitoring."""
+
+    def __init__(self) -> None:
+        self.prefetch_ok = 0
+        self.prefetch_error = 0
+        self.prefetch_empty = 0
+        self.search_ok = 0
+        self.search_empty = 0
+        self.write_ok = 0
+        self.write_error = 0
+        self.session_reinits = 0
+        self.flushes = 0
+        self.latencies: list[float] = []
+
+    def record_latency(self, ms: float) -> None:
+        self.latencies.append(ms)
+        if len(self.latencies) > 50:
+            self.latencies.pop(0)
+
+    def summary(self) -> str:
+        total_prefetch = self.prefetch_ok + self.prefetch_error + self.prefetch_empty
+        avg_lat = sum(self.latencies) / len(self.latencies) if self.latencies else 0
+        return (
+            f"prefetch: {self.prefetch_ok}/{total_prefetch} ok, "
+            f"{self.prefetch_empty} empty, {self.prefetch_error} errors | "
+            f"search: {self.search_ok} ok, {self.search_empty} empty | "
+            f"writes: {self.write_ok} ok, {self.write_error} errors | "
+            f"flushes: {self.flushes} | reinits: {self.session_reinits} | "
+            f"avg_latency: {avg_lat:.0f}ms"
+        )
+
+
 
 
 def log_event(event: str, **fields: object) -> None:
@@ -171,7 +214,16 @@ class GraphitiClient:
             "method": method,
             "params": params,
         }
-        text = self._post(body, session=(method != "initialize"))
+        try:
+            text = self._post(body, session=(method != "initialize"))
+        except RuntimeError as e:
+            if "Session not found" in str(e) or "404" in str(e):
+                log_event("session_expired_reinit", method=method)
+                self._session_id = None
+                self._initialize()
+                text = self._post(body, session=(method != "initialize"))
+            else:
+                raise
         match = re.search(r"data: (.+)", text, re.DOTALL)
         if not match:
             raise RuntimeError(f"graphiti-mcp non-SSE response: {text[:200]}")
@@ -322,6 +374,8 @@ class GraphitiMemoryProvider(MemoryProvider):
             self._turn_counter = 0
             self._turn_buffer = []
             self._sync_batch_every = 25
+            self._last_flush_time = time.monotonic()
+            self._metrics = GraphitiMetrics()
             self._ensure_sync_worker()
             log_event("late_init", ok=True)
             return True
@@ -342,6 +396,8 @@ class GraphitiMemoryProvider(MemoryProvider):
         self._turn_counter: int = 0
         self._turn_buffer: list[str] = []
         self._sync_batch_every: int = kwargs.get("sync_batch_every", 25)
+        self._last_flush_time: float = time.monotonic()
+        self._metrics = GraphitiMetrics()
         self._ensure_sync_worker()
 
     def system_prompt_block(self) -> str:
@@ -394,8 +450,13 @@ class GraphitiMemoryProvider(MemoryProvider):
                 self._cache[query] = packed
                 with self._prefetch_lock:
                     self._prefetch_result[query] = packed
+                if packed:
+                    self._metrics.prefetch_ok += 1
+                else:
+                    self._metrics.prefetch_empty += 1
             except Exception as e:
                 log_event("prefetch_error", exc=str(e))
+                self._metrics.prefetch_error += 1
         threading.Thread(target=_work, daemon=True, name="graphiti-prefetch").start()
 
     def prefetch(self, query: str, *, session_id: str = "") -> str:
@@ -466,17 +527,31 @@ class GraphitiMemoryProvider(MemoryProvider):
         if len(body) > MAX_EPISODE_CHARS:
             body = body[:MAX_EPISODE_CHARS]
 
-        # Batch turns to limit OpenRouter API calls (free tier rate limits)
         self._turn_counter += 1
         self._turn_buffer.append(body)
-        if self._turn_counter % self._sync_batch_every != 0:
+
+        if not self._turn_buffer:
             return
-        # Flush buffered turns as one episode
+
+        elapsed = time.monotonic() - self._last_flush_time
+        should_flush_by_turns = self._turn_counter % self._sync_batch_every == 0
+        should_flush_by_time = elapsed >= 3600
+        should_flush_by_priority = bool(PRIORITY_PATTERNS.search(body))
+
+        if should_flush_by_turns or should_flush_by_time or should_flush_by_priority:
+            self._flush_buffer(session_id)
+
+    def _flush_buffer(self, session_id: str) -> None:
+        if not self._turn_buffer:
+            return
         name = f"turn-{(session_id or 'noctx')[-8:]}-{int(time.time() * 1000)}"
         combined = "\n---\n".join(self._turn_buffer)
         if len(combined) > MAX_EPISODE_CHARS:
             combined = combined[:MAX_EPISODE_CHARS]
         self._turn_buffer.clear()
+        self._turn_counter = 0
+        self._last_flush_time = time.monotonic()
+        self._metrics.flushes += 1
         self._enqueue_sync(name, combined)
 
     def get_tool_schemas(self):
@@ -494,6 +569,7 @@ class GraphitiMemoryProvider(MemoryProvider):
             else:
                 return tool_error(f"Unknown tool: {tool_name}")
             elapsed = time.monotonic() - start
+            self._metrics.record_latency(elapsed * 1000)
             log_event("tool_call", tool=tool_name, ms=round(elapsed * 1000))
             return result
         except Exception as e:
@@ -505,18 +581,27 @@ class GraphitiMemoryProvider(MemoryProvider):
         nodes = self._client.search_nodes(query, group_ids, max_nodes=limit)
         facts = self._client.search_memory_facts(query, group_ids, max_facts=limit)
         formatted = self._format_results(nodes, facts)
+        if formatted:
+            self._metrics.search_ok += 1
+        else:
+            self._metrics.search_empty += 1
         return json.dumps({"results": formatted})
 
     def _graphiti_remember(self, content: str) -> str:
         episode_name = f"remember-{uuid4().hex[:8]}"
-        self._client.add_memory(
-            name=episode_name,
-            body=content,
-            group_id=self._scope,
-            source="text",
-            source_description="explicit_remember",
-            reference_time=datetime.now(timezone.utc).isoformat(),
-        )
+        try:
+            self._client.add_memory(
+                name=episode_name,
+                body=content,
+                group_id=self._scope,
+                source="text",
+                source_description="explicit_remember",
+                reference_time=datetime.now(timezone.utc).isoformat(),
+            )
+            self._metrics.write_ok += 1
+        except Exception:
+            self._metrics.write_error += 1
+            raise
         return json.dumps({"message": f"Saved: {content[:80]}...", "uuid": episode_name})
 
     def _graphiti_forget(self, uuid: str) -> str:

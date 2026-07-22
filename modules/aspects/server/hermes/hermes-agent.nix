@@ -87,6 +87,7 @@
 Environment=OPENROUTER_API_KEY=hermes-proxy://openrouter
 Environment=GITHUB_TOKEN=hermes-proxy://github
 Environment=OPENCODE_GO_API_KEY=hermes-proxy://opencode
+Environment=OPENCODE_ZEN_API_KEY=hermes-proxy://opencode
 Environment=HTTPS_PROXY=http://127.0.0.1:7899
 Environment=SSL_CERT_FILE=/etc/ssl/certs/hermes-with-proxy-ca.crt
 Environment=REQUESTS_CA_BUNDLE=/etc/ssl/certs/hermes-with-proxy-ca.crt

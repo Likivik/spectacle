@@ -14,7 +14,7 @@
 
 ```
 SSD (ext4)     → /boot, / (OS + apps + Postgres + Redis)
-HDD ×2 (ZFS)   → /tank/data/{nextcloud, immich} (mirror, lz4, atime=off)
+HDD ×2 (ZFS)   → /tank/{nextcloud, immich, backups} (mirror, lz4, atime=off)
 ```
 
 All access via **Tailscale**. No public HTTP exposure for now.

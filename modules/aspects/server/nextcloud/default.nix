@@ -13,7 +13,7 @@
         enable = true;
         hostName = lib.mkDefault "nextcloud.likivik.com";
         home = "/var/lib/nextcloud";
-        datadir = "/tank/data/nextcloud";
+        datadir = "/tank/nextcloud";
 
         package = pkgs.nextcloud33;
 

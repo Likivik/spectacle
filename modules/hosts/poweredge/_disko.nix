@@ -71,15 +71,62 @@
           autotrim = "on";
         };
         datasets = {
-          "data" = {
+          "nextcloud" = {
             type = "zfs_fs";
             options = {
-              mountpoint = "/tank/data";
+              mountpoint = "/tank/nextcloud";
+              acltype = "posixacl";
+              atime = "off";
+              compression = "lz4";
+              recordsize = "128K";
+              xattr = "sa";
+            };
+          };
+          "immich" = {
+            type = "zfs_fs";
+            options = {
+              mountpoint = "/tank/immich";
               acltype = "posixacl";
               atime = "off";
               compression = "lz4";
               recordsize = "1M";
               xattr = "sa";
+            };
+          };
+          "backups" = {
+            type = "zfs_fs";
+            options = {
+              mountpoint = "/tank/backups";
+              atime = "off";
+              compression = "lz4";
+              recordsize = "1M";
+            };
+          };
+          "backups/serenity" = {
+            type = "zfs_fs";
+            options = {
+              mountpoint = "/tank/backups/serenity";
+              atime = "off";
+              compression = "lz4";
+              recordsize = "1M";
+            };
+          };
+          "backups/traversal" = {
+            type = "zfs_fs";
+            options = {
+              mountpoint = "/tank/backups/traversal";
+              atime = "off";
+              compression = "lz4";
+              recordsize = "1M";
+            };
+          };
+          "backups/pixel" = {
+            type = "zfs_fs";
+            options = {
+              mountpoint = "/tank/backups/pixel";
+              atime = "off";
+              compression = "lz4";
+              recordsize = "1M";
             };
           };
         };

@@ -5,7 +5,7 @@
     nixos = { config, lib, pkgs, ... }: {
       services.immich = {
         enable = true;
-        mediaLocation = "/tank/data/immich";
+        mediaLocation = "/tank/immich";
         host = "0.0.0.0";
         port = 3001;
 

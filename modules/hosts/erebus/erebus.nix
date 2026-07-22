@@ -37,7 +37,10 @@ in
         networkConfig.DNS = [ "8.8.8.8" "8.8.4.4" ];
       };
 
-      nix.settings.trusted-users = [ "likivik" ];
+      nix.settings = {
+        trusted-users = [ "likivik" ];
+        require-sigs = false;
+      };
 
       services.openssh = {
         enable = true;

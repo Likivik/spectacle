@@ -3,8 +3,9 @@
 ## Current State
 - Single `tank/data` dataset mounted at `/tank/data`
 - Used by:
-  - Nextcloud: `/tank/data/nextcloud`
-  - Immich: `/tank/data/immich`
+  - Nextcloud: `/tank/nextcloud`
+  - Immich: `/tank/immich`
+  - Backups: `/tank/backups/{serenity, traversal, pixel}`
 - recordsize=1M, compression=lz4
 
 ## Proposed Datasets

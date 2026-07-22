@@ -63,6 +63,9 @@
       services.tailscale.extraUpFlags = lib.mkAfter [
         "--advertise-tags=tag:server,tag:exit-node"
         "--advertise-exit-node"
+        "--advertise-routes=192.168.0.100/32"
+        "--accept-routes"
+        "--exit-node=100.80.80.98"
       ];
 
       boot.kernelParams = [ "elevator=none" ];

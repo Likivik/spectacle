@@ -141,7 +141,28 @@ in
         '';
       };
 
-      environment.systemPackages = [ pkgs.nodejs_22 pkgs.uv ];
+      systemd.services.xray-trojan = {
+        description = "xray Trojan+REALITY HTTP CONNECT proxy";
+        after = [ "network-online.target" ];
+        wants = [ "network-online.target" ];
+        wantedBy = [ "multi-user.target" ];
+        serviceConfig = {
+          Type = "simple";
+          User = "root";
+          ExecStartPre =
+            "${pkgs.bash}/bin/bash -ec 'if [ ! -f /opt/trojan/config.json ]; then echo \"no /opt/trojan/config.json — create it\" >&2; exit 1; fi'";
+          ExecStart = "${pkgs.xray}/bin/xray run -c /opt/trojan/config.json";
+          Restart = "on-failure";
+          RestartSec = 5;
+          LimitNOFILE = "infinity";
+        };
+      };
+
+      systemd.tmpfiles.rules = [
+        "d /opt/trojan 0700 root root - -"
+      ];
+
+      environment.systemPackages = with pkgs; [ nodejs_22 uv xray ];
 
     };
   };

@@ -48,6 +48,7 @@ rotate_keep = 5
 [attachments]
 download_dir = "/var/lib/rusty-imap/.local/share/rusty-imap-mcp/attachments"
 CONFIG_EOF
+            mkdir -p /var/lib/rusty-imap/.local/share/rusty-imap-mcp/attachments
             chown -R rusty-imap:rusty-imap /var/lib/rusty-imap/.local
             chmod 600 /var/lib/hermes/rusty-imap/config.toml
           fi

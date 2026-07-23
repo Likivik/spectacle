@@ -119,21 +119,29 @@ in
             chown scaratec:scaratec ${cfgDir}/callers.yaml
             chmod 0640 ${cfgDir}/callers.yaml
 
-            # policies/hermes-policy.yaml (default-deny: ENVELOPE + BODY on INBOX)
+            # policies/hermes-policy.yaml (blacklist: readable everywhere, spam hidden)
             cat > ${cfgDir}/policies/hermes-policy.yaml <<POLICY_EOF
         name: hermes-policy
         accounts:
           account1:
             - path: INBOX
               mode: blacklist
-              default: ENVELOPE
+              default: FULL
               mark_seen: false
-              rules: []
             - path: "[Gmail]/All Mail"
               mode: blacklist
-              default: BODY
+              default: FULL
               mark_seen: false
-              rules: []
+            - path: "[Gmail]/Drafts"
+              mode: blacklist
+              default: ENVELOPE
+              draft_append: true
+              modify_message: true
+            - path: "[Gmail]/Sent Mail"
+              mode: blacklist
+              default: ENVELOPE
+              draft_append: true
+              modify_message: true
         POLICY_EOF
             chown scaratec:scaratec ${cfgDir}/policies/hermes-policy.yaml
             chmod 0640 ${cfgDir}/policies/hermes-policy.yaml

@@ -17,22 +17,6 @@
       };
       users.groups.rusty-imap = {};
 
-      # Sops secrets for email — owned by rusty-imap user
-      sops.secrets = {
-        "email/gmail/account1/adress" = {
-          sopsFile = ../../../../secrets/erebus/secrets.yaml;
-          owner = "rusty-imap";
-          group = "rusty-imap";
-          mode = "0400";
-        };
-        "email/gmail/account1/app-password" = {
-          sopsFile = ../../../../secrets/erebus/secrets.yaml;
-          owner = "rusty-imap";
-          group = "rusty-imap";
-          mode = "0400";
-        };
-      };
-
       # Generate config.toml with email address from sops
       system.activationScripts.rusty-imap-config = lib.stringAfter [ "var" "sops" ] ''
         ${lib.optionalString (emailAdressPath != null) ''

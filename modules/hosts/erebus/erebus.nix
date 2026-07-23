@@ -108,6 +108,18 @@ in
           group = "hermes-mitmproxy";
           mode = "0600";
         };
+        "email/gmail/account1/adress" = {
+          sopsFile = ../../../secrets/erebus/secrets.yaml;
+          owner = "rusty-imap";
+          group = "rusty-imap";
+          mode = "0400";
+        };
+        "email/gmail/account1/app-password" = {
+          sopsFile = ../../../secrets/erebus/secrets.yaml;
+          owner = "rusty-imap";
+          group = "rusty-imap";
+          mode = "0400";
+        };
       };
 
       users.users.likivik.initialHashedPassword = "$6$1FZNn7nnzCyHhgke$jyU9Ou3/5F2IHWLMGPc/bCDMQctvmKRXWCT6SAmUjhnHXmiOVFMhh4vVFxAoHZ8izk.QhQoyFZlvut6WOxXgb0";

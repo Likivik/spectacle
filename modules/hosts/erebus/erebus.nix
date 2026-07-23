@@ -8,7 +8,7 @@ in
       den.aspects.core
       den.aspects.core.tailscale
       den.aspects.server.hermes-agent
-      den.aspects.server.rusty-imap
+      den.aspects.server.scaratec
       den.aspects.server.sops
     ];
 
@@ -110,14 +110,14 @@ in
         };
         "email/gmail/account1/adress" = {
           sopsFile = ../../../secrets/erebus/secrets.yaml;
-          owner = "rusty-imap";
-          group = "rusty-imap";
+          owner = "scaratec";
+          group = "scaratec";
           mode = "0400";
         };
         "email/gmail/account1/app-password" = {
           sopsFile = ../../../secrets/erebus/secrets.yaml;
-          owner = "rusty-imap";
-          group = "rusty-imap";
+          owner = "scaratec";
+          group = "scaratec";
           mode = "0400";
         };
       };

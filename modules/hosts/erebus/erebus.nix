@@ -8,6 +8,7 @@ in
       den.aspects.core
       den.aspects.core.tailscale
       den.aspects.server.hermes-agent
+      # den.aspects.server.rusty-imap  # commented out — broken aspect, pending fix in another session
       den.aspects.server.sops
     ];
 

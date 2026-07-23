@@ -127,7 +127,8 @@ in {
       OPENROUTER_API_KEY=$(cat /run/secrets/hermes-mitmproxy/llm-providers/openrouter/api-key)
       GITHUB_TOKEN=$(cat /run/secrets/hermes-mitmproxy/github/pat-hermes-full)
       OPENCODE_GO_API_KEY=$(cat /run/secrets/hermes-mitmproxy/llm-providers/opencode/api-key2)
-      export OPENROUTER_API_KEY GITHUB_TOKEN OPENCODE_GO_API_KEY
+      OPENCODE_ZEN_API_KEY=$(cat /run/secrets/hermes-mitmproxy/llm-providers/opencode/api-key2)
+      export OPENROUTER_API_KEY GITHUB_TOKEN OPENCODE_GO_API_KEY OPENCODE_ZEN_API_KEY
 
       exec ${pkgs.mitmproxy}/bin/mitmdump \
         -s ${mitmproxyAddon} \

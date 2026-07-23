@@ -41,14 +41,14 @@ posture = "draft-safe"
 "search.advanced_query" = "allow"
 
 [audit]
-path = "/var/lib/hermes/.local/share/rusty-imap-mcp/audit.jsonl"
+path = "/var/lib/rusty-imap/.local/share/rusty-imap-mcp/audit.jsonl"
 rotate_bytes = 10485760
 rotate_keep = 5
 
 [attachments]
-download_dir = "/var/lib/hermes/rusty-imap/attachments"
+download_dir = "/var/lib/rusty-imap/.local/share/rusty-imap-mcp/attachments"
 CONFIG_EOF
-            chown -R rusty-imap:rusty-imap /var/lib/hermes/rusty-imap
+            chown -R rusty-imap:rusty-imap /var/lib/rusty-imap/.local
             chmod 600 /var/lib/hermes/rusty-imap/config.toml
           fi
         ''}
@@ -56,8 +56,8 @@ CONFIG_EOF
 
       # Ensure directories exist
       systemd.tmpfiles.rules = [
-        "d /var/lib/hermes/.local/share/rusty-imap-mcp 0755 rusty-imap rusty-imap -"
-        "d /var/lib/hermes/rusty-imap/attachments 0755 rusty-imap rusty-imap -"
+        "d /var/lib/rusty-imap/.local/share/rusty-imap-mcp 0755 rusty-imap rusty-imap -"
+        "d /var/lib/rusty-imap/.local/share/rusty-imap-mcp/attachments 0755 rusty-imap rusty-imap -"
       ];
 
       # Systemd service: hyper-mcp-proxy → rusty-imap-mcp

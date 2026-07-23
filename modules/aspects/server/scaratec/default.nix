@@ -9,11 +9,12 @@ let
   sc-imap-mcp = pkgs.python3Packages.buildPythonApplication {
     pname = "sc-imap-mcp";
     version = "2.0.1";
+    # Wheel (zip) avoids the sdist's unsafe ".." tar member that breaks Nix unpackPhase
     src = pkgs.fetchurl {
-      url = "https://files.pythonhosted.org/packages/ba/66/94948b7f342c14da570f2be4bf359b157781952eb0c84bc189ddd7c417bc/sc_imap_mcp-2.0.1.tar.gz";
-      sha256 = "5c62e228cfcca2ea56556d7c164461179a7b7298292bc51576f0055e3a765aad";
+      url = "https://files.pythonhosted.org/packages/70/3c/1eddaebc06e2f4836235f8f8343160101d37eeced15f57ab8e088e331bbc/sc_imap_mcp-2.0.1-py3-none-any.whl";
+      sha256 = "23b6cf3ee8c83f380fc44109ad4d50eda10bde1ee14b6cf0048240d2d7baa5d7";
     };
-    format = "pyproject";
+    format = "wheel";
     propagatedBuildInputs = with pkgs.python3Packages; [
       aioimaplib
       aiosqlite

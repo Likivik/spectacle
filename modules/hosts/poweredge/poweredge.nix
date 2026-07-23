@@ -68,6 +68,18 @@
         "--exit-node=100.80.80.98"
       ];
 
+      systemd.services.tailscale-serve = {
+        description = "Tailscale Serve — HTTPS proxy to Nextcloud";
+        after = [ "tailscaled.service" ];
+        wants = [ "tailscaled.service" ];
+        wantedBy = [ "multi-user.target" ];
+        serviceConfig = {
+          Type = "oneshot";
+          RemainAfterExit = true;
+          ExecStart = "${pkgs.tailscale}/bin/tailscale serve --bg --https=443 http://127.0.0.1:80";
+        };
+      };
+
       boot.kernelParams = [ "elevator=none" ];
 
       # 8GB swapfile on root SSD

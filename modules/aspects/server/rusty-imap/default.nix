@@ -6,7 +6,6 @@
     let
       # Safely access sops paths — sops module may not be loaded yet
       emailAdressPath = lib.attrByPath [ "sops" "secrets" "email/gmail/account1/adress" "path" ] null config;
-      emailPasswordPath = lib.attrByPath [ "sops" "secrets" "email/gmail/account1/app-password" "path" ] null config;
     in {
       # System user that owns secrets + runs the service
       users.users.rusty-imap = {
@@ -14,6 +13,7 @@
         group = "rusty-imap";
         home = "/var/lib/rusty-imap";
         createHome = true;
+        extraGroups = [ "hermes" ];
       };
       users.groups.rusty-imap = {};
 

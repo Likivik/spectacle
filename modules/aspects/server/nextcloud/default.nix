@@ -58,6 +58,7 @@
           mail_smtpname = "resend";
           mail_from_address = "nextcloud";
           mail_domain = "likivik.com";
+          server_id = "poweredge";
           trusted_domains = [
             "nextcloud.likivik.com"
             "poweredge"

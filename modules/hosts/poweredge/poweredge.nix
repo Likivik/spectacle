@@ -70,14 +70,16 @@
 
       systemd.services.tailscale-serve = {
         description = "Tailscale Serve — HTTPS proxy to Nextcloud";
-        after = [ "tailscaled.service" ];
+        after = [ "tailscaled.service" "tailscaled-autoconnect.service" ];
         wants = [ "tailscaled.service" ];
         wantedBy = [ "multi-user.target" ];
         serviceConfig = {
           Type = "oneshot";
           RemainAfterExit = true;
-          ExecStart = "${pkgs.tailscale}/bin/tailscale serve --bg --https=443 http://127.0.0.1:80";
         };
+        script = ''
+          ${lib.getExe pkgs.tailscale} serve --bg --https=443 http://127.0.0.1:80
+        '';
       };
 
       boot.kernelParams = [ "elevator=none" ];

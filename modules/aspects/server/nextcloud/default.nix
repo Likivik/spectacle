@@ -43,7 +43,15 @@
 
         appstoreEnable = true;
 
-        settings.default_phone_region = "RU";
+        settings = {
+          default_phone_region = "RU";
+          trusted_domains = [
+            "nextcloud.likivik.com"
+            "poweredge"
+            "poweredge.oryx-galaxy.ts.net"
+            "100.110.18.124"
+          ];
+        };
 
         extraAppsEnable = true;
         extraApps = {

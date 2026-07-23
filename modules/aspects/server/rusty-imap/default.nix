@@ -18,7 +18,7 @@
       users.groups.rusty-imap = {};
 
       # Generate config.toml with email address from sops
-      system.activationScripts.rusty-imap-config = lib.stringAfter [ "var" "sops" ] ''
+      system.activationScripts.rusty-imap-config = lib.stringAfter ([ "var" ] ++ lib.optional (config.system.activationScripts ? sops) "sops") ''
         ${lib.optionalString (emailAdressPath != null) ''
           EMAIL_ADDR=$(cat ${emailAdressPath} 2>/dev/null || echo "")
 

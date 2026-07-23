@@ -47,6 +47,7 @@
           default_phone_region = "RU";
           trusted_proxies = [ "127.0.0.1" "::1" ];
           forwarded_for_headers = [ "HTTP_X_FORWARDED_FOR" ];
+          maintenance_window_start = 3;
           trusted_domains = [
             "nextcloud.likivik.com"
             "poweredge"

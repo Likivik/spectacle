@@ -51,6 +51,13 @@
         mode = "0600";
       };
 
+      sops.secrets."resend/api-key" = {
+        sopsFile = ../../../secrets/poweredge/secrets.yaml;
+        owner = "nextcloud";
+        group = "nextcloud";
+        mode = "0600";
+      };
+
       sops.secrets."tailscale/auth-key" = {
         sopsFile = ../../../secrets/poweredge/secrets.yaml;
         owner = "root";

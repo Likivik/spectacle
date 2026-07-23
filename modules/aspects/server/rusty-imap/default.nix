@@ -41,9 +41,9 @@ posture = "draft-safe"
 "search.advanced_query" = "allow"
 
 [audit]
-path = "/var/lib/rusty-imap/.local/share/rusty-imap-mcp/audit.jsonl"
-rotate_bytes = 10485760
-rotate_keep = 5
+# Disabled — each child process needs a unique path, but hyper-mcp-proxy
+# spawns per-session children from the same config
+enabled = false
 
 [attachments]
 download_dir = "/var/lib/rusty-imap/.local/share/rusty-imap-mcp/attachments"

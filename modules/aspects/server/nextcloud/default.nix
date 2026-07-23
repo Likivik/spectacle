@@ -94,6 +94,22 @@
 
       networking.firewall.interfaces.tailscale0.allowedTCPPorts = [ 80 443 ];
 
+      systemd.services.nextcloud-disable-app-api = {
+        description = "Disable AppAPI — unnecessary bundled app";
+        after = [ "nextcloud-setup.service" ];
+        wants = [ "nextcloud-setup.service" ];
+        wantedBy = [ "multi-user.target" ];
+        serviceConfig = {
+          Type = "oneshot";
+          RemainAfterExit = true;
+          User = "nextcloud";
+          Group = "nextcloud";
+        };
+        script = ''
+          ${config.services.nextcloud.occ}/bin/nextcloud-occ app:disable app_api 2>&1
+        '';
+      };
+
       services.zfs.autoScrub.enable = true;
     };
   };

@@ -53,7 +53,7 @@
           mail_smtpmode = "smtp";
           mail_smtphost = "smtp.resend.com";
           mail_smtpport = 587;
-          mail_smtpsecure = "tls";
+          mail_smtpsecure = "";
           mail_smtpauth = true;
           mail_smtpname = "resend";
           mail_from_address = "nextcloud";

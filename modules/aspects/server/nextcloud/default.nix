@@ -112,12 +112,8 @@
         after = [ "nextcloud-setup.service" ];
         wants = [ "nextcloud-setup.service" ];
         wantedBy = [ "multi-user.target" ];
-        serviceConfig = {
-          Type = "oneshot";
-          RemainAfterExit = true;
-          User = "nextcloud";
-          Group = "nextcloud";
-        };
+        serviceConfig.Type = "oneshot";
+        serviceConfig.RemainAfterExit = true;
         script = ''
           ${config.services.nextcloud.occ}/bin/nextcloud-occ app:disable app_api 2>&1
         '';

@@ -90,6 +90,7 @@ in
             host: imap.gmail.com
             port: 993
             user: "$EMAIL_ADDR"
+            identity: "$EMAIL_ADDR"
             auth:
               type: password
               secret_ref: secret://accounts/account1/password

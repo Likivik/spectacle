@@ -15,7 +15,7 @@
         home = "/var/lib/nextcloud";
         datadir = "/tank/nextcloud";
 
-        package = pkgs.nextcloud33;
+        package = pkgs.nextcloud34;
 
         https = true;
         configureRedis = true;

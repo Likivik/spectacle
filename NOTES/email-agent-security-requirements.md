@@ -51,33 +51,37 @@ Give Hermes (AI agent on Erebus) safe access to personal Gmail for email managem
 - Audit logging (nice to have, not required)
 - Outlook/Microsoft 365 support
 
-## Chosen solution: AgentCloak
+## Chosen solution: Fork rusty-imap-mcp
 
-**Why:** Only project that combines Gmail connection + PII redaction + injection detection + MCP in one package.
+**Why:** Full email capabilities (24 tools) + injection defense + we add PII redaction directly in Rust. Single binary, zero wiring.
 
 **Links:**
-- Repo: https://github.com/trislit/AgentCloak
-- License: BSL 1.1 (self-host OK, converts to Apache 2.0 in 2030)
+- Upstream: https://github.com/randomparity/rusty-imap-mcp
+- License: MIT / Apache-2.0
 
-**What it covers:**
-- Gmail OAuth / Apps Script / IMAP
-- HTML → plaintext sanitization
-- PII redaction (SSN, cards, API keys, email addresses)
-- Prompt injection detection (regex patterns)
-- Security email blocking (password resets, 2FA, verification)
-- Financial email blocking (bank statements, payments)
-- Custom blocklist (domains, subject patterns)
-- Folder restrictions
-- Attachment metadata filtering
-- Draft creation (no send)
-- Web dashboard for filter configuration
-- MCP server (7 tools)
+**What it covers out of the box:**
+- IMAP (Gmail, any server)
+- HTML sanitization (hidden elements, CSS tricks)
+- Unicode NFKC normalization + invisible char stripping
+- Look-alike/homoglyph detection
+- Display-name spoofing detection
+- 4 security postures (readonly → destructive)
+- 24 MCP tools (read, search, flag, label, move, draft, send, delete, folders)
+- Append-only JSONL audit log
+- Token-bucket rate limiting
+- Circuit breaker
+- TLS fingerprint pinning
 
-**What it doesn't cover (acceptable gaps):**
-- ML-based injection detection (regex sufficient for now)
-- Attachment content reading (roadmap item)
-- Audit logging (roadmap item)
-- Outbound email sending (by design — draft only)
+**What we add (fork):**
+- leakguard crate (PII detection, zero deps, 19+ built-in detectors)
+- 3 custom Russian detectors (phone, OTP, password context)
+- ~50 lines of Rust total
+
+**Gaps we accept:**
+- No ML injection detection (regex sufficient for 90%+)
+- No attachment content reading
+- No web dashboard
+- Gmail App Password (not OAuth2 yet)
 
 ## Future improvements (if needed)
 

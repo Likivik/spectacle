@@ -15,13 +15,13 @@
       # Sops secrets for email — owned by rusty-imap user
       sops.secrets = {
         "email/gmail/account1/adress" = {
-          sopsFile = ../../../secrets/erebus/secrets.yaml;
+          sopsFile = ../../../../secrets/erebus/secrets.yaml;
           owner = "rusty-imap";
           group = "rusty-imap";
           mode = "0400";
         };
         "email/gmail/account1/app-password" = {
-          sopsFile = ../../../secrets/erebus/secrets.yaml;
+          sopsFile = ../../../../secrets/erebus/secrets.yaml;
           owner = "rusty-imap";
           group = "rusty-imap";
           mode = "0400";

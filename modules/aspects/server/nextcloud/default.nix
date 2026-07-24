@@ -46,7 +46,9 @@
         settings = {
           default_phone_region = "RU";
           trusted_proxies = [ "127.0.0.1" "::1" ];
-          forwarded_for_headers = [ "HTTP_X_FORWARDED_FOR" ];
+          forwarded_for_headers = [ "HTTP_CF_CONNECTING_IP" "HTTP_X_FORWARDED_FOR" ];
+          overwritehost = "nextcloud.filepath.ru";
+          overwriteprotocol = "https";
           maintenance_window_start = 3;
           twofactor_enforced = "true";
           log_type = "file";
@@ -60,11 +62,26 @@
           mail_domain = "likivik.com";
           server_id = "poweredge";
           trusted_domains = [
-            "nextcloud.likivik.com"
-            "poweredge"
             "poweredge.oryx-galaxy.ts.net"
-            "100.110.18.124"
+            "nextcloud.filepath.ru"
           ];
+          allowed_admin_ranges = [ "100.64.0.0/10" "fd7a:115c:a1e0::/48" ];
+          loglevel = 2;
+          logfile = "/tank/nextcloud/data/nextcloud.log";
+          logfilemode = "0640";
+          logtimezone = "Europe/Moscow";
+          enable_previews = true;
+          enabledPreviewProviders = [
+            "OC\\Preview\\PNG"
+            "OC\\Preview\\JPEG"
+            "OC\\Preview\\GIF"
+            "OC\\Preview\\BMP"
+            "OC\\Preview\\XBitmap"
+            "OC\\Preview\\MP3"
+            "OC\\Preview\\TXT"
+            "OC\\Preview\\MarkDown"
+          ];
+          "auth.bruteforce.protection.enabled" = true;
         };
 
         secrets.mail_smtppassword = config.sops.secrets."resend/api-key".path;
@@ -106,6 +123,19 @@
       };
 
       networking.firewall.interfaces.tailscale0.allowedTCPPorts = [ 80 443 ];
+
+      systemd.services.nextcloud-phpfpm.serviceConfig = {
+        ProtectSystem = "strict";
+        ProtectHome = true;
+        PrivateTmp = true;
+        PrivateDevices = true;
+        ProtectKernelTunables = true;
+        ProtectKernelModules = true;
+        ProtectControlGroups = true;
+        NoNewPrivileges = true;
+        LockPersonality = true;
+        ReadWritePaths = [ "/tank/nextcloud" "/var/lib/nextcloud" ];
+      };
 
       systemd.services.nextcloud-disable-app-api = {
         description = "Disable AppAPI — unnecessary bundled app";

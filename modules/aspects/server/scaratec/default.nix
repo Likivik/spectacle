@@ -191,6 +191,13 @@ in
         script = ''
           exec ${sc-imap-mcp}/bin/imap-mcp --transport http
         '';
+
+        # Restart when the embedded config template changes. The policy/
+        # accounts/callers templates live inside the activation script, so
+        # keying on its text restarts scaratec whenever any of them change.
+        restartTriggers = {
+          config = config.system.activationScripts.scaratec-config.text;
+        };
       };
     };
   };

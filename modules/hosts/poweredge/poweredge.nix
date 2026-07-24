@@ -65,6 +65,13 @@
         mode = "0400";
       };
 
+      sops.secrets."cloudflare/poweredge-tunnel-token" = {
+        sopsFile = ../../../secrets/poweredge/secrets.yaml;
+        owner = "root";
+        group = "root";
+        mode = "0400";
+      };
+
       services.tailscale.authKeyFile =
         config.sops.secrets."tailscale/auth-key".path;
       services.tailscale.extraUpFlags = lib.mkAfter [
@@ -89,6 +96,40 @@
         '';
       };
 
+      services.fail2ban = {
+        enable = true;
+        jails.nextcloud = {
+          filter = {
+            Definition = {
+              failregex = "^.*\"remoteAddr\":\"<HOST>\".*Login failed.*$";
+              ignoreregex = "";
+            };
+          };
+          settings = {
+            enabled = true;
+            backend = "auto";
+            port = "80,443";
+            protocol = "tcp";
+            maxretry = 5;
+            bantime = "86400";
+            findtime = "43200";
+            logpath = "/tank/nextcloud/data/nextcloud.log";
+          };
+        };
+      };
+
+      systemd.services.cloudflared-poweredge = {
+        description = "Cloudflare Tunnel — poweredge";
+        after = [ "network-online.target" ];
+        wants = [ "network-online.target" ];
+        wantedBy = [ "multi-user.target" ];
+        serviceConfig = {
+          ExecStart = "${pkgs.bash}/bin/bash -c 'exec ${pkgs.cloudflared}/bin/cloudflared tunnel --no-autoupdate run --token \"$(<${config.sops.secrets."cloudflare/poweredge-tunnel-token".path})\"'";
+          Restart = "on-failure";
+          RestartSec = 5;
+        };
+      };
+
       boot.kernelParams = [ "elevator=none" ];
 
       # 8GB swapfile on root SSD
@@ -103,6 +144,23 @@
       networking.hostId = "5a099923";
 
       services.zfs.autoScrub.enable = true;
+
+      services.zfs.autoSnapshot = {
+        enable = true;
+        frequent = 0;
+        hourly = 36;
+        daily = 30;
+        weekly = 4;
+        monthly = 3;
+      };
+
+      services.postgresqlBackup = {
+        enable = true;
+        startAt = "*-*-* 04:00:00";
+        databases = [ "nextcloud" "immich" ];
+        location = "/tank/backups/postgresql";
+        compression = "gzip";
+      };
     };
   };
 }

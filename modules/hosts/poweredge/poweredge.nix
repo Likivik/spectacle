@@ -83,7 +83,7 @@
       ];
 
       systemd.services.tailscale-serve = {
-        description = "Tailscale Serve — HTTPS proxy to Nextcloud";
+        description = "Tailscale Serve — HTTPS proxy to Nextcloud + Immich";
         after = [ "tailscaled.service" "tailscaled-autoconnect.service" ];
         wants = [ "tailscaled.service" ];
         wantedBy = [ "multi-user.target" ];
@@ -93,6 +93,7 @@
         };
         script = ''
           ${lib.getExe pkgs.tailscale} serve --bg --https=443 http://127.0.0.1:80
+          ${lib.getExe pkgs.tailscale} serve --bg --https=8443 http://127.0.0.1:3001
         '';
       };
 

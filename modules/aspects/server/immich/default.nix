@@ -6,7 +6,7 @@
       services.immich = {
         enable = true;
         mediaLocation = "/tank/immich";
-        host = "0.0.0.0";
+        host = "127.0.0.1";
         port = 3001;
 
         "machine-learning".enable = true;
@@ -16,8 +16,6 @@
       };
 
       services.immich.openFirewall = false;
-
-      networking.firewall.interfaces.tailscale0.allowedTCPPorts = [ 3001 ];
     };
   };
 }

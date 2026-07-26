@@ -119,6 +119,7 @@
           Environment = [
             "LD_LIBRARY_PATH=${kkmPkg}/opt/kkmserver:${pkgs.openssl.out}/lib:${atolPkg}/usr/lib:${atolPkg}/usr/lib/fptr10"
             "DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1"
+            "QT_PLUGIN_PATH=${pkgs.qt5.qtbase.bin}/lib/qt-${pkgs.qt5.qtbase.version}/plugins"
           ];
         };
         preStart = ''

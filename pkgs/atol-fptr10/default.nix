@@ -8,7 +8,7 @@ stdenv.mkDerivation {
 
   src = ./debs;
 
-  nativeBuildInputs = [ dpkg autoPatchelfHook ];
+  nativeBuildInputs = [ dpkg autoPatchelfHook qt5.wrapQtAppsHook ];
 
   buildInputs = [
     stdenv.cc.cc.lib
@@ -41,7 +41,6 @@ RULE
   '';
 
   dontStrip = true;
-  dontWrapQtApps = true;
 
   meta = with lib; {
     description = "ATOL. Драйвер ККТ v.10 — Комплект драйверов торгового оборудования АТОЛ";

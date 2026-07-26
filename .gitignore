@@ -17,3 +17,4 @@ modules/users/*/dotfiles/DankMaterialShell/.firstlaunch
 
 # opencode-agent-monitor logs
 .opencode/agent-monitor.log*
+result-bin

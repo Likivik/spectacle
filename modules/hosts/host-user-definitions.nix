@@ -63,6 +63,14 @@
       };
     };
 
+    afterglow-avia = {
+      description = "Solarium admin monoblock — NixOS KKM (ATOL 30F) + kkmserver + PAX S300";
+      users = {
+        likivik = { };
+        solarium = { };
+      };
+    };
+
   };
 
 }

@@ -1,5 +1,6 @@
 { lib, stdenv, dpkg, autoPatchelfHook
 , qt5, libGL, libX11
+, makeWrapper
 }:
 
 stdenv.mkDerivation {
@@ -8,7 +9,7 @@ stdenv.mkDerivation {
 
   src = ./debs;
 
-  nativeBuildInputs = [ dpkg autoPatchelfHook qt5.wrapQtAppsHook ];
+  nativeBuildInputs = [ dpkg autoPatchelfHook qt5.wrapQtAppsHook makeWrapper ];
 
   buildInputs = [
     stdenv.cc.cc.lib
@@ -37,7 +38,15 @@ stdenv.mkDerivation {
 SUBSYSTEM=="usb", ATTRS{idVendor}=="2912", MODE="666"
 RULE
 
+    mkdir -p "$out/share/icons"
+    cp "${./atol-icon.png}" "$out/share/icons/atol-icon.png"
+
     runHook postInstall
+  '';
+
+  postFixup = ''
+    wrapProgram $out/bin/fptr10_t \
+      --set QT_PLUGIN_PATH "${qt5.qtbase.bin}/lib/qt-${qt5.qtbase.version}/plugins"
   '';
 
   dontStrip = true;

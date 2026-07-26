@@ -47,7 +47,6 @@
           default_phone_region = "RU";
           trusted_proxies = [ "127.0.0.1" "::1" ];
           forwarded_for_headers = [ "HTTP_CF_CONNECTING_IP" "HTTP_X_FORWARDED_FOR" ];
-          overwritehost = "nextcloud.filepath.ru";
           overwriteprotocol = "https";
           maintenance_window_start = 3;
           twofactor_enforced = "true";

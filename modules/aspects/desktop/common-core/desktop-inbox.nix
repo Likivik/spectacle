@@ -35,7 +35,6 @@
 
   # File managers ----------------------------------------------------------------------------------
   kdePackages.dolphin
-  nemo-with-extensions
 
   # Office/basic files manipulation --------------------------------------------------------------------------------
           libreoffice-qt6-fresh # office suite

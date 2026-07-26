@@ -1,4 +1,4 @@
-{ den, lib, ... }:
+{ den, inputs, lib, ... }:
 {
   den.aspects.afterglow-avia = {
 
@@ -14,19 +14,14 @@
       kkmPkg = pkgs.callPackage ../../../pkgs/kkmserver { };
     in {
       imports = [
+        inputs.disko.nixosModules.disko
         ./_hardware-configuration.nix
+        ./_disko.nix
       ];
 
       # --- Boot ----------------------------------------------------------
       boot.loader.systemd-boot.enable = true;
       boot.loader.efi.canTouchEfiVariables = true;
-
-      # tmpfs root (matches spectacle's read-only-root pattern)
-      fileSystems."/" = {
-        device = "tmpfs";
-        fsType = "tmpfs";
-        options = [ "mode=0755" ];
-      };
 
       # --- Networking ---------------------------------------------------
       networking.hostName = "afterglow-avia";
@@ -203,6 +198,7 @@
         (pkgs.makeDesktopItem {
           name = "kkmserver-webui";
           exec = "${pkgs.firefox}/bin/firefox http://localhost:5893/";
+          icon = "${kkmPkg}/opt/kkmserver/html/Logo-KkmServer.png";
           comment = "KkmServer Web Interface — config and diagnostics";
           desktopName = "KkmServer";
           categories = [ "Network" ];
@@ -210,6 +206,7 @@
         (pkgs.makeDesktopItem {
           name = "atol-fptr10-test";
           exec = "${atolPkg}/bin/fptr10_t";
+          icon = "${atolPkg}/share/icons/atol-icon.png";
           comment = "ATOL Driver Test Utility — test KKM connection, send test checks";
           desktopName = "ATOL KKT Test";
           categories = [ "Utility" ];

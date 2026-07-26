@@ -192,12 +192,14 @@ in
           exec ${sc-imap-mcp}/bin/imap-mcp --transport http
         '';
 
-        # Restart when the embedded config template changes. The policy/
-        # accounts/callers templates live inside the activation script, so
-        # keying on its text restarts scaratec whenever any of them change.
-        restartTriggers = {
-          config = config.system.activationScripts.scaratec-config.text;
-        };
+        restartTriggers = [
+          "/var/lib/scaratec/config/accounts.yaml"
+          "/var/lib/scaratec/config/callers.yaml"
+          "/var/lib/scaratec/config/policies/hermes-policy.yaml"
+          "/var/lib/scaratec/secrets/accounts/account1/password"
+          "/var/lib/scaratec/secrets/callers/hermes/token"
+          "/run/secrets/scaratec/hermes-token"
+        ];
       };
     };
   };

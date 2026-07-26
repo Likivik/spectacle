@@ -34,6 +34,7 @@
   };
   den.aspects.desktop.common-extra = {
     includes = lib.mkDefault [
+      den.aspects.desktop.common-extra.extra-inbox
       den.aspects.desktop.common-extra.gaming
       den.aspects.desktop.common-extra.peripherals-extra
     ];

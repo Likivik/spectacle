@@ -3,10 +3,9 @@
   den.aspects.afterglow-avia = {
 
     includes = [
+      den.aspects.core
       den.aspects.desktop.desktopManagers.kde
       den.aspects.firefox
-      den.aspects.desktop.common-core
-      den.aspects.core.tailscale
     ];
 
     nixos = { config, lib, pkgs, modulesPath, ... }: let
@@ -33,9 +32,8 @@
 
       # --- Locale -------------------------------------------------------
       # kkmserver expects ru_RU.UTF-8; keep en_US.UTF-8 for system fallback.
-      i18n.defaultLocale = "ru_RU.UTF-8";
-      i18n.supportedLocales = [
-        "ru_RU.UTF-8/UTF-8"
+      i18n.defaultLocale = lib.mkForce "ru_RU.UTF-8";
+      i18n.extraLocales = lib.mkForce [
         "en_US.UTF-8/UTF-8"
       ];
       time.timeZone = "Europe/Moscow";

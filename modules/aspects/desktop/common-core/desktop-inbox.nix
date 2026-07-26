@@ -26,7 +26,7 @@
       {
 
         services.tarsnap.enable = true;
-        programs.thunderbird.enable = true;
+
 
         environment.systemPackages = with pkgs; [
 

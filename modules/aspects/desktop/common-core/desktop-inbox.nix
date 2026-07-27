@@ -25,18 +25,22 @@
       { pkgs, ... }:
       {
 
-        services.tarsnap.enable = true;
-
-
         environment.systemPackages = with pkgs; [
 
-  # FileSync ---------------------------------------------------------------------------------------
-  nextcloud-client
+          #ocr
+          tesseract
 
-  # File managers ----------------------------------------------------------------------------------
-  kdePackages.dolphin
+          #terminal
+          ghostty
 
-  # Office/basic files manipulation --------------------------------------------------------------------------------
+
+          # FileSync ---------------------------------------------------------------------------------------
+          nextcloud-client
+
+          # File managers ----------------------------------------------------------------------------------
+          kdePackages.dolphin
+
+          # Office/basic files manipulation --------------------------------------------------------------------------------
           libreoffice-qt6-fresh # office suite
           hunspell # spellcheck engine
           hyphenDicts.ru_RU
@@ -49,17 +53,11 @@
           pdfarranger # arrange/combine/extract pages from pdf files
 
           # Browser --------------------------------------------------------------------------------
-          typora
-          obsidian
-
-          joplin-desktop
 
           # Browser Add-ons
           firefoxpwa-unwrapped # pwa for firefox based browser (needs extension also)
 
-          # Password Management --------------------------------------------------------------------------------
-          #bitwarden-desktop
-          bws
+
 
           # Communications --------------------------------------------------------------------------------
           # Telegram
@@ -77,7 +75,7 @@
           #claws-mail
           # bluemail
           # mailspring
-          evolution # in evaluation
+          # evolution # in evaluation
           # geary
           # thunderbird
           #kdePackages.kmail
@@ -92,15 +90,12 @@
           inkscape-with-extensions
           # Video
           haruna # video-player (QT)
-          celluloid # video-player (GTK)
+          # celluloid # video-player (GTK)
           # Video Editors
-          losslesscut-bin # video editor
+          # losslesscut-bin # video editor
           # Music
-          pear-desktop
+          # pear-desktop
 
-          # System Information and Administration --------------------------------------------------------------------------------
-          # Learning this
-          netdata
 
           # GUI
           hardinfo2 # Information on hardware + benchmarking tool, AIDA64 like
@@ -127,18 +122,7 @@
           nvd
           nix-output-monitor
 
-          # Terminal
-          (blackbox-terminal.overrideAttrs { sixelSupport = true; })
-          # blackbox-terminal
 
-          # Other
-          steam-run
-          qbittorrent
-          contrast # Colorpicker - only one I found that works with wayland on kde6
-
-
-
-          lite-xl
 
         ];
 

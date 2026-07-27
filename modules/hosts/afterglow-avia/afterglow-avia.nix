@@ -33,9 +33,26 @@
       # --- Locale -------------------------------------------------------
       # kkmserver expects ru_RU.UTF-8; keep en_US.UTF-8 for system fallback.
       i18n.defaultLocale = lib.mkForce "ru_RU.UTF-8";
-      i18n.extraLocales = lib.mkForce [
+      i18n.extraLocales = [
         "en_US.UTF-8/UTF-8"
       ];
+      i18n.extraLocaleSettings = lib.mkForce {
+
+					LC_CTYPE = "ru_RU.UTF-8";
+					LC_ADDRESS = "ru_RU.UTF-8";
+					LC_MEASUREMENT = "ru_RU.UTF-8";
+					LC_MESSAGES = "ru_RU.UTF-8";
+					LC_MONETARY = "ru_RU.UTF-8";
+					LC_NAME = "ru_RU.UTF-8";
+					LC_NUMERIC = "ru_RU.UTF-8";
+					LC_PAPER = "ru_RU.UTF-8";
+					LC_TELEPHONE = "ru_RU.UTF-8";
+					LC_TIME = "ru_RU.UTF-8";
+					LC_IDENTIFICATION = "ru_RU.UTF-8";
+					LC_COLLATE = "ru_RU.UTF-8";
+					# Добавьте эту строку, чтобы Plasma знала приоритет перевода
+    			LANGUAGE = "ru_RU.UTF-8:ru";
+				};
       time.timeZone = "Europe/Moscow";
 
       # --- SSH server (admin remote access) -----------------------------

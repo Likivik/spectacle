@@ -33,7 +33,8 @@
 					LC_TIME = "en_DK.UTF-8";
 					LC_IDENTIFICATION = "en_DK.UTF-8";
 					LC_COLLATE = "en_DK.UTF-8";
-
+					# Добавьте эту строку, чтобы Plasma знала приоритет перевода
+    			LANGUAGE = "ru_RU.UTF-8:ru";
 				};
 
 			};

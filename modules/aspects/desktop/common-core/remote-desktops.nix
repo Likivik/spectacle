@@ -5,7 +5,6 @@
       { config, pkgs, ... }:
       {
         environment.systemPackages = with pkgs; [
-          anydesk
           kdePackages.krdc
           gnome-connections
         ];

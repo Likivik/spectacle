@@ -5,6 +5,7 @@
     includes = [
       den.aspects.core
       den.aspects.desktop.desktopManagers.kde
+      den.aspects.desktop.common-core
       den.aspects.firefox
     ];
 
@@ -17,6 +18,9 @@
         ./_hardware-configuration.nix
         ./_disko.nix
       ];
+
+      nix.settings.trusted-users = [ "likivik" ];
+      nix.settings.require-sigs = false;
 
       # --- Boot ----------------------------------------------------------
       boot.loader.systemd-boot.enable = true;

@@ -10,6 +10,7 @@
       den.aspects.core.default-locale
       den.aspects.core.ghostty-terminfo
       den.aspects.core.nix
+      den.aspects.core.tailscale
     ];
   };
 

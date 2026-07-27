@@ -133,7 +133,7 @@ in {
       exec ${pkgs.mitmproxy}/bin/mitmdump \
         -s ${mitmproxyAddon} \
         --listen-port 7899 \
-        --mode upstream:http://127.0.0.1:1081 \
+        --mode regular \
         --set block_global=false
     '';
   };

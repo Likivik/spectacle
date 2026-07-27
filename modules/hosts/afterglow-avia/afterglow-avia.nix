@@ -183,10 +183,10 @@
         wantedBy = [ "multi-user.target" ];
 
         serviceConfig = {
-          Type = "forking";
+          Type = "simple";
           User = "kkmserver";
           Group = "kkmserver";
-          ExecStart = "${atolPkg}/opt/epc/mdl/bin/epc-mdl -s start";
+          ExecStart = "${atolPkg}/opt/epc/mdl/bin/epc-mdl";
           Restart = "on-failure";
           RestartSec = 5;
           Environment = [
@@ -235,6 +235,7 @@
         "d /var/log/epc/upd 0755 kkmserver kkmserver -"
         "d /etc/epc/epcbridge 0755 kkmserver kkmserver -"
         "f /etc/epc/epcbridge/config.yml 0644 kkmserver kkmserver -"
+        "d /etc/epc/mdl 0755 kkmserver kkmserver -"
       ];
 
       # --- KDE desktop launchers ----------------------------------------

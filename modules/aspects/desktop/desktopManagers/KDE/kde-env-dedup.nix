@@ -12,7 +12,7 @@
             owner = "alexjp";
             repo = "env-dedup";
             rev = "9df9f75c47bef6957245b0bf6f32720a67dad3a0";
-            sha256 = "sha256-05d7amy6zd5mld55y19r59bcr4nixig4cxncqq97vq7wxhf23sb8";
+            sha256 = "sha256-aOkhHOz84H0Sxsx2Rl7s0ZLMVio5BV9Ko7W0b3xVpxU=";
           };
 
           buildInputs = [ pkgs.gcc ];

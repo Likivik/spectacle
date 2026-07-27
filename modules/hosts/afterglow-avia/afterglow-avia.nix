@@ -21,6 +21,7 @@
 
       nix.settings.trusted-users = [ "likivik" ];
       nix.settings.require-sigs = false;
+      users.mutableUsers = false;
 
       # --- Boot ----------------------------------------------------------
       boot.loader.systemd-boot.enable = true;
@@ -62,11 +63,15 @@
       # --- SSH server (admin remote access) -----------------------------
       services.openssh = {
         enable = true;
-        openFirewall = true;
         settings = {
           PermitRootLogin = "no";
           PasswordAuthentication = false;
         };
+      };
+
+      # --- SDDM: hide admin user from login screen ----------------------
+      services.displayManager.sddm.settings = {
+        Users.HideUsers = "likivik";
       };
 
       # --- Kernel modules for USB-serial (ATOL 30F USB-to-COM) ----------
@@ -87,8 +92,8 @@
       users.users.solarium = {
         isNormalUser = true;
         extraGroups = [ "dialout" "networkmanager" ];
-        description = "Solarium staff (restricted)";
-        hashedPassword = "$y$j9T$anzUsnzg29gcLfYFk/BtC/$BEHSx/2olPDS/JfB0I/XP3Ht5UhKK.YCdQqu66pNM97";
+        description = "Solarium ☀️";
+        hashedPassword = "$y$j9T$LSvv7LmxMtJpVtn0PYW4y0$FLeIVFs/VPcOgCA01mz.vtKDXnFnZEoW/2VbvBHTMgB";
         openssh.authorizedKeys.keys = [
           "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEhOOKKg6lHLhp2x3lAIg6bFheG8SlN+vsnFeTmIRBLo root@bistre-prase24161"
           "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIECMxs9cBFN8Adq8AJ9I62gVNFTkgNkr0ikg+VkWbHx1 hermes@erebus"
@@ -236,6 +241,7 @@
       environment.systemPackages = [
         atolPkg
         kkmPkg
+        pkgs.chromium
         (pkgs.makeDesktopItem {
           name = "kkmserver-webui";
           exec = "${pkgs.firefox}/bin/firefox http://localhost:5893/";

@@ -169,11 +169,6 @@
             "LD_LIBRARY_PATH=${atolPkg}/usr/lib:${atolPkg}/usr/lib/fptr10"
           ];
         };
-        preStart = ''
-          mkdir -p /etc/epc/epcbridge
-          [ -f /etc/epc/epcbridge/config.yml ] || touch /etc/epc/epcbridge/config.yml
-          chmod u+rw /etc/epc/epcbridge/config.yml
-        '';
       };
 
       systemd.services.epc-mdl = {
@@ -186,7 +181,7 @@
           Type = "simple";
           User = "kkmserver";
           Group = "kkmserver";
-          ExecStart = "${atolPkg}/opt/epc/mdl/bin/epc-mdl";
+          ExecStart = "${atolPkg}/opt/epc/mdl/bin/epc-mdl -s start";
           Restart = "on-failure";
           RestartSec = 5;
           Environment = [
@@ -232,6 +227,8 @@
         "d /var/lib/AtolFptrRpcServer 0755 kkmserver kkmserver -"
         "d /var/log/epc/mdl 0755 kkmserver kkmserver -"
         "d /var/log/epc/upd 0755 kkmserver kkmserver -"
+        "d /etc/epc/epcbridge 0755 kkmserver kkmserver -"
+        "f /etc/epc/epcbridge/config.yml 0644 kkmserver kkmserver -"
       ];
 
       # --- KDE desktop launchers ----------------------------------------

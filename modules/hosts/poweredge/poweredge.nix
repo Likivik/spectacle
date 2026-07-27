@@ -5,6 +5,7 @@
       den.aspects.server.sops
       den.aspects.server.nextcloud
       den.aspects.server.immich
+      den.aspects.server.evc-team-relay
     ];
 
     nixos = { config, lib, pkgs, ... }: {

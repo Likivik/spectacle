@@ -178,7 +178,7 @@
         wantedBy = [ "multi-user.target" ];
 
         serviceConfig = {
-          Type = "simple";
+          Type = "forking";
           User = "kkmserver";
           Group = "kkmserver";
           ExecStart = "${atolPkg}/opt/epc/mdl/bin/epc-mdl -s start";
@@ -225,6 +225,7 @@
         "d /var/log/ATOL/AtolEpcBridge 0755 kkmserver kkmserver -"
         "d /var/log/AtolFptrRpcServer 0755 kkmserver kkmserver -"
         "d /var/lib/AtolFptrRpcServer 0755 kkmserver kkmserver -"
+        "d /var/log/epc/epcbridge 0755 kkmserver kkmserver -"
         "d /var/log/epc/mdl 0755 kkmserver kkmserver -"
         "d /var/log/epc/upd 0755 kkmserver kkmserver -"
         "d /etc/epc/epcbridge 0755 kkmserver kkmserver -"

@@ -109,8 +109,8 @@
 
       systemd.services.kkmserver = {
         description = "kkmserver KKM Web-server (HTTP port 5893)";
-        after = [ "network.target" "systemd-udevd.service" "epc-bridge.service" "atol-fptr-rpc-server.service" ];
-        wants = [ "network.target" "systemd-udevd.service" "epc-bridge.service" "atol-fptr-rpc-server.service" ];
+        after = [ "network.target" "systemd-udevd.service" "epc-bridge.service" "epc-mdl.service" "atol-fptr-rpc-server.service" ];
+        wants = [ "network.target" "systemd-udevd.service" "epc-bridge.service" "epc-mdl.service" "atol-fptr-rpc-server.service" ];
         wantedBy = [ "multi-user.target" ];
 
         serviceConfig = {
@@ -163,6 +163,30 @@
           User = "kkmserver";
           Group = "kkmserver";
           ExecStart = "${atolPkg}/bin/epc-bridge";
+          Restart = "on-failure";
+          RestartSec = 5;
+          Environment = [
+            "LD_LIBRARY_PATH=${atolPkg}/usr/lib:${atolPkg}/usr/lib/fptr10"
+          ];
+        };
+        preStart = ''
+          mkdir -p /etc/epc/epcbridge
+          [ -f /etc/epc/epcbridge/config.yml ] || touch /etc/epc/epcbridge/config.yml
+          chmod u+rw /etc/epc/epcbridge/config.yml
+        '';
+      };
+
+      systemd.services.epc-mdl = {
+        description = "ATOL EPC MDL (Platform Module for ATOL 30F)";
+        after = [ "systemd-udevd.service" ];
+        wants = [ "systemd-udevd.service" ];
+        wantedBy = [ "multi-user.target" ];
+
+        serviceConfig = {
+          Type = "simple";
+          User = "kkmserver";
+          Group = "kkmserver";
+          ExecStart = "${atolPkg}/opt/epc/mdl/bin/epc-mdl";
           Restart = "on-failure";
           RestartSec = 5;
           Environment = [

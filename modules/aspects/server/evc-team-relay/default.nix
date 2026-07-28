@@ -30,7 +30,7 @@
 
       # sops-nix secrets for EVC
       sops.secrets."evc-team-relay/.env" = {
-        sopsFile = ../../../secrets/poweredge/secrets.yaml;
+        sopsFile = ../../../../secrets/poweredge/secrets.yaml;
         owner = "root";
         group = "root";
         mode = "0400";

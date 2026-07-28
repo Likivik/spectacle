@@ -7,12 +7,21 @@
       virtualisation.podman.enable = lib.mkDefault true;
       virtualisation.podman.dockerCompat = lib.mkDefault true;
 
-      # Clone the EVC repo on first activation
+      # Clone repo, setup data dirs, copy override + .env on activation
       system.activationScripts.evc-team-relay = lib.stringAfter [ "var" ] ''
+        # Clone repo if not present
         if [ ! -d /opt/evc-team-relay ]; then
           ${pkgs.git}/bin/git clone https://github.com/entire-vc/evc-team-relay.git /opt/evc-team-relay
         fi
-        # Ensure .env exists from sops
+
+        # Copy docker-compose.override.yml from Nix store
+        cp ${./docker-compose.override.yml} /opt/evc-team-relay/infra/docker-compose.override.yml
+
+        # Create data directories on ZFS dataset
+        mkdir -p /tank/evc-team-relay/{minio,uploads,backups,relay,caddy,caddy_config}
+        mkdir -p /opt/evc-team-relay/data/postgres
+
+        # Copy .env from sops-nix
         mkdir -p /etc/evc-team-relay
         if [ -f /etc/evc-team-relay/.env ]; then
           cp /etc/evc-team-relay/.env /opt/evc-team-relay/infra/.env
@@ -51,7 +60,7 @@
       };
 
       # Firewall
-      networking.firewall.allowedTCPPorts = [ 80 443 ];
+      networking.firewall.allowedTCPPorts = [ 80 443 8080 8444 ];
     };
   };
 }

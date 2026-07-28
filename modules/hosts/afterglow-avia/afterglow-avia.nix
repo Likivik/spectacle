@@ -33,7 +33,7 @@
 
       # kkmserver HTTP endpoint (default port 5893) — local-only by default;
       # remove the restriction if yclients runs on a separate browser client.
-      networking.firewall.allowedTCPPorts = [ 5893 ];
+      networking.firewall.allowedTCPPorts = [ 5893 5894 ];
 
       # --- Locale -------------------------------------------------------
       # kkmserver expects ru_RU.UTF-8; keep en_US.UTF-8 for system fallback.
@@ -107,6 +107,16 @@
         commands = [{ command = "ALL"; options = [ "NOPASSWD" ]; }];
       }];
 
+      security.polkit.extraConfig = ''
+        polkit.addRule(function(action, subject) {
+          if (action.id == "org.freedesktop.systemd1.manage-units" &&
+              action.lookup("unit") == "kkmserver.service" &&
+              subject.user == "kkmserver") {
+            return polkit.Result.YES;
+          }
+        });
+      '';
+
       # --- udev rules for ATOL USB device -------------------------------
       services.udev.packages = [ atolPkg ];
 
@@ -128,7 +138,7 @@
           # Without a TTY, stdin → EOF → kkmserver exits immediately.
           # script(1) creates a PTY; read() on the slave blocks forever.
           ExecStart = "${pkgs.util-linux}/bin/script -qfc '${kkmPkg}/bin/kkmserver -s' /dev/null";
-          Restart = "on-failure";
+          Restart = "always";
           RestartSec = 5;
           # Bind-mount rw Settings overlay on top of the nix-store path so
           # .NET's assembly-location-relative path resolution finds writable
@@ -261,13 +271,23 @@
         })
       ];
 
-      # --- Firefox native messaging host for kkmserver browser add-in --
+      # --- Chromium native messaging host for kkmserver browser add-in --
+      # Chrome launches the native host binary directly — no systemd
+      # environment. A wrapper sets the vars kkmserver needs at runtime.
       environment.etc = let
+        kkmNmhWrapper = pkgs.writeShellScriptBin "kkmserver-nmh" ''
+          export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
+          export LD_LIBRARY_PATH="${kkmPkg}/opt/kkmserver:${pkgs.openssl.out}/lib:${atolPkg}/usr/lib:${atolPkg}/usr/lib/fptr10"
+          exec "${kkmPkg}/opt/kkmserver/kkmserver" "$@"
+        '';
         kkmNmhManifest = pkgs.writeText "kkmserver.addin.io.json" (builtins.toJSON {
           name = "kkmserver.addin.io";
           description = "KkmServer Addin";
-          path = "${kkmPkg}/opt/kkmserver/kkmserver";
+          path = "${kkmNmhWrapper}/bin/kkmserver-nmh";
           type = "stdio";
+          allowed_origins = [
+            "chrome-extension://mjeeklofjbnodnnfibjolokichkhcpog/"
+          ];
         });
       in {
         "chromium/native-messaging-hosts/kkmserver.addin.io.json".source = kkmNmhManifest;

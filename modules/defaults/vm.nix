@@ -35,7 +35,7 @@
               echo "💻 Starting VM for ${hostname}"
 
               export QEMU_NET_OPTS="hostfwd=tcp::2222-:22" # forward SSH port locally
-              export QEMU_OPTS="-m 8192 -device virtio-gpu" # allocate 8GB, use virtio-gpu (kde for example didn't render without it 0_o)
+              export QEMU_OPTS="-m 8192 -device virtio-gpu-gl -display gtk,gl=on" # allocate 8GB, use virtio-gpu-gl with OpenGL for proper KDE rendering
               ${conf.config.system.build.vm}/bin/run-${conf.config.networking.hostName}-vm "$@"
             '';
           }

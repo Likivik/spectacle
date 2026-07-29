@@ -119,9 +119,7 @@
           kdePackages.qt6ct
           kdePackages.okular
           kdePackages.ark
-          kitty
           ghostty
-          wezterm
           adw-gtk3
           seahorse
         ] ++ [

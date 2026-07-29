@@ -8,6 +8,7 @@ in
       den.aspects.core
       den.aspects.core.tailscale
       den.aspects.server.hermes-agent
+      den.aspects.server.scaratec
       den.aspects.server.sops
     ];
 
@@ -37,7 +38,10 @@ in
         networkConfig.DNS = [ "8.8.8.8" "8.8.4.4" ];
       };
 
-      nix.settings.trusted-users = [ "likivik" ];
+      nix.settings = {
+        trusted-users = [ "likivik" ];
+        require-sigs = false;
+      };
 
       services.openssh = {
         enable = true;
@@ -53,6 +57,7 @@ in
         interfaces.tailscale0.allowedTCPPorts = [
           9119
           8642
+          3443
         ];
         interfaces.tailscale0.allowedUDPPorts = [ 41641 ];
       } // (if lockSshToTailscale then {
@@ -103,6 +108,18 @@ in
           group = "hermes-mitmproxy";
           mode = "0600";
         };
+        "email/gmail/account1/adress" = {
+          sopsFile = ../../../secrets/erebus/secrets.yaml;
+          owner = "scaratec";
+          group = "scaratec";
+          mode = "0400";
+        };
+        "email/gmail/account1/app-password" = {
+          sopsFile = ../../../secrets/erebus/secrets.yaml;
+          owner = "scaratec";
+          group = "scaratec";
+          mode = "0400";
+        };
       };
 
       users.users.likivik.initialHashedPassword = "$6$1FZNn7nnzCyHhgke$jyU9Ou3/5F2IHWLMGPc/bCDMQctvmKRXWCT6SAmUjhnHXmiOVFMhh4vVFxAoHZ8izk.QhQoyFZlvut6WOxXgb0";
@@ -111,10 +128,16 @@ in
         "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPyWUPBV/fxkioRPFJ5ws3XQYwMX0hzo6SmQSJkLSV5w likivik@gmail.com"
       ];
 
-      security.sudo.extraRules = [{
-        users = [ "likivik" ];
-        commands = [{ command = "ALL"; options = [ "NOPASSWD" ]; }];
-      }];
+      security.sudo.extraRules = [
+        {
+          users = [ "likivik" ];
+          commands = [{ command = "ALL"; options = [ "NOPASSWD" ]; }];
+        }
+        {
+          users = [ "hermes" ];
+          commands = [{ command = "ALL"; options = [ "NOPASSWD" ]; }];
+        }
+      ];
 
       services.tailscale.authKeyFile =
         config.sops.secrets."tailscale/auth-key".path;
@@ -134,7 +157,72 @@ in
         '';
       };
 
-      environment.systemPackages = [ pkgs.nodejs_22 ];
+      systemd.services.xray-trojan = {
+        description = "xray Trojan+REALITY HTTP CONNECT proxy";
+        after = [ "network-online.target" ];
+        wants = [ "network-online.target" ];
+        serviceConfig = {
+          Type = "simple";
+          User = "root";
+          ExecStartPre =
+            "${pkgs.bash}/bin/bash -ec 'if [ ! -f /opt/trojan/config.json ]; then echo \"no /opt/trojan/config.json — create it\" >&2; exit 1; fi'";
+          ExecStart = "${pkgs.xray}/bin/xray run -c /opt/trojan/config.json";
+          Restart = "on-failure";
+          RestartSec = 5;
+          LimitNOFILE = "infinity";
+        };
+      };
+
+      systemd.tmpfiles.rules = [
+        "d /opt/trojan 0700 root root - -"
+      ];
+
+      system.activationScripts."trojan-config" = lib.stringAfter [ "var" ] ''
+        mkdir -p /opt/trojan
+        ${pkgs.coreutils}/bin/cat > /opt/trojan/config.json << 'TROJANEOF'
+{
+  "inbounds": [{
+    "tag": "http-in",
+    "protocol": "http",
+    "listen": "127.0.0.1",
+    "port": 1081
+  }],
+  "outbounds": [{
+    "tag": "trojan-reality",
+    "protocol": "trojan",
+    "settings": {
+      "servers": [{
+        "address": "5.180.172.173",
+        "port": 443,
+        "password": "5812d9fb-9a4b-489a-a89c-c2fbb0828481",
+        "flow": ""
+      }]
+    },
+    "streamSettings": {
+      "network": "tcp",
+      "security": "reality",
+      "realitySettings": {
+        "serverName": "www.google.com",
+        "fingerprint": "edge",
+        "publicKey": "ZVTSHN3DJ8u3ph7NqjSGfyfv4pTjSa4pseAF19fasEo",
+        "shortId": "80da64",
+        "spiderX": "/"
+      }
+    }
+  }],
+  "routing": {
+    "domainStrategy": "AsIs",
+    "rules": [
+      { "type": "field", "ip": ["10.0.0.0/8", "100.64.0.0/10", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8"], "outboundTag": "direct" },
+      { "type": "field", "ip": ["geoip:private"], "outboundTag": "direct" }
+    ]
+  }
+}
+TROJANEOF
+        ${pkgs.coreutils}/bin/chmod 0600 /opt/trojan/config.json
+      '';
+
+      environment.systemPackages = with pkgs; [ nodejs_22 uv xray ];
 
     };
   };

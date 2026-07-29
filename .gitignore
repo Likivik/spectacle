@@ -2,6 +2,8 @@
 *.qcow2
 # Build outputs (nix build, nixos-rebuild)
 result
+# ISO images from fleet-installer build
+*.iso
 # Node.js packages
 node_modules
 # Bun lockfile
@@ -15,3 +17,5 @@ modules/users/*/dotfiles/DankMaterialShell/.firstlaunch
 
 # opencode-agent-monitor logs
 .opencode/agent-monitor.log*
+result-bin
+worktrees/

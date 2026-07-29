@@ -1,6 +1,6 @@
 {
   "dependencies": {
-    "@opencode-ai/plugin": "1.15.13",
+    "@opencode-ai/plugin": "1.17.12",
     "@vectorize-io/opencode-hindsight": "^0.2.5",
     "@ykaratkou/opencode-worktree": "^0.1.0",
     "opencode-simple-notify": "^1.0.0"

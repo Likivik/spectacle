@@ -3,6 +3,8 @@
   den.aspects.desktop.desktopManagers.kde = {
     includes = [
       den.aspects.kde-extras
+      den.aspects.kde-vscode-ssh-askpass
+      den.aspects.kde-env-dedup
     ];
     nixos =
       { config, pkgs, ... }:
@@ -31,6 +33,7 @@
             ocs-url # to install kde plugins from the site
             plasma-panel-spacer-extended # extension picks up kwin6 properly this way
             easyeffects # equalizer
+            ktailctl
           ])
           ++ (with pkgs.kdePackages; [
             filelight # Quickly visualize your disk space usage

@@ -5,8 +5,8 @@
     nixos = { config, lib, pkgs, ... }: {
       services.immich = {
         enable = true;
-        mediaLocation = "/tank/data/immich";
-        host = "0.0.0.0";
+        mediaLocation = "/tank/immich";
+        host = "127.0.0.1";
         port = 3001;
 
         "machine-learning".enable = true;
@@ -16,8 +16,6 @@
       };
 
       services.immich.openFirewall = false;
-
-      networking.firewall.interfaces.tailscale0.allowedTCPPorts = [ 3001 ];
     };
   };
 }

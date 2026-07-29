@@ -24,30 +24,33 @@ nix flake check --no-build --keep-going
 
 **Gotcha**: `nixos = { ... }:` discards module args. Capture `pkgs` explicitly: `nixos = { pkgs, ... }:`. Errors surface at build—`--dry-run` catches them.
 
-## Deployment — `nh os switch`
+## Deployment — `nixos-rebuild switch`
 
-Always check host first: `hostname -s` (traversal = here, erebus = VPS).
+Always check host first: `hostname -s` (traversal = here, erebus = VPS). `nh` is broken — uses `ssh-ng://` protocol that mismatches with older nix-daemons; use `nixos-rebuild` with `--elevate=sudo` instead.
 
 **Gotcha**: `.#erebus` on traversal without `--target-host` builds erebus config for traversal hardware — wrong machine.
 
+**Gotcha**: Remote targets with NOPASSWD sudo need `--elevate=sudo`. Without it, `nix-env --set` on the remote runs as the SSH user (non-root) → `Permission denied` on the profile symlink.
+
+**Gotcha**: Do NOT pass `--build-host localhost` for remote deploys — it tries to SSH to localhost (port 22 refused). Omit `--build-host` entirely; nixos-rebuild builds locally by default and copies the closure via `ssh://`.
+
 ### Local (current machine)
 ```bash
-nh os switch . --ask
+sudo nixos-rebuild switch --flake .#
 ```
 
-### Remote (erebus from traversal)
+### Remote (erebus/poweredge from traversal)
 ```bash
-nh os switch .#erebus --target-host likivik@148.253.214.185 --elevation-strategy passwordless
+nixos-rebuild switch --target-host <user>@<host> --elevate=sudo --flake .#<hostname>
 ```
-**Gotcha**: erebus has NOPASSWD sudo. Without `--elevation-strategy passwordless`, nh prompts for a remote password that doesn't exist → `Password cannot be empty` error. Add the flag above `--ask` if the target host uses passwordless sudo.
 
 ### Ghostty (agent spawns terminal — local or remote)
 ```bash
 # Local
-ghostty -e bash -c 'nh os switch . --ask 2>&1 | tee /tmp/traversal-deploy.log; read -p "Press enter"'
+ghostty -e bash -c 'sudo nixos-rebuild switch --flake .# 2>&1 | tee /tmp/traversal-deploy.log; read -p "Press enter"'
 
 # Remote
-ghostty -e bash -c 'nh os switch .#erebus --target-host likivik@148.253.214.185 --elevation-strategy passwordless 2>&1 | tee /tmp/erebus-deploy.log; read -p "Press enter"'
+ghostty -e bash -c 'nixos-rebuild switch --target-host likivik@<host> --elevate=sudo --flake .#<hostname> 2>&1 | tee /tmp/<host>-deploy.log; read -p "Press enter"'
 ```
 
 ### Verification (no deployment — agent can run)
@@ -72,7 +75,7 @@ nix-eval-host() {
 nixos-switch-cn() {
     local host="${1:-$(hostname -s)}"
     NIX_CONFIG='substituters = https://mirrors.ustc.edu.cn/nix-channels/store https://mirrors.tuna.tsinghua.edu.cn/nix-channels/store https://mirror.sjtu.edu.cn/nix-channels/store https://cache.nixos.org' \
-      nh os switch --ask .#"$host"
+      sudo nixos-rebuild switch --flake .#"$host"
 }
 ```
 

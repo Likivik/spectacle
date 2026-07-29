@@ -12,15 +12,14 @@
       imports = [ inputs.sops-nix.nixosModules.sops ];
 
       sops = {
-        # Bootstrap: use the host's SSH key (ssh-to-age).
-        # After first boot, a TPM identity can be created and this
-        # can be swapped to:
-        #   age.keyFile = "/var/lib/sops/tpm-identity.txt";
-        #   age.plugins = [ pkgs.age-plugin-tpm ];
+        # Servers use ssh-to-age permanently — the age key is derived from
+        # the host's SSH ed25519 key. No TPM migration needed.
         age.sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];
         age.plugins = [ pkgs.age-plugin-tpm ];
         defaultSopsFile = lib.mkForce null;
       };
+
+      environment.systemPackages = [ pkgs.age ];
     };
   };
 }

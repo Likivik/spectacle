@@ -137,7 +137,7 @@ should now contain .nix-maid-test (proving host-aspects projected the host's mai
 - **serenity** — Main Desktop PC
 - **traversal** — Main Laptop
 - **spectacle** — Small box connected to TV for watching shows, movies, and browsing
-- **homelab01-poweredge** — Backups aggregator from all other machines, mirrored ZFS pool w/ bit-rot prevention, off-site backup push
+- **poweredge** — Backups aggregator from all other machines, mirrored ZFS pool w/ bit-rot prevention, off-site backup push
 - **devbox01** — Experimentation sandbox for local servers (torrents, media, Nextcloud, Notes, etc.); promoted to "prod" after validation
 - **nixosrouter** — NixOS router + WiFi, nftables-based
 

@@ -4,7 +4,7 @@
 
 Kanidm features native **active-active replication** over your Local Area Network (LAN). No internet required.
 
--   **Setup:** Run the Kanidm server daemon on both `homelab01-poweredge` and `devbox01`.
+-   **Setup:** Run the Kanidm server daemon on both `poweredge` and `devbox01`.
 -   **Resilience:** Both nodes process requests independently. If one goes offline, the other handles your LAN seamlessly. They auto-sync once connectivity restores.
 
 #### 2\. Laptop Resilience (`traversal`)

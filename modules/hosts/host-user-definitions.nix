@@ -35,8 +35,8 @@
       };
     };
 
-    homelab01-poweredge = {
-      description = "homelab01";
+    poweredge = {
+      description = "poweredge";
       users = {
         likivik = { };
       };
@@ -60,6 +60,14 @@
       description = "Hermes agent VPS hosted at hosting-vds.com (Sofia, BG)";
       users = {
         likivik = { };
+      };
+    };
+
+    afterglow-avia = {
+      description = "Solarium admin monoblock — NixOS KKM (ATOL 30F) + kkmserver + PAX S300";
+      users = {
+        likivik = { };
+        solarium = { };
       };
     };
 

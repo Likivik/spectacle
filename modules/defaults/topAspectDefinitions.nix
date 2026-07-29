@@ -8,7 +8,9 @@
       den.aspects.core.bootloader
       den.aspects.core.determinate-nix
       den.aspects.core.default-locale
+      den.aspects.core.ghostty-terminfo
       den.aspects.core.nix
+      den.aspects.core.tailscale
     ];
   };
 
@@ -33,6 +35,7 @@
   };
   den.aspects.desktop.common-extra = {
     includes = lib.mkDefault [
+      den.aspects.desktop.common-extra.extra-inbox
       den.aspects.desktop.common-extra.gaming
       den.aspects.desktop.common-extra.peripherals-extra
     ];
@@ -57,15 +60,15 @@
       den.aspects.docker
       # den.aspects.hindsight
       den.aspects.opencode
-      den.aspects.omp
-      den.aspects.qt-inspection
+      # den.aspects.omp
+      # den.aspects.qt-inspection
       den.aspects.shell-commands
       den.aspects.bash
       # den.aspects.elvish
       # den.aspects.zsh
       den.aspects.ssh
       # den.aspects.stash
-      den.aspects.virtualization
+      # den.aspects.virtualization
       den.aspects.vscodium
     ];
   };

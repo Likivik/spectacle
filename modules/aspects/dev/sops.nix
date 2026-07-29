@@ -3,6 +3,7 @@
   den.aspects.sops-cli = {
     nixos = { pkgs, ... }: {
       environment.systemPackages = with pkgs; [
+        age
         sops
         age-plugin-tpm
         micro

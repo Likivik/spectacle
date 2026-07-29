@@ -108,6 +108,11 @@ DROPEOF
             chown hermes:hermes "/var/lib/hermes/.hermes/$_subdir"
             chmod 2770 "/var/lib/hermes/.hermes/$_subdir"
           done
+          mkdir -p /var/lib/hermes/.config/git
+          cat > /var/lib/hermes/.config/git/config << 'GITEOF'
+[fetch]
+  prune = true
+GITEOF
           chown -R hermes:hermes /var/lib/hermes/.config
 
           ${pkgs.sudo}/bin/sudo -u hermes XDG_RUNTIME_DIR=/run/user/$(id -u hermes) ${pkgs.podman}/bin/podman system migrate || true

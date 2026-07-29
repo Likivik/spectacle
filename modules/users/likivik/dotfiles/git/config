@@ -5,6 +5,9 @@
 [init]
   defaultBranch = main
 
+[fetch]
+  prune = true
+
 [pull]
   rebase = true
 

@@ -127,6 +127,20 @@
 
         # Remote desktop
         environment.systemPackages = [ pkgs.rustdesk ];
+
+        systemd.user.services.rustdesk = {
+          description = "RustDesk remote desktop daemon";
+          after = [ "graphical-session.target" ];
+          wants = [ "graphical-session.target" ];
+          wantedBy = [ "default.target" ];
+
+          serviceConfig = {
+            Type = "simple";
+            ExecStart = "${pkgs.rustdesk}/bin/rustdesk";
+            Restart = "on-failure";
+            RestartSec = 5;
+          };
+        };
       };
 
   };

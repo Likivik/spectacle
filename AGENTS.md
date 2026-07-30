@@ -39,6 +39,15 @@ Always check host first: `hostname -s` (traversal = here, erebus = VPS). `nh` is
 sudo nixos-rebuild switch --flake .#
 ```
 
+### Serenity & Traversal (build locally)
+```bash
+# SSH in first, then build locally
+ssh likivik@<serenity|traversal-tailscale-ip>
+cd /Storage/Git/spectacle
+sudo nixos-rebuild switch --flake .#
+```
+**Gotcha**: These hosts DON'T build from erebus. Clone the `dev` branch at `/Storage/Git/spectacle`.
+
 ### Remote (erebus/poweredge from traversal)
 ```bash
 nixos-rebuild switch --target-host <user>@<host> --elevate=sudo --flake .#<hostname>

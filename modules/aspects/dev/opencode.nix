@@ -19,7 +19,6 @@
           python313Packages.python-docx
           python313Packages.openpyxl
           python313Packages.odfpy
-          python313Packages.markitdown
         ];
       };
   };

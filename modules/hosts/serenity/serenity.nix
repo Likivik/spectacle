@@ -99,38 +99,35 @@
 
         # ZFS
         boot.supportedFilesystems = [ "zfs" ];
-        boot.zfs.forceImportRoot = false; # was a legacy option, recommended to avoid "ohshits"
-        networking.hostId = "ad7406b6"; # generated with head -c4 /dev/urandom | od -A none -t x4 (ZFS needs it to identify machines)
-        #boot.kernelPackages = config.boot.zfs.package.latestCompatibleLinuxPackages; # don't update to unsupported kernel
-        services.zfs.autoScrub.enable = true; # enable zfs scrubbing (defaults to weekly/all pools)
+        boot.zfs.forceImportRoot = false;
+        networking.hostId = "ad7406b6";
+        services.zfs.autoScrub.enable = true;
         boot.zfs.extraPools = [ "serenity_onetb_zpool" ];
         boot.zfs.devNodes = "/dev/disk/by-label/serenity_onetb_zpool";
-        boot.initrd.supportedFilesystems = [ "zfs" ]; # required for zfs;
+        boot.initrd.supportedFilesystems = [ "zfs" ];
 
         # Nvidia driver
         services.xserver.videoDrivers = [ "nvidia" ];
-        #services.xserver.videoDrivers = [ "nouveau" ];
-        hardware.nvidia.open = true; # kernel modules, support moves to foss
+        hardware.nvidia.open = true;
 
         hardware.graphics = {
           enable = true;
           enable32Bit = true;
           extraPackages = with pkgs; [
             intel-media-driver
-
           ];
         };
 
         boot = {
           blacklistedKernelModules = [
             "nouveau"
-            #"i915"
           ];
           kernelParams = [ "nvidia_drm.modeset=1" ];
-
         };
+
+        # Remote desktop
+        environment.systemPackages = [ pkgs.rustdesk ];
       };
 
   };
-
 }

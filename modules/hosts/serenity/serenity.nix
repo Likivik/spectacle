@@ -141,6 +141,21 @@
             RestartSec = 5;
           };
         };
+
+        # KRDP — KDE Remote Desktop (RDP server, Wayland-native)
+        systemd.user.services.krdp = {
+          description = "KDE Remote Desktop (RDP) Server";
+          after = [ "graphical-session.target" ];
+          wants = [ "graphical-session.target" ];
+          wantedBy = [ "default.target" ];
+
+          serviceConfig = {
+            Type = "simple";
+            ExecStart = "${pkgs.kdePackages.krdp}/bin/krdpserver";
+            Restart = "on-failure";
+            RestartSec = 5;
+          };
+        };
       };
 
   };

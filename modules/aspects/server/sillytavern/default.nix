@@ -9,10 +9,9 @@
     in {
       services.sillytavern = {
         enable = true;
-        listen = true;
         port = 8001;
-        # NOTE: don't set whitelist here — module stringifies bools to 1/0,
-        # and ST treats "--whitelist=0" as truthy (JS "0" string). Use env var instead.
+        # DON'T set listen here — module stringifies `true` → `--listen=1`,
+        # which ST parses as FALSE (still binds 127.0.0.1). Env vars below.
       };
 
       systemd.services.sillytavern = {

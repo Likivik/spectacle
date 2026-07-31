@@ -12,6 +12,22 @@
       hermes-pkg = inputs.hermes-agent.packages.${pkgs.system}.messaging;
       anthropic-py = pkgs.python312.withPackages (ps: [ ps.pip ]);
 
+      # nixpkgs drift fix: mitmproxy 12.2.3 requires msgpack <= 1.1.2,
+      # but nixos-unstable bumped msgpack to 1.2.1 (breaks pythonRuntimeDepsCheck).
+      # Pin msgpack back to the known-good 1.1.2 for this aspect's python scope.
+      msgpackOverlay = (final: prev: {
+        python3Packages = prev.python3Packages.overrideScope (pythonFinal: pythonPrev: {
+          msgpack = pythonPrev.msgpack.overridePythonAttrs (old: {
+            version = "1.1.2";
+            src = pythonPrev.fetchPypi {
+              pname = "msgpack";
+              version = "1.1.2";
+              sha256 = "0zpl4sb9zk7fh3abaxqlf65d0g3hvjy6k028k3rn1pbk2cy7cq1v";
+            };
+          });
+        });
+      });
+
       mitmproxyConfig = import ./_mitmproxy.nix { inherit config pkgs lib; };
       graphitiConfig = import ./_graphiti.nix { inherit config pkgs lib; };
       llamaConfig = import ./_llama.nix { inherit config pkgs lib; };
@@ -19,6 +35,7 @@
       searxngConfig = import ./_searxng.nix { inherit config pkgs lib; };
       playwrightConfig = import ./_playwright.nix { inherit config pkgs lib; };
     in lib.mkMerge [
+      { nixpkgs.overlays = [ msgpackOverlay ]; }
       mitmproxyConfig
       graphitiConfig
       llamaConfig

@@ -26,15 +26,18 @@
             cp ${defaultConfig} /var/lib/SillyTavern/config.yaml
             chmod 0600 /var/lib/SillyTavern/config.yaml
           fi
+          # Whitelist mode stays ON (erebus has a public IP) — allow the tailnet
+          # subnet so phones on Tailscale can connect, everyone else is refused.
+          grep -q '100.64.0.0/10' /var/lib/SillyTavern/config.yaml || \
+            sed -i '/^whitelist:/a\  - 100.64.0.0/10' /var/lib/SillyTavern/config.yaml
         '';
 
         # ST natively reads SILLYTAVERN_* env vars (override config.yaml, proper bool parse).
-        # The module's `listen = true` flag stringifies to `--listen=true` which ST
+        # The module's `listen = true` flag stringifies to `--listen=1` which ST
         # mishandles (still binds 127.0.0.1) — env vars are the reliable path.
         environment = {
           SILLYTAVERN_LISTEN = "true";
           SILLYTAVERN_LISTEN_ADDRESS_IPV4 = "0.0.0.0";
-          SILLYTAVERN_WHITELIST = "false";
         };
       };
 

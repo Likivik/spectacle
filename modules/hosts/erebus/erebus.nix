@@ -9,6 +9,7 @@ in
       den.aspects.core.tailscale
       den.aspects.server.hermes-agent
       den.aspects.server.scaratec
+      den.aspects.server.sillytavern
       den.aspects.server.sops
     ];
 

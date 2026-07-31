@@ -29,8 +29,12 @@
           fi
         '';
 
-        # ST natively reads SILLYTAVERN_* env vars (override config.yaml, proper bool parse)
+        # ST natively reads SILLYTAVERN_* env vars (override config.yaml, proper bool parse).
+        # The module's `listen = true` flag stringifies to `--listen=true` which ST
+        # mishandles (still binds 127.0.0.1) — env vars are the reliable path.
         environment = {
+          SILLYTAVERN_LISTEN = "true";
+          SILLYTAVERN_LISTEN_ADDRESS_IPV4 = "0.0.0.0";
           SILLYTAVERN_WHITELIST = "false";
         };
       };

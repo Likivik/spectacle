@@ -103,7 +103,19 @@ in
           group = "hermes-mitmproxy";
           mode = "0600";
         };
+        "hermes-mitmproxy/llm-providers/opencode/api-key1" = {
+          sopsFile = ../../../secrets/erebus/secrets.yaml;
+          owner = "hermes-mitmproxy";
+          group = "hermes-mitmproxy";
+          mode = "0600";
+        };
         "hermes-mitmproxy/llm-providers/opencode/api-key2" = {
+          sopsFile = ../../../secrets/erebus/secrets.yaml;
+          owner = "hermes-mitmproxy";
+          group = "hermes-mitmproxy";
+          mode = "0600";
+        };
+        "hermes-mitmproxy/llm-providers/opencode/api-key3" = {
           sopsFile = ../../../secrets/erebus/secrets.yaml;
           owner = "hermes-mitmproxy";
           group = "hermes-mitmproxy";

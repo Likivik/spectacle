@@ -2,8 +2,10 @@
   caSecretPath = lib.attrByPath [ "sops" "secrets" "hermes-mitmproxy/mitmproxy-ca" "path" ] null config;
 
   mitmproxyAddon = pkgs.writeText "mitmproxy-addon.py" ''
-    import os, sys, base64
+    import base64, sys
     from mitmproxy import http
+
+    SECRETS = "/run/secrets/hermes-mitmproxy"
 
     # GitHub hosts by auth scheme (from tend project pattern)
     # Git smart-HTTP uses Basic auth; REST API uses Bearer/token
@@ -11,15 +13,46 @@
     GITHUB_TOKEN_HOSTS = {"api.github.com", "uploads.github.com", "raw.githubusercontent.com"}
 
     # Other services (all use Bearer)
-    BEARER_SERVICES = [
-        ("openrouter.ai", "OPENROUTER_API_KEY"),
-        ("opencode.ai", "OPENCODE_GO_API_KEY"),
+    OPENROUTER_KEY_FILE = f"{SECRETS}/llm-providers/openrouter/api-key"
+    # Shared rotation pool for both OpenCode Go and Zen
+    OPENCODE_POOL = [
+        f"{SECRETS}/llm-providers/opencode/api-key1",
+        f"{SECRETS}/llm-providers/opencode/api-key2",
+        f"{SECRETS}/llm-providers/opencode/api-key3",
     ]
+
+    # OpenCode Go routes under /zen/go/, Zen under /zen/v1/ (same host opencode.ai)
+    GO_PATH_PREFIX = "/zen/go/"
+    ZEN_PATH_PREFIX = "/zen/v1/"
+
+
+    def _read(path):
+        try:
+            with open(path) as fh:
+                return fh.read().strip()
+        except OSError as e:
+            sys.stderr.write(f"MITMPROXY: MISSING_SECRET {path}: {e}\n")
+            return None
+
+
+    def _inject_auth(f, service, value):
+        if value:
+            # Anthropic Messages endpoint needs x-api-key header
+            # (e.g. OpenCode Go: qwen3.7-max, qwen3.7-plus)
+            # vs chat/completions which uses Authorization: Bearer
+            if f.request.path.endswith("/v1/messages"):
+                f.request.headers["x-api-key"] = value
+                # Also set anthropic-version for Discover API compliance
+                f.request.headers["anthropic-version"] = "2023-06-01"
+            else:
+                f.request.headers["Authorization"] = f"Bearer {value}"
+            sys.stderr.write(f"MITMPROXY: injected {service} for {f.request.host}{f.request.path}\n")
+
 
     class Injector:
         def __init__(self):
             # Pre-compute GitHub Basic auth header
-            gh_token = os.environ.get("GITHUB_TOKEN", "")
+            gh_token = _read(f"{SECRETS}/github/pat-hermes-full")
             if gh_token:
                 self._gh_basic = "Basic " + base64.b64encode(
                     f"x-access-token:{gh_token}".encode()
@@ -28,6 +61,38 @@
             else:
                 self._gh_basic = None
                 self._gh_token = None
+
+            self._openrouter = _read(OPENROUTER_KEY_FILE)
+            self._opencode_pool = [k for k in (_read(p) for p in OPENCODE_POOL) if k]
+            self._go_idx = 0
+            self._zen_idx = 0
+
+        def _opencode_service(self, f):
+            path = f.request.path
+            if path.startswith(GO_PATH_PREFIX):
+                return "go"
+            if path.startswith(ZEN_PATH_PREFIX):
+                return "zen"
+            return None
+
+        def _opencode_key(self, service):
+            if not self._opencode_pool:
+                return None
+            idx = self._go_idx if service == "go" else self._zen_idx
+            return self._opencode_pool[idx % len(self._opencode_pool)]
+
+        def _rotate_opencode(self, service):
+            if not self._opencode_pool:
+                return
+            n = len(self._opencode_pool)
+            if service == "go":
+                self._go_idx = (self._go_idx + 1) % n
+            else:
+                self._zen_idx = (self._zen_idx + 1) % n
+            sys.stderr.write(
+                f"MITMPROXY: rotated {service} key to index "
+                f"{self._go_idx if service == 'go' else self._zen_idx} ({n} keys)\n"
+            )
 
         def request(self, f):
             host = f.request.host.lower()
@@ -38,33 +103,26 @@
                     f.request.headers["Authorization"] = self._gh_basic
                     sys.stderr.write(f"MITMPROXY: injected GITHUB_BASIC for {host}\n")
                 else:
-                    sys.stderr.write("MITMPROXY: MISSING_ENV GITHUB_TOKEN\n")
+                    sys.stderr.write("MITMPROXY: MISSING_SECRET github/pat-hermes-full\n")
             elif host in GITHUB_TOKEN_HOSTS:
                 if self._gh_token:
                     f.request.headers["Authorization"] = f"token {self._gh_token}"
                     sys.stderr.write(f"MITMPROXY: injected GITHUB_TOKEN for {host}\n")
                 else:
-                    sys.stderr.write("MITMPROXY: MISSING_ENV GITHUB_TOKEN\n")
-            else:
-                # Other services: Bearer auth
-                for pattern, env_key in BEARER_SERVICES:
-                    if pattern in host:
-                        v = os.environ.get(env_key)
-                        if v:
-                            # Anthropic Messages endpoint needs x-api-key header
-                            # (e.g. OpenCode Go: qwen3.7-max, qwen3.7-plus)
-                            # vs chat/completions which uses Authorization: Bearer
-                            if f.request.path.endswith("/v1/messages"):
-                                f.request.headers["x-api-key"] = v
-                                # Also set anthropic-version for Discover API compliance
-                                f.request.headers["anthropic-version"] = "2023-06-01"
-                                sys.stderr.write(f"MITMPROXY: injected {env_key} as x-api-key for {host}{f.request.path}\n")
-                            else:
-                                f.request.headers["Authorization"] = f"Bearer {v}"
-                                sys.stderr.write(f"MITMPROXY: injected {env_key} for {host}\n")
-                        else:
-                            sys.stderr.write(f"MITMPROXY: MISSING_ENV {env_key}\n")
-                        break
+                    sys.stderr.write("MITMPROXY: MISSING_SECRET github/pat-hermes-full\n")
+            elif "opencode.ai" in host:
+                service = self._opencode_service(f)
+                if service:
+                    _inject_auth(f, f"OPENCODE_{service.upper()}", self._opencode_key(service))
+            elif "openrouter.ai" in host:
+                _inject_auth(f, "OPENROUTER", self._openrouter)
+
+        def response(self, f):
+            host = f.request.host.lower()
+            if "opencode.ai" in host and f.response.status_code in (401, 429):
+                service = self._opencode_service(f)
+                if service:
+                    self._rotate_opencode(service)
 
     addons = [Injector()]
   '';
@@ -124,12 +182,6 @@ in {
     };
 
     script = ''
-      OPENROUTER_API_KEY=$(cat /run/secrets/hermes-mitmproxy/llm-providers/openrouter/api-key)
-      GITHUB_TOKEN=$(cat /run/secrets/hermes-mitmproxy/github/pat-hermes-full)
-      OPENCODE_GO_API_KEY=$(cat /run/secrets/hermes-mitmproxy/llm-providers/opencode/api-key2)
-      OPENCODE_ZEN_API_KEY=$(cat /run/secrets/hermes-mitmproxy/llm-providers/opencode/api-key2)
-      export OPENROUTER_API_KEY GITHUB_TOKEN OPENCODE_GO_API_KEY OPENCODE_ZEN_API_KEY
-
       exec ${pkgs.mitmproxy}/bin/mitmdump \
         -s ${mitmproxyAddon} \
         --listen-port 7899 \

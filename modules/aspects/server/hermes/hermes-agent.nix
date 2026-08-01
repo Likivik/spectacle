@@ -120,9 +120,13 @@ Environment=NO_PROXY=127.0.0.1,localhost
 Environment=WHATSAPP_ENABLED=false
 Environment=WHATSAPP_MODE=self-chat
 EnvironmentFile=/run/secrets/hermes/env
-Environment=PYTHONPATH=${anthropic-py}/${anthropic-py.sitePackages}
-Environment=HERMES_LAZY_INSTALL_TARGET=/var/lib/hermes/.hermes/lazy-packages
-DROPEOF
+           Environment=PYTHONPATH=${anthropic-py}/${anthropic-py.sitePackages}
+           Environment=HERMES_BUNDLED_SKILLS=${hermes-pkg}/share/hermes-agent/skills
+           Environment=HERMES_BUNDLED_PLUGINS=${hermes-pkg}/share/hermes-agent/plugins
+           Environment=HERMES_BUNDLED_LOCALES=${hermes-pkg}/share/hermes-agent/locales
+           Environment=HERMES_OPTIONAL_MCPS=${hermes-pkg}/share/hermes-agent/optional-mcps
+           Environment=HERMES_LAZY_INSTALL_TARGET=/var/lib/hermes/.hermes/lazy-packages
+           DROPEOF
           chown -R hermes:hermes /var/lib/hermes/.config/systemd/user/hermes-gateway.service.d
           chmod 644 /var/lib/hermes/.config/systemd/user/hermes-gateway.service.d/override.conf
 

@@ -1,8 +1,8 @@
 { config, pkgs, lib }: let
   sopsFile = ../../../../secrets/poweredge/secrets.yaml;
 
-  mcpAuthToken = config.sops.secrets."obsidian/obsidian-sync-mcp/MCP_AUTH_TOKEN".path;
-  e2ePassphrase = config.sops.secrets."obsidian/obsidian-sync-mcp/E2E_passphrase".path;
+   mcpAuthToken = config.sops.secrets."obsidian/obsidian-sync-mcp/mcp-auth-token".path;
+   e2ePassphrase = config.sops.secrets."obsidian/obsidian-sync-mcp/e2e-passphrase".path;
   couchdbUser = config.sops.secrets."obsidian/couchdb/adminUser".path;
   couchdbPass = config.sops.secrets."obsidian/couchdb/adminPass".path;
 in {
@@ -10,13 +10,13 @@ in {
     "d /var/lib/obsidian-sync-mcp 0755 root root - -"
   ];
 
-  sops.secrets."obsidian/obsidian-sync-mcp/MCP_AUTH_TOKEN" = {
+  sops.secrets."obsidian/obsidian-sync-mcp/mcp-auth-token" = {
     inherit sopsFile;
     owner = "root";
     group = "root";
     mode = "0600";
   };
-  sops.secrets."obsidian/obsidian-sync-mcp/E2E_passphrase" = {
+  sops.secrets."obsidian/obsidian-sync-mcp/e2e-passphrase" = {
     inherit sopsFile;
     owner = "root";
     group = "root";

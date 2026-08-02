@@ -20,6 +20,7 @@
         npmDepsHash = "sha256-duURSD3FBADhysJaJPMCI5e4sBjeaD8Yf/sPmaLc6eU=";
         nodejs = pkgs.nodejs_22;
       };
+      syncMcpConfig = import ./_obsidian-sync-mcp.nix { inherit config pkgs lib; };
     in {
       virtualisation.podman.enable = lib.mkDefault true;
 
@@ -179,14 +180,14 @@
         '';
       };
 
-      systemd.timers.obsidian-publish = {
-        description = "Obsidian publish timer";
-        wantedBy = [ "timers.target" ];
-        timerConfig = {
-          OnCalendar = "*-*-* *:0/10:00";
-          Persistent = true;
-        };
-      };
-    };
-  };
-}
+       systemd.timers.obsidian-publish = {
+         description = "Obsidian publish timer";
+         wantedBy = [ "timers.target" ];
+         timerConfig = {
+           OnCalendar = "*-*-* *:0/10:00";
+           Persistent = true;
+         };
+       };
+     } // syncMcpConfig;
+   };
+ }

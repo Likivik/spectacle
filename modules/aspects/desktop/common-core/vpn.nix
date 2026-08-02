@@ -7,7 +7,7 @@
 
         services.mullvad-vpn.enable = true;
         services.mullvad-vpn.enableExcludeWrapper = true;
-        services.mullvad-vpn.package = pkgs.mullvad-vpn;
+        services.mullvad-vpn.gui.enable = true;
 
         environment.systemPackages = with pkgs; [
           mullvad-compass
@@ -30,8 +30,8 @@
         # Exclude Tailscale traffic from Mullvad to prevent routing loops
         systemd.services.mullvad-vpn.postStart = ''
           sleep 2
-          ${pkgs.mullvad-vpn}/bin/mullvad exclude add 100.64.0.0/10
-          ${pkgs.mullvad-vpn}/bin/mullvad exclude add 41641/udp
+          ${pkgs.mullvad}/bin/mullvad exclude add 100.64.0.0/10
+          ${pkgs.mullvad}/bin/mullvad exclude add 41641/udp
         '';
       };
   };

@@ -1,6 +1,20 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "model": "",
+  "provider": {
+    "timeweb": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Timeweb",
+      "options": {
+        "baseURL": "https://api.timeweb.ai/v1"
+      },
+      "models": {
+        "deepseek/deepseek-v4-flash": {
+          "name": "Deepseek v4 Flash"
+        }
+      }
+    }
+  },
   "autoshare": false,
   "autoupdate": false,
   "plugin": [

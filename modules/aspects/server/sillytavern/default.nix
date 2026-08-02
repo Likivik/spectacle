@@ -26,6 +26,21 @@
             cp ${defaultConfig} /var/lib/SillyTavern/config.yaml
             chmod 0600 /var/lib/SillyTavern/config.yaml
           fi
+          # Bake in thumbnail settings (idempotent — guard against re-append on rebuild).
+          grep -q '^thumbnails:' /var/lib/SillyTavern/config.yaml || cat >> /var/lib/SillyTavern/config.yaml <<'YAML'
+
+thumbnails:
+  enabled: true
+  format: png
+  quality: 100
+  dimensions:
+    bg:
+      - 240
+      - 135
+    avatar:
+      - 864
+      - 1280
+YAML
           # Whitelist mode stays ON (erebus has a public IP) — allow the tailnet
           # subnet so phones on Tailscale can connect, everyone else is refused.
           grep -q '100.64.0.0/10' /var/lib/SillyTavern/config.yaml || \

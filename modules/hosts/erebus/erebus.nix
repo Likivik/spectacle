@@ -10,6 +10,7 @@ in
       den.aspects.server.hermes-agent
       den.aspects.server.scaratec
       den.aspects.server.sillytavern
+      den.aspects.tts
       den.aspects.server.sops
     ];
 
@@ -59,11 +60,12 @@ in
           9119
           8642
           3443
+          8880
         ];
         interfaces.tailscale0.allowedUDPPorts = [ 41641 ];
       } // (if lockSshToTailscale then {
         allowedTCPPorts = lib.mkForce [ ];
-        interfaces.tailscale0.allowedTCPPorts = [ 22 9119 8642 ];
+        interfaces.tailscale0.allowedTCPPorts = [ 22 9119 8642 3443 8001 8880 ];
       } else {
         allowedTCPPorts = lib.mkForce [ 22 ];
       });

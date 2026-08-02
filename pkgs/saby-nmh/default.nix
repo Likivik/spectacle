@@ -3,11 +3,11 @@
 }:
 
 let
-  version = "26.3200-227";
+  version = "26.3225-21";
 
   src = fetchurl {
     url = "https://update.saby.ru/NmhTransport/master/linux/nmh-transport.deb";
-    sha256 = "sha256-DTEoXYljixpHD4fKfJoDrA0mtCkEp81fCJFdIT32wHw=";
+    sha256 = "sha256-c1Bzcq/kGiuYrMmW/eUFyfPnzG92qng/E1+eONF+gAU=";
   };
 
   nmhName = "ru.tensor.sbis_plugin_nmh";

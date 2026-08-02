@@ -21,7 +21,8 @@
         nodejs = pkgs.nodejs_22;
       };
       syncMcpConfig = import ./_obsidian-sync-mcp.nix { inherit config pkgs lib; };
-    in {
+    in lib.mkMerge [
+      {
       virtualisation.podman.enable = lib.mkDefault true;
 
       users.users.obsidian-live-share = {
@@ -188,6 +189,7 @@
            Persistent = true;
          };
        };
-     } // syncMcpConfig;
+     } syncMcpConfig
+    ];
    };
  }

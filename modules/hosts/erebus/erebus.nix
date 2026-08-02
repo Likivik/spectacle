@@ -235,7 +235,7 @@ TROJANEOF
         ${pkgs.coreutils}/bin/chmod 0600 /opt/trojan/config.json
       '';
 
-      environment.systemPackages = with pkgs; [ nodejs_22 uv xray ];
+      environment.systemPackages = with pkgs; [ nodejs_22 uv xray git gh ];
 
     };
   };

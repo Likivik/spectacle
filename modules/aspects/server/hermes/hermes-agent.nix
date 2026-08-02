@@ -120,13 +120,13 @@ Environment=NO_PROXY=127.0.0.1,localhost
 Environment=WHATSAPP_ENABLED=false
 Environment=WHATSAPP_MODE=self-chat
 EnvironmentFile=/run/secrets/hermes/env
-           Environment=PYTHONPATH=${anthropic-py}/${anthropic-py.sitePackages}
-           Environment=HERMES_BUNDLED_SKILLS=${hermes-pkg}/share/hermes-agent/skills
-           Environment=HERMES_BUNDLED_PLUGINS=${hermes-pkg}/share/hermes-agent/plugins
-           Environment=HERMES_BUNDLED_LOCALES=${hermes-pkg}/share/hermes-agent/locales
-           Environment=HERMES_OPTIONAL_MCPS=${hermes-pkg}/share/hermes-agent/optional-mcps
-           Environment=HERMES_LAZY_INSTALL_TARGET=/var/lib/hermes/.hermes/lazy-packages
-           DROPEOF
+Environment=PYTHONPATH=${anthropic-py}/${anthropic-py.sitePackages}
+Environment=HERMES_BUNDLED_SKILLS=${hermes-pkg}/share/hermes-agent/skills
+Environment=HERMES_BUNDLED_PLUGINS=${hermes-pkg}/share/hermes-agent/plugins
+Environment=HERMES_BUNDLED_LOCALES=${hermes-pkg}/share/hermes-agent/locales
+Environment=HERMES_OPTIONAL_MCPS=${hermes-pkg}/share/hermes-agent/optional-mcps
+Environment=HERMES_LAZY_INSTALL_TARGET=/var/lib/hermes/.hermes/lazy-packages
+DROPEOF
           chown -R hermes:hermes /var/lib/hermes/.config/systemd/user/hermes-gateway.service.d
           chmod 644 /var/lib/hermes/.config/systemd/user/hermes-gateway.service.d/override.conf
 
@@ -156,6 +156,24 @@ GITEOF
           chown -R hermes:hermes /var/lib/hermes/.config
 
           ${pkgs.sudo}/bin/sudo -u hermes XDG_RUNTIME_DIR=/run/user/$(id -u hermes) ${pkgs.podman}/bin/podman system migrate || true
+        '';
+
+        system.activationScripts."hermes-profile-env" = lib.stringAfter [ "hermes-seed" ] ''
+          PROFILE="/var/lib/hermes/.profile"
+          touch "$PROFILE"
+          chown hermes:hermes "$PROFILE"
+          chmod 0600 "$PROFILE"
+          if ! ${pkgs.gnugrep}/bin/grep -q "hermes-mitmproxy" "$PROFILE"; then
+            cat >> "$PROFILE" << 'PROFILEEOF'
+
+# hermes-mitmproxy (gh/git via credential proxy) — NixOS-managed
+export HTTPS_PROXY=http://127.0.0.1:7899
+export NO_PROXY=127.0.0.1,localhost
+export SSL_CERT_FILE=/etc/ssl/certs/hermes-with-proxy-ca.crt
+export REQUESTS_CA_BUNDLE=/etc/ssl/certs/hermes-with-proxy-ca.crt
+PROFILEEOF
+            chown hermes:hermes "$PROFILE"
+          fi
         '';
 
         systemd.tmpfiles.rules = [

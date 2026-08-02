@@ -160,6 +160,10 @@ in {
         "$COREUTILS/cat" "$MITM_DIR/mitmproxy-ca-cert.pem" >> "$COMBINED"
       fi
     ''}
+
+    # Addon caches secrets at startup; restart after secret setup so rotated
+    # tokens (GitHub PAT, LLM keys) are re-read on every deploy.
+    ${pkgs.systemd}/bin/systemctl try-restart hermes-mitmproxy || true
   '';
 
   systemd.services.hermes-mitmproxy = {

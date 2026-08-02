@@ -1,0 +1,7 @@
+--- a/server/src/index.ts
++++ b/server/src/index.ts
+@@ -216,3 +216,3 @@
+-      server.listen(port, () => {
++      server.listen(port, "127.0.0.1", () => {
+        console.debug(`[server] listening on :${port}`);
+      });

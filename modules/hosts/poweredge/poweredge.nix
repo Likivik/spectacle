@@ -5,7 +5,7 @@
       den.aspects.server.sops
       den.aspects.server.nextcloud
       den.aspects.server.immich
-      den.aspects.server.evc-team-relay
+      den.aspects.server.obsidian-collab
     ];
 
     nixos = { config, lib, pkgs, ... }: {
@@ -93,6 +93,7 @@
         script = ''
           ${lib.getExe pkgs.tailscale} serve --bg --https=443 http://127.0.0.1:80
           ${lib.getExe pkgs.tailscale} serve --bg --https=8443 http://127.0.0.1:3001
+          ${lib.getExe pkgs.tailscale} serve --bg --https=5984 http://127.0.0.1:5984
         '';
       };
 

@@ -49,6 +49,9 @@
       url = "github:numtide/llm-agents.nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    obsidian-live-share = {
+      url = "github:Mewski/obsidian-live-share";
+    };
 
   };
 }

@@ -129,17 +129,6 @@
               recordsize = "1M";
             };
           };
-          "evc-team-relay" = {
-            type = "zfs_fs";
-            options = {
-              mountpoint = "/tank/evc-team-relay";
-              acltype = "posixacl";
-              atime = "off";
-              compression = "lz4";
-              recordsize = "128K";
-              xattr = "sa";
-            };
-          };
         };
       };
     };

@@ -178,6 +178,14 @@
         "-y",
         "@upstash/context7-mcp"
       ]
+    },
+    "obsidian-sync-mcp": {
+      "type": "remote",
+      "enabled": true,
+      "url": "https://poweredge.oryx-galaxy.ts.net:8787/mcp",
+      "headers": {
+        "Authorization": "Bearer {file:/run/secrets/obsidian/obsidian-sync-mcp/mcp-auth-token}"
+      }
     }
   }
 }

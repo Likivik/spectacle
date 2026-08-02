@@ -9,6 +9,7 @@
 
     includes = [
       den.aspects.core
+      den.aspects.server.sops
       den.aspects.desktop.common-core
 
       den.aspects.desktop.desktopManagers.dank-material-shell
@@ -28,6 +29,17 @@
       { config, modulesPath, ... }:
       {
         imports = [ (modulesPath + "/installer/scan/not-detected.nix") ];
+
+        # sops-nix on traversal uses the TPM identity (no SSH host key).
+        sops.age.sshKeyPaths = lib.mkForce [ ];
+        sops.age.keyFile = "/var/lib/sops/tpm-identity.txt";
+
+        sops.secrets."obsidian/obsidian-sync-mcp/mcp-auth-token" = {
+          sopsFile = ../../../secrets/traversal/secrets.yaml;
+          owner = "likivik";
+          group = "users";
+          mode = "0600";
+        };
 
         # services.openssh.enable = true;
 

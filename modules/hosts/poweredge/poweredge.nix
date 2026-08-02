@@ -94,6 +94,7 @@
           ${lib.getExe pkgs.tailscale} serve --bg --https=443 http://127.0.0.1:80
           ${lib.getExe pkgs.tailscale} serve --bg --https=8443 http://127.0.0.1:3001
           ${lib.getExe pkgs.tailscale} serve --bg --https=5984 http://127.0.0.1:5984
+          ${lib.getExe pkgs.tailscale} serve --bg --https=8787 http://127.0.0.1:8787
         '';
       };
 

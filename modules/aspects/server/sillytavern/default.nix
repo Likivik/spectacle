@@ -30,6 +30,21 @@
           # subnet so phones on Tailscale can connect, everyone else is refused.
           grep -q '100.64.0.0/10' /var/lib/SillyTavern/config.yaml || \
             sed -i '/^whitelist:/a\  - 100.64.0.0/10' /var/lib/SillyTavern/config.yaml
+
+          # Idempotent extension install — clone third-party repos if missing.
+          # Extensions persist across rebuilds via the BindPaths mount.
+          if [ ! -d "/var/lib/SillyTavern/extensions/Horae" ]; then
+            git clone --depth 1 https://github.com/SenriYuki/SillyTavern-Horae.git \
+              /var/lib/SillyTavern/extensions/Horae 2>/dev/null || true
+          fi
+          if [ ! -d "/var/lib/SillyTavern/extensions/SillyTavern-Tracker" ]; then
+            git clone --depth 1 https://github.com/kaldigo/SillyTavern-Tracker.git \
+              /var/lib/SillyTavern/extensions/SillyTavern-Tracker 2>/dev/null || true
+          fi
+          if [ ! -d "/var/lib/SillyTavern/extensions/sillytavern-inventory" ]; then
+            git clone --depth 1 https://github.com/nyxkrage/sillytavern-inventory.git \
+              /var/lib/SillyTavern/extensions/sillytavern-inventory 2>/dev/null || true
+          fi
         '';
 
         # ST natively reads SILLYTAVERN_* env vars (override config.yaml, proper bool parse).

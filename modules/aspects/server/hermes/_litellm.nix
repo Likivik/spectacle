@@ -176,18 +176,6 @@
             order = 13;
           };
         }
-        # Cerebras — free tier, no card, high throughput. llama-3.3-70b deprecated;
-        # use gpt-oss-120b (production). https://inference-docs.cerebras.ai/models/overview
-        {
-          model_name = "graphiti-free";
-          litellm_params = {
-            model = "openai/gpt-oss-120b";
-            api_base = "https://api.cerebras.ai/v1";
-            api_key = "os.environ/CEREBRAS_KEY";
-            rpm = 30;
-            order = 15;
-          };
-        }
         # DeepSeek fallback (if key present) — separate provider, real fallback value.
         {
           model_name = "graphiti-free";
@@ -251,8 +239,7 @@
       echo "NOUSPORTAL_KEY=$([ -f "$SECRETS/nousportal/api-key" ] && cat "$SECRETS/nousportal/api-key" || echo "")"
       echo "DEEPSEEK_KEY=$([ -f "$SECRETS/deepseek/api-key" ] && cat "$SECRETS/deepseek/api-key" || echo "")"
       echo "GROQ_KEY=$([ -f "$SECRETS/groq/api-key" ] && cat "$SECRETS/groq/api-key" || echo "")"
-      echo "HF_TOKEN=$([ -f "$SECRETS/huggingface/api-key" ] && cat "$SECRETS/huggingface/api-key" || echo "")"
-      echo "CEREBRAS_KEY=$([ -f "$SECRETS/cerebras/api-key" ] && cat "$SECRETS/cerebras/api-key" || echo "")";
+      echo "HF_TOKEN=$([ -f "$SECRETS/huggingface/api-key" ] && cat "$SECRETS/huggingface/api-key" || echo "")";
     } > /var/lib/litellm/env
     chmod 0600 /var/lib/litellm/env
     chown litellm:litellm /var/lib/litellm/env

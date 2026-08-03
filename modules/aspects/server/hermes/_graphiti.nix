@@ -1,27 +1,22 @@
 { config, pkgs, lib }: {
-  systemd.user.services.falkordb = {
-    description = "FalkorDB Graph Database";
-    after = [ "network.target" ];
-    wantedBy = [ "default.target" ];
-
-    unitConfig.ConditionUser = "hermes";
-
-    serviceConfig = {
-      # Use - prefix to ignore non-zero exit (systemd doesn't run shell; || true is a shell construct)
-      ExecStartPre = "-${pkgs.podman}/bin/podman rm -f falkordb";
-      # Volume mount: container data dir is /var/lib/falkordb/data (not /data)
-      # Pass --save args to enable RDB persistence (survives container restarts)
-      # Pass --dir to write dump.rdb to the bind-mounted volume
-      ExecStart = "${pkgs.podman}/bin/podman run --rm --name falkordb -p 127.0.0.1:6379:6379 -v /var/lib/hermes/falkordb-data:/var/lib/falkordb/data falkordb/falkordb-server:edge-alpine --save 900 1 --save 300 10 --save 60 10000 --dir /var/lib/falkordb/data";
-      ExecStop = "${pkgs.podman}/bin/podman stop falkordb";
-      Restart = "on-failure";
-      RestartSec = 5;
+  # FalkorDB via NixOS-managed OCI container (pulls image at activation,
+  # survives rebuild/prune — replaces the hand-rolled podman run user service
+  # that died when the image left the local store).
+  virtualisation.oci-containers = {
+    backend = "podman";
+    containers.falkordb = {
+      image = "falkordb/falkordb-server:edge-alpine";
+      autoStart = true;
+      ports = [ "127.0.0.1:6379:6379" ];
+      volumes = [ "/var/lib/hermes/falkordb-data:/var/lib/falkordb/data" ];
+      # RDB persistence so the graph survives container restarts.
+      cmd = [ "--save" "900" "1" "--save" "300" "10" "--save" "60" "10000" "--dir" "/var/lib/falkordb/data" ];
     };
   };
 
   systemd.user.services.graphiti-mcp = {
     description = "Graphiti MCP Server";
-    after = [ "falkordb.service" ];
+    after = [ "podman-falkordb.service" ];
     wantedBy = [ "default.target" ];
 
     unitConfig.ConditionUser = "hermes";

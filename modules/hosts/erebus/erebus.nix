@@ -123,6 +123,26 @@ in
           group = "hermes-mitmproxy";
           mode = "0600";
         };
+        # Added so LiteLLM (graphiti-free pool) can read them at runtime.
+        # Keys already present in secrets/erebus/secrets.yaml (encrypted).
+        "hermes-mitmproxy/llm-providers/groq/api-key" = {
+          sopsFile = ../../../secrets/erebus/secrets.yaml;
+          owner = "hermes-mitmproxy";
+          group = "hermes-mitmproxy";
+          mode = "0600";
+        };
+        "hermes-mitmproxy/llm-providers/huggingface/api-key" = {
+          sopsFile = ../../../secrets/erebus/secrets.yaml;
+          owner = "hermes-mitmproxy";
+          group = "hermes-mitmproxy";
+          mode = "0600";
+        };
+        "hermes-mitmproxy/llm-providers/mistral/api-key" = {
+          sopsFile = ../../../secrets/erebus/secrets.yaml;
+          owner = "hermes-mitmproxy";
+          group = "hermes-mitmproxy";
+          mode = "0600";
+        };
         "email/gmail/account1/adress" = {
           sopsFile = ../../../secrets/erebus/secrets.yaml;
           owner = "scaratec";

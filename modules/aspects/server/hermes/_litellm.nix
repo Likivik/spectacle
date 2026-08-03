@@ -65,16 +65,18 @@
             order = 4;
           };
         }
-        {
-          model_name = "graphiti-free";
-          litellm_params = {
-            model = "openai/deepseek-v4-flash-free";
-            api_base = "https://opencode.ai/zen/v1";
-            api_key = "os.environ/OPENCODE_KEY4";
-            rpm = 20;
-            order = 5;
-          };
-        }
+        # OpenCode Zen key4 — api-key4 NOT in runtime sops mount (only 1-3 are).
+        # Deployment disabled until key4 is mounted; avoids empty api_key at load.
+        # {
+        #   model_name = "graphiti-free";
+        #   litellm_params = {
+        #     model = "openai/deepseek-v4-flash-free";
+        #     api_base = "https://opencode.ai/zen/v1";
+        #     api_key = "os.environ/OPENCODE_KEY4";
+        #     rpm = 20;
+        #     order = 5;
+        #   };
+        # }
         # OpenCode Go (subscription; open-source models only, no free tier).
         {
           model_name = "graphiti-free";
@@ -153,16 +155,17 @@
             order = 14;
           };
         }
-        # DeepSeek fallback (if key present) — separate provider, real fallback value.
-        {
-          model_name = "graphiti-free";
-          litellm_params = {
-            model = "deepseek/deepseek-v4-flash-0731";
-            api_key = "os.environ/DEEPSEEK_KEY";
-            rpm = 20;
-            order = 20;
-          };
-        }
+        # DeepSeek fallback — key NOT in runtime sops mount; disabled to avoid
+        # empty api_key at config load. Re-enable if deepseek/api-key is mounted.
+        # {
+        #   model_name = "graphiti-free";
+        #   litellm_params = {
+        #     model = "deepseek/deepseek-v4-flash-0731";
+        #     api_key = "os.environ/DEEPSEEK_KEY";
+        #     rpm = 20;
+        #     order = 20;
+        #   };
+        # }
       ];
       router_settings = {
         routing_strategy = "simple-shuffle";
@@ -192,9 +195,13 @@
     if [ -f "$SOPS_MK" ]; then
       install -m 0600 "$SOPS_MK" "$MK_FILE"
     elif [ ! -f "$MK_FILE" ]; then
-      # Generate 24 bytes of hex from /dev/urandom (no openssl dependency —
-      # the activation env lacks openssl/bash on PATH, so avoid external bins).
-      head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n' > "$MK_FILE"
+      # Pure-bash master key (24 bytes hex). The activation env lacks
+      # openssl on PATH, so avoid external binaries — use only bash builtins.
+      mk=""; i=0
+      while [ $i -lt 24 ]; do
+        mk+=$(printf "%02x" $((RANDOM * 256 / 32768))); i=$((i + 1))
+      done
+      printf '%s' "$mk" > "$MK_FILE"
     fi
     chmod 0644 "$MK_FILE"
 
@@ -205,7 +212,10 @@
     SECRETS=/run/secrets/hermes-mitmproxy/llm-providers
     {
       echo "LITELLM_MASTER_KEY=$(cat "$MK_FILE")"
-      echo "DATABASE_URL=postgresql://litellm:litellm@127.0.0.1:5432/litellm"
+      # NOTE: no DATABASE_URL — litellm 1.89.0 nixpkg lacks Prisma engine
+      # binaries, so setting DATABASE_URL crashes startup ("Unable to find
+      # Prisma binaries"). Spend logging deferred to Langfuse (separate
+      # service) per original plan.
       echo "NO_PROXY=127.0.0.1,localhost,openrouter.ai,api.openrouter.ai"
       echo "LITELLM_LOG=INFO"
       echo "OPENROUTER_KEY=$([ -f "$SECRETS/openrouter/api-key" ] && cat "$SECRETS/openrouter/api-key" || echo "")"

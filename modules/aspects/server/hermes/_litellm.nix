@@ -192,7 +192,9 @@
     if [ -f "$SOPS_MK" ]; then
       install -m 0600 "$SOPS_MK" "$MK_FILE"
     elif [ ! -f "$MK_FILE" ]; then
-      "${pkgs.openssl}/bin/openssl rand -hex 24" > "$MK_FILE"
+      # Generate 24 bytes of hex from /dev/urandom (no openssl dependency —
+      # the activation env lacks openssl/bash on PATH, so avoid external bins).
+      head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n' > "$MK_FILE"
     fi
     chmod 0644 "$MK_FILE"
 

@@ -176,6 +176,17 @@
             order = 13;
           };
         }
+        # Mistral — free experimentation tier (La Plateforme), no card, permissive terms.
+        {
+          model_name = "graphiti-free";
+          litellm_params = {
+            model = "openai/mistral-large-latest";
+            api_base = "https://api.mistral.ai/v1";
+            api_key = "os.environ/MISTRAL_KEY";
+            rpm = 20;
+            order = 14;
+          };
+        }
         # DeepSeek fallback (if key present) — separate provider, real fallback value.
         {
           model_name = "graphiti-free";
@@ -239,7 +250,8 @@
       echo "NOUSPORTAL_KEY=$([ -f "$SECRETS/nousportal/api-key" ] && cat "$SECRETS/nousportal/api-key" || echo "")"
       echo "DEEPSEEK_KEY=$([ -f "$SECRETS/deepseek/api-key" ] && cat "$SECRETS/deepseek/api-key" || echo "")"
       echo "GROQ_KEY=$([ -f "$SECRETS/groq/api-key" ] && cat "$SECRETS/groq/api-key" || echo "")"
-      echo "HF_TOKEN=$([ -f "$SECRETS/huggingface/api-key" ] && cat "$SECRETS/huggingface/api-key" || echo "")";
+      echo "HF_TOKEN=$([ -f "$SECRETS/huggingface/api-key" ] && cat "$SECRETS/huggingface/api-key" || echo "")"
+      echo "MISTRAL_KEY=$([ -f "$SECRETS/mistral/api-key" ] && cat "$SECRETS/mistral/api-key" || echo "")";
     } > /var/lib/litellm/env
     chmod 0600 /var/lib/litellm/env
     chown litellm:litellm /var/lib/litellm/env

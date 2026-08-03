@@ -45,6 +45,7 @@
 
   system.activationScripts."hermes-graphiti-seed" = lib.stringAfter (
     lib.optional (config.system.activationScripts ? setupSecrets) "setupSecrets"
+    ++ lib.optional (config.system.activationScripts ? "hermes-litellm-seed") "hermes-litellm-seed"
   ) ''
     mkdir -p /var/lib/hermes/falkordb-data
     chown hermes:hermes /var/lib/hermes/falkordb-data
@@ -66,7 +67,7 @@ llm:
   providers:
     openai:
       api_url: "http://127.0.0.1:4000/v1"
-      api_key: "$(cat /var/lib/hermes/litellm/master-key.txt 2>/dev/null || echo sk-missing)"
+      api_key: "$(cat /var/lib/litellm/master-key.txt 2>/dev/null || echo sk-missing)"
 
 embedder:
   provider: "openai"

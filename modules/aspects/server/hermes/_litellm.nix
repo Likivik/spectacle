@@ -142,17 +142,9 @@
             order = 9;
           };
         }
-        # NousPortal — OpenAI-compatible inference API.
-        {
-          model_name = "graphiti-free";
-          litellm_params = {
-            model = "openai/Hermes-4-405B";
-            api_base = "https://inference-api.nousresearch.com/v1";
-            api_key = "os.environ/NOUSPORTAL_KEY";
-            rpm = 20;
-            order = 11;
-          };
-        }
+        # NousPortal dropped: Hermes-4-405B is paid (404 on $0 free tier) and
+        # Hermes-4 is tuned for chat, not rapid tool-calling — poor Graphiti fit.
+        # Also redundant with OpenRouter (Nous is OpenRouter-powered).
         # Groq — permanent free tier (Llama 3.3 70B etc.), no card.
         {
           model_name = "graphiti-free";
@@ -180,7 +172,7 @@
         {
           model_name = "graphiti-free";
           litellm_params = {
-            model = "openai/mistral-large-latest";
+            model = "openai/mistral-small-latest";
             api_base = "https://api.mistral.ai/v1";
             api_key = "os.environ/MISTRAL_KEY";
             rpm = 20;
@@ -247,7 +239,6 @@
       echo "OPENCODE_KEY2=$([ -f "$SECRETS/opencode/api-key2" ] && cat "$SECRETS/opencode/api-key2" || echo "")"
       echo "OPENCODE_KEY3=$([ -f "$SECRETS/opencode/api-key3" ] && cat "$SECRETS/opencode/api-key3" || echo "")"
       echo "OPENCODE_KEY4=$([ -f "$SECRETS/opencode/api-key4" ] && cat "$SECRETS/opencode/api-key4" || echo "")"
-      echo "NOUSPORTAL_KEY=$([ -f "$SECRETS/nousportal/api-key" ] && cat "$SECRETS/nousportal/api-key" || echo "")"
       echo "DEEPSEEK_KEY=$([ -f "$SECRETS/deepseek/api-key" ] && cat "$SECRETS/deepseek/api-key" || echo "")"
       echo "GROQ_KEY=$([ -f "$SECRETS/groq/api-key" ] && cat "$SECRETS/groq/api-key" || echo "")"
       echo "HF_TOKEN=$([ -f "$SECRETS/huggingface/api-key" ] && cat "$SECRETS/huggingface/api-key" || echo "")"

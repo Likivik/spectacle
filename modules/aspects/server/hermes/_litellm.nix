@@ -176,10 +176,9 @@
         ];
       };
       litellm_settings = {
-        # Native Postgres spend logging (tokens + $) via DATABASE_URL below.
-        # Langfuse (per your request) — UNCOMMENT + set env when a Langfuse
-        # instance is deployed; native Postgres logging works without it.
-        # success_callback = [ "langfuse" ];
+        # Langfuse Cloud spend/observability dashboard (keys via LANGFUSE_* env).
+        # Native Postgres logging skipped — litellm 1.89.0 nixpkg lacks Prisma binaries.
+        success_callback = [ "langfuse" ];
       };
     };
   };
@@ -226,7 +225,10 @@
       echo "DEEPSEEK_KEY=$([ -f "$SECRETS/deepseek/api-key" ] && cat "$SECRETS/deepseek/api-key" || echo "")"
       echo "GROQ_KEY=$([ -f "$SECRETS/groq/api-key" ] && cat "$SECRETS/groq/api-key" || echo "")"
       echo "HF_TOKEN=$([ -f "$SECRETS/huggingface/api-key" ] && cat "$SECRETS/huggingface/api-key" || echo "")"
-      echo "MISTRAL_KEY=$([ -f "$SECRETS/mistral/api-key" ] && cat "$SECRETS/mistral/api-key" || echo "")";
+      echo "MISTRAL_KEY=$([ -f "$SECRETS/mistral/api-key" ] && cat "$SECRETS/mistral/api-key" || echo "")"
+      echo "LANGFUSE_PUBLIC_KEY=$([ -f "$SECRETS/langfuse/public-key" ] && cat "$SECRETS/langfuse/public-key" || echo "")"
+      echo "LANGFUSE_SECRET_KEY=$([ -f "$SECRETS/langfuse/secret-key" ] && cat "$SECRETS/langfuse/secret-key" || echo "")"
+      echo "LANGFUSE_HOST=https://cloud.langfuse.com"
     } > /var/lib/litellm/env
     chmod 0644 /var/lib/litellm/env
   '';

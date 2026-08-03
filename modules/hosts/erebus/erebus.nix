@@ -143,6 +143,19 @@ in
           group = "hermes-mitmproxy";
           mode = "0600";
         };
+        # Langfuse Cloud (spend/observability dashboard) — keys already in secrets.yaml.
+        "hermes-mitmproxy/langfuse/public-key" = {
+          sopsFile = ../../../secrets/erebus/secrets.yaml;
+          owner = "hermes-mitmproxy";
+          group = "hermes-mitmproxy";
+          mode = "0600";
+        };
+        "hermes-mitmproxy/langfuse/secret-key" = {
+          sopsFile = ../../../secrets/erebus/secrets.yaml;
+          owner = "hermes-mitmproxy";
+          group = "hermes-mitmproxy";
+          mode = "0600";
+        };
         "email/gmail/account1/adress" = {
           sopsFile = ../../../secrets/erebus/secrets.yaml;
           owner = "scaratec";

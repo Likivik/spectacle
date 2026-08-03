@@ -176,17 +176,6 @@
             order = 13;
           };
         }
-        # NVIDIA NIM — permanent free API key, no card, 70-100+ models, separate vendor.
-        {
-          model_name = "graphiti-free";
-          litellm_params = {
-            model = "openai/meta/llama-3.3-70b-instruct";
-            api_base = "https://integrate.api.nvidia.com/v1";
-            api_key = "os.environ/NVIDIA_KEY";
-            rpm = 20;
-            order = 14;
-          };
-        }
         # Cerebras — free tier (Llama 3.3 70B etc.), no card, high throughput.
         {
           model_name = "graphiti-free";
@@ -262,7 +251,6 @@
       echo "DEEPSEEK_KEY=$([ -f "$SECRETS/deepseek/api-key" ] && cat "$SECRETS/deepseek/api-key" || echo "")"
       echo "GROQ_KEY=$([ -f "$SECRETS/groq/api-key" ] && cat "$SECRETS/groq/api-key" || echo "")"
       echo "HF_TOKEN=$([ -f "$SECRETS/huggingface/api-key" ] && cat "$SECRETS/huggingface/api-key" || echo "")"
-      echo "NVIDIA_KEY=$([ -f "$SECRETS/nvidia/api-key" ] && cat "$SECRETS/nvidia/api-key" || echo "")"
       echo "CEREBRAS_KEY=$([ -f "$SECRETS/cerebras/api-key" ] && cat "$SECRETS/cerebras/api-key" || echo "")";
     } > /var/lib/litellm/env
     chmod 0600 /var/lib/litellm/env

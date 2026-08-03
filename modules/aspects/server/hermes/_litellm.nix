@@ -176,9 +176,12 @@
         ];
       };
       litellm_settings = {
-        # Langfuse Cloud spend/observability dashboard (keys via LANGFUSE_* env).
-        # Native Postgres logging skipped — litellm 1.89.0 nixpkg lacks Prisma binaries.
-        success_callback = [ "langfuse" ];
+        # Langfuse Cloud observability via OTel (tokens in/out + $ cost).
+        # Uses langfuse_otel callback (not legacy "langfuse") — the legacy
+        # path constructs Langfuse() directly and crashes on the nixpkg's
+        # langfuse 4.0.2 SDK (sdk_integration kwarg removed). OTel path is
+        # version-safe; opentelemetry deps are present in the nixpkg.
+        callbacks = [ "langfuse_otel" ];
       };
     };
   };
@@ -193,7 +196,7 @@
     SOPS_MK=/run/secrets/hermes-litellm/master-key
     if [ -f "$SOPS_MK" ]; then
       install -m 0600 "$SOPS_MK" "$MK_FILE"
-    elif [ ! -f "$MK_FILE" ]; then
+    elif [ ! -s "$MK_FILE" ]; then
       # Pure-bash master key (24 bytes hex). The activation env lacks
       # openssl on PATH, so avoid external binaries — use only bash builtins.
       mk=""; i=0
@@ -226,9 +229,11 @@
       echo "GROQ_KEY=$([ -f "$SECRETS/groq/api-key" ] && cat "$SECRETS/groq/api-key" || echo "")"
       echo "HF_TOKEN=$([ -f "$SECRETS/huggingface/api-key" ] && cat "$SECRETS/huggingface/api-key" || echo "")"
       echo "MISTRAL_KEY=$([ -f "$SECRETS/mistral/api-key" ] && cat "$SECRETS/mistral/api-key" || echo "")"
-      echo "LANGFUSE_PUBLIC_KEY=$([ -f "$SECRETS/langfuse/public-key" ] && cat "$SECRETS/langfuse/public-key" || echo "")"
-      echo "LANGFUSE_SECRET_KEY=$([ -f "$SECRETS/langfuse/secret-key" ] && cat "$SECRETS/langfuse/secret-key" || echo "")"
+      LF=/run/secrets/hermes-mitmproxy/langfuse
+      echo "LANGFUSE_PUBLIC_KEY=$([ -f "$LF/public-key" ] && cat "$LF/public-key" || echo "")"
+      echo "LANGFUSE_SECRET_KEY=$([ -f "$LF/secret-key" ] && cat "$LF/secret-key" || echo "")"
       echo "LANGFUSE_HOST=https://cloud.langfuse.com"
+      echo "LANGFUSE_OTEL_HOST=https://cloud.langfuse.com"
     } > /var/lib/litellm/env
     chmod 0644 /var/lib/litellm/env
   '';

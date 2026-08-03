@@ -238,7 +238,7 @@
       echo "NOUSPORTAL_KEY=$([ -f "$SECRETS/nousportal/api-key" ] && cat "$SECRETS/nousportal/api-key" || echo "")"
       echo "DEEPSEEK_KEY=$([ -f "$SECRETS/deepseek/api-key" ] && cat "$SECRETS/deepseek/api-key" || echo "")"
       echo "GROQ_KEY=$([ -f "$SECRETS/groq/api-key" ] && cat "$SECRETS/groq/api-key" || echo "")"
-      echo "GITHUB_KEY=$([ -f "$SECRETS/github/api-key" ] && cat "$SECRETS/github/api-key" || echo "")"
+      echo "GITHUB_KEY=$([ -f "$SECRETS/github/pat-hermes-full" ] && cat "$SECRETS/github/pat-hermes-full" || echo "")"
     } > /var/lib/litellm/env
     chmod 0600 /var/lib/litellm/env
     chown litellm:litellm /var/lib/litellm/env

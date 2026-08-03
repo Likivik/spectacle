@@ -5,7 +5,9 @@
   virtualisation.oci-containers = {
     backend = "podman";
     containers.falkordb = {
-      image = "falkordb/falkordb-server:edge-alpine";
+      # Fully-qualified registry prefix required: erebus podman has no
+      # unqualified-search-registries, so bare "falkordb/..." fails to pull.
+      image = "docker.io/falkordb/falkordb-server:edge-alpine";
       autoStart = true;
       ports = [ "127.0.0.1:6379:6379" ];
       volumes = [ "/var/lib/hermes/falkordb-data:/var/lib/falkordb/data" ];

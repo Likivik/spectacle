@@ -59,36 +59,130 @@
             order = 1;
           };
         }
-        # OpenCode pool (opencode.ai) — custom OpenAI-compatible base.
-        # TODO: confirm opencode.ai base URL + model name, then uncomment.
-        # {
-        #   model_name = "graphiti-free";
-        #   litellm_params = {
-        #     model = "openai/<MODEL>";
-        #     api_base = "https://opencode.ai/v1";
-        #     api_key = "os.environ/OPENCODE_KEY1";
-        #     rpm = 20;
-        #     order = 2;
-        #   };
-        # }  # (repeat for OPENCODE_KEY2..4, order 3..5)
-        #
-        # NousPortal — same pattern, uncomment when base URL confirmed.
-        # {
-        #   model_name = "graphiti-free";
-        #   litellm_params = {
-        #     model = "openai/<MODEL>";
-        #     api_base = "<NOUSPORTAL_BASE>";
-        #     api_key = "os.environ/NOUSPORTAL_KEY";
-        #     order = 6;
-        #   };
-        # }
+        # OpenCode Zen (pay-per-use; has 7 free models e.g. deepseek-v4-flash-free).
+        # One key covers Zen + Go; only the base URL differs.
+        {
+          model_name = "graphiti-free";
+          litellm_params = {
+            model = "openai/deepseek-v4-flash-free";
+            api_base = "https://opencode.ai/zen/v1";
+            api_key = "os.environ/OPENCODE_KEY1";
+            rpm = 20;
+            order = 2;
+          };
+        }
+        {
+          model_name = "graphiti-free";
+          litellm_params = {
+            model = "openai/deepseek-v4-flash-free";
+            api_base = "https://opencode.ai/zen/v1";
+            api_key = "os.environ/OPENCODE_KEY2";
+            rpm = 20;
+            order = 3;
+          };
+        }
+        {
+          model_name = "graphiti-free";
+          litellm_params = {
+            model = "openai/deepseek-v4-flash-free";
+            api_base = "https://opencode.ai/zen/v1";
+            api_key = "os.environ/OPENCODE_KEY3";
+            rpm = 20;
+            order = 4;
+          };
+        }
+        {
+          model_name = "graphiti-free";
+          litellm_params = {
+            model = "openai/deepseek-v4-flash-free";
+            api_base = "https://opencode.ai/zen/v1";
+            api_key = "os.environ/OPENCODE_KEY4";
+            rpm = 20;
+            order = 5;
+          };
+        }
+        # OpenCode Go (subscription; open-source models only, no free tier).
+        {
+          model_name = "graphiti-free";
+          litellm_params = {
+            model = "openai/deepseek-v4-flash";
+            api_base = "https://opencode.ai/zen/go/v1";
+            api_key = "os.environ/OPENCODE_KEY1";
+            rpm = 20;
+            order = 6;
+          };
+        }
+        {
+          model_name = "graphiti-free";
+          litellm_params = {
+            model = "openai/deepseek-v4-flash";
+            api_base = "https://opencode.ai/zen/go/v1";
+            api_key = "os.environ/OPENCODE_KEY2";
+            rpm = 20;
+            order = 7;
+          };
+        }
+        {
+          model_name = "graphiti-free";
+          litellm_params = {
+            model = "openai/deepseek-v4-flash";
+            api_base = "https://opencode.ai/zen/go/v1";
+            api_key = "os.environ/OPENCODE_KEY3";
+            rpm = 20;
+            order = 8;
+          };
+        }
+        {
+          model_name = "graphiti-free";
+          litellm_params = {
+            model = "openai/deepseek-v4-flash";
+            api_base = "https://opencode.ai/zen/go/v1";
+            api_key = "os.environ/OPENCODE_KEY4";
+            rpm = 20;
+            order = 9;
+          };
+        }
+        # NousPortal — OpenAI-compatible inference API.
+        {
+          model_name = "graphiti-free";
+          litellm_params = {
+            model = "openai/Hermes-4-405B";
+            api_base = "https://inference-api.nousresearch.com/v1";
+            api_key = "os.environ/NOUSPORTAL_KEY";
+            rpm = 20;
+            order = 11;
+          };
+        }
+        # Groq — permanent free tier (Llama 3.3 70B etc.), no card.
+        {
+          model_name = "graphiti-free";
+          litellm_params = {
+            model = "openai/llama-3.3-70b-versatile";
+            api_base = "https://api.groq.com/openai/v1";
+            api_key = "os.environ/GROQ_KEY";
+            rpm = 30;
+            order = 12;
+          };
+        }
+        # GitHub Models — free for GitHub users (GPT-4o, DeepSeek-R1, etc.).
+        {
+          model_name = "graphiti-free";
+          litellm_params = {
+            model = "openai/gpt-4o";
+            api_base = "https://models.github.ai/inference";
+            api_key = "os.environ/GITHUB_KEY";
+            rpm = 15;
+            order = 13;
+          };
+        }
+        # DeepSeek fallback (if key present) — separate provider, real fallback value.
         {
           model_name = "graphiti-free";
           litellm_params = {
             model = "deepseek/deepseek-v4-flash-0731";
             api_key = "os.environ/DEEPSEEK_KEY";
             rpm = 20;
-            order = 10;
+            order = 20;
           };
         }
       ];
@@ -143,6 +237,8 @@
       echo "OPENCODE_KEY4=$([ -f "$SECRETS/opencode/api-key4" ] && cat "$SECRETS/opencode/api-key4" || echo "")"
       echo "NOUSPORTAL_KEY=$([ -f "$SECRETS/nousportal/api-key" ] && cat "$SECRETS/nousportal/api-key" || echo "")"
       echo "DEEPSEEK_KEY=$([ -f "$SECRETS/deepseek/api-key" ] && cat "$SECRETS/deepseek/api-key" || echo "")"
+      echo "GROQ_KEY=$([ -f "$SECRETS/groq/api-key" ] && cat "$SECRETS/groq/api-key" || echo "")"
+      echo "GITHUB_KEY=$([ -f "$SECRETS/github/api-key" ] && cat "$SECRETS/github/api-key" || echo "")"
     } > /var/lib/litellm/env
     chmod 0600 /var/lib/litellm/env
     chown litellm:litellm /var/lib/litellm/env

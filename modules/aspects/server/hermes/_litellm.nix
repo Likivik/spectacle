@@ -1,33 +1,10 @@
 { config, pkgs, lib }: {
   # ── LiteLLM AI Gateway (upstream services.litellm module) ────────────
-  # OpenAI-compatible proxy in front of Graphiti. Pools openrouter +
-  # opencode×4 + nousportal (+ DeepSeek fallback) as deployments under one
-  # `graphiti-free` model_name, with order-based + fallback-chain rotation
-  # on 429/503, and native Postgres token/spend logging.
-  #
-  # Graphiti points api_url -> http://127.0.0.1:4000/v1 (see _graphiti.nix).
-  # Keys are read from the SAME sops secrets the mitmproxy already uses
-  # (/run/secrets/hermes-mitmproxy/...), surfaced via an EnvironmentFile
-  # generated at activation (services.litellm.environmentFile).
-  #
-  # Module runs as a hardened DynamicUser by default; we pin a static
-  # `litellm` user so it can read the secret env file we generate.
-
-  users.users.litellm = {
-    isSystemUser = true;
-    group = "litellm";
-    home = "/var/lib/litellm";
-    createHome = true;
-    shell = pkgs.bash;
-  };
-  users.groups.litellm = { };
-
-  # ── Postgres (shared server, dedicated `litellm` database) ────────────
   services.postgresql = {
     enable = true;
     package = pkgs.postgresql_16;
     enableTCPIP = true;
-    settings.listen_addresses = "127.0.0.1";
+    settings.listen_addresses = lib.mkForce "127.0.0.1";
     initialScript = pkgs.writeText "litellm-pg-init" ''
       CREATE ROLE litellm WITH LOGIN PASSWORD 'litellm';
       CREATE DATABASE litellm OWNER litellm;
@@ -38,14 +15,11 @@
     enable = true;
     host = "127.0.0.1";
     port = 4000;
-    # Pin a static user (override module default DynamicUser) so the
-    # generated secret env file is readable by the service.
-    serviceConfig = {
-      DynamicUser = false;
-      User = "litellm";
-      Group = "litellm";
-      ReadWritePaths = [ "/var/lib/litellm" ];
-    };
+    # NOTE: the upstream module runs the service as a DynamicUser (line 212 of
+    # the nixpkgs litellm module). We therefore can NOT pin User/Group here
+    # (services.litellm.serviceConfig does not exist). The generated env file
+    # + master key are made world-readable (0644) below so the dynamic uid can
+    # read them from the StateDirectory /var/lib/litellm.
     environmentFile = "/var/lib/litellm/env";
 
     settings = {
@@ -211,7 +185,6 @@
     lib.optional (config.system.activationScripts ? setupSecrets) "setupSecrets"
   ) ''
     mkdir -p /var/lib/litellm
-    chown litellm:litellm /var/lib/litellm
 
     # ── Master key: reuse sops if present, else generate + persist locally ──
     MK_FILE=/var/lib/litellm/master-key.txt
@@ -221,8 +194,7 @@
     elif [ ! -f "$MK_FILE" ]; then
       "${pkgs.openssl}/bin/openssl rand -hex 24" > "$MK_FILE"
     fi
-    chmod 0600 "$MK_FILE"
-    chown litellm:litellm "$MK_FILE"
+    chmod 0644 "$MK_FILE"
 
     # ── EnvironmentFile: pull keys from the SAME sops paths mitmproxy uses.
     #    Every var is ALWAYS emitted (empty fallback) so LiteLLM config-load
@@ -244,7 +216,6 @@
       echo "HF_TOKEN=$([ -f "$SECRETS/huggingface/api-key" ] && cat "$SECRETS/huggingface/api-key" || echo "")"
       echo "MISTRAL_KEY=$([ -f "$SECRETS/mistral/api-key" ] && cat "$SECRETS/mistral/api-key" || echo "")";
     } > /var/lib/litellm/env
-    chmod 0600 /var/lib/litellm/env
-    chown litellm:litellm /var/lib/litellm/env
+    chmod 0644 /var/lib/litellm/env
   '';
 }

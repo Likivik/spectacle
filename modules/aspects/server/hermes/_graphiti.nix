@@ -62,7 +62,7 @@
     cat > /var/lib/hermes/graphiti/mcp_server/config/config.yaml << CONFIGEOF
 llm:
   provider: "openai"
-  model: "google/gemma-4-31b-it:free"
+  model: "openrouter/free"
   providers:
     openai:
       api_url: "https://openrouter.ai/api/v1"

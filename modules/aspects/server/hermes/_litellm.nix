@@ -164,15 +164,27 @@
             order = 12;
           };
         }
-        # GitHub Models — free for GitHub users (GPT-4o, DeepSeek-R1, etc.).
+        # Hugging Face — free tier (router.huggingface.co/v1, $0.10/mo credits, no card).
+        # 200+ models; server-side provider selection. GitHub Models was retired 2026-07-30.
         {
           model_name = "graphiti-free";
           litellm_params = {
-            model = "openai/gpt-4o";
-            api_base = "https://models.github.ai/inference";
-            api_key = "os.environ/GITHUB_KEY";
-            rpm = 15;
+            model = "openai/gpt-oss-20b:fastest";
+            api_base = "https://router.huggingface.co/v1";
+            api_key = "os.environ/HF_TOKEN";
+            rpm = 20;
             order = 13;
+          };
+        }
+        # NVIDIA NIM — permanent free API key, no card, 70-100+ models, separate vendor.
+        {
+          model_name = "graphiti-free";
+          litellm_params = {
+            model = "openai/meta/llama-3.3-70b-instruct";
+            api_base = "https://integrate.api.nvidia.com/v1";
+            api_key = "os.environ/NVIDIA_KEY";
+            rpm = 20;
+            order = 14;
           };
         }
         # DeepSeek fallback (if key present) — separate provider, real fallback value.
@@ -238,7 +250,8 @@
       echo "NOUSPORTAL_KEY=$([ -f "$SECRETS/nousportal/api-key" ] && cat "$SECRETS/nousportal/api-key" || echo "")"
       echo "DEEPSEEK_KEY=$([ -f "$SECRETS/deepseek/api-key" ] && cat "$SECRETS/deepseek/api-key" || echo "")"
       echo "GROQ_KEY=$([ -f "$SECRETS/groq/api-key" ] && cat "$SECRETS/groq/api-key" || echo "")"
-      echo "GITHUB_KEY=$([ -f "$SECRETS/github/pat-hermes-full" ] && cat "$SECRETS/github/pat-hermes-full" || echo "")"
+      echo "HF_TOKEN=$([ -f "$SECRETS/huggingface/api-key" ] && cat "$SECRETS/huggingface/api-key" || echo "")"
+      echo "NVIDIA_KEY=$([ -f "$SECRETS/nvidia/api-key" ] && cat "$SECRETS/nvidia/api-key" || echo "")";
     } > /var/lib/litellm/env
     chmod 0600 /var/lib/litellm/env
     chown litellm:litellm /var/lib/litellm/env

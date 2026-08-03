@@ -10,6 +10,11 @@ in {
       model = model_path;
       embedding = true;
       ctx-size = 8192;
+      # BGE-M3 natively supports up to 8192 tokens; llama.cpp defaults
+      # ubatch-size to 512 which capped embeddings at 512 tokens (500 error
+      # on longer episodes). Bump both to the model's native max.
+      batch-size = 8192;
+      ubatch-size = 8192;
       threads = 4;
     };
     openFirewall = false;

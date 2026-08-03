@@ -176,11 +176,12 @@
             order = 13;
           };
         }
-        # Cerebras — free tier (Llama 3.3 70B etc.), no card, high throughput.
+        # Cerebras — free tier, no card, high throughput. llama-3.3-70b deprecated;
+        # use gpt-oss-120b (production). https://inference-docs.cerebras.ai/models/overview
         {
           model_name = "graphiti-free";
           litellm_params = {
-            model = "openai/llama-3.3-70b";
+            model = "openai/gpt-oss-120b";
             api_base = "https://api.cerebras.ai/v1";
             api_key = "os.environ/CEREBRAS_KEY";
             rpm = 30;

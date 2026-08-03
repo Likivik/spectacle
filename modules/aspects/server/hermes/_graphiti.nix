@@ -30,10 +30,10 @@
       WorkingDirectory = "/var/lib/hermes/graphiti/mcp_server";
       Environment = [
         "LD_LIBRARY_PATH=${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.zlib}/lib"
-        "OPENAI_API_KEY=sk-placeholder"
+        "OPENAI_API_KEY=«redacted:sk-…»"
         "HTTPS_PROXY=http://127.0.0.1:7899"
         "SSL_CERT_FILE=/etc/ssl/certs/hermes-with-proxy-ca.crt"
-        "NO_PROXY=127.0.0.1,localhost"
+        "NO_PROXY=127.0.0.1,localhost,127.0.0.1:4000"
       ];
       ExecStart = "${pkgs.bash}/bin/bash -c 'exec .venv/bin/python3 main.py --transport http --host 127.0.0.1 --port 8000'";
       Restart = "on-failure";
@@ -62,11 +62,11 @@
     cat > /var/lib/hermes/graphiti/mcp_server/config/config.yaml << CONFIGEOF
 llm:
   provider: "openai"
-  model: "openrouter/free"
+  model: "graphiti-free"
   providers:
     openai:
-      api_url: "https://openrouter.ai/api/v1"
-      api_key: "hermes-proxy://openrouter"
+      api_url: "http://127.0.0.1:4000/v1"
+      api_key: "$(cat /var/lib/hermes/litellm/master-key.txt 2>/dev/null || echo sk-missing)"
 
 embedder:
   provider: "openai"

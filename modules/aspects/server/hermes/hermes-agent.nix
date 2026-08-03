@@ -42,6 +42,7 @@
       graphitiMemoryConfig = import ./_hermes-graphiti.nix { inherit config pkgs lib; };
       searxngConfig = import ./_searxng.nix { inherit config pkgs lib; };
       playwrightConfig = import ./_playwright.nix { inherit config pkgs lib; };
+      litellmConfig = import ./_litellm.nix { inherit config pkgs lib; };
     in lib.mkMerge [
       { nixpkgs.overlays = [ msgpackOverlay ]; }
       mitmproxyConfig
@@ -50,6 +51,7 @@
       graphitiMemoryConfig
       searxngConfig
       playwrightConfig
+      litellmConfig
       {
         users.groups.hermes = { };
         users.users.hermes = {

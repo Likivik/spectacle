@@ -2,7 +2,8 @@
 
 # ─── NC-RAG stack (PowerEdge + Serenity, one aspect) ──────────────────────
 # Den registers this folder as den.aspects.server.nc-rag. Internally gated by
-# hostname so each host gets only its part:
+# hostname via lib.mkIf (deferred config eval — do NOT compute hostName in a
+# `let`; that forces `config` during module collection → infinite recursion).
 #   serenity  → bge-m3 embedder + bge-reranker + gemma-3 vision (1660, CUDA)
 #   poweredge → Qdrant + pi0n00r nextcloud-mcp (reaches Serenity via Tailscale)
 #
@@ -13,11 +14,9 @@
 
 {
   den.aspects.server.nc-rag = {
+    includes = [ den.aspects.server.sops ];
     nixos = { config, lib, pkgs, ... }:
     let
-      isSerenity = config.networking.hostName == "serenity";
-      isPoweredge = config.networking.hostName == "poweredge";
-
       modelsDir = "/var/lib/llama-cpp";
       llama-cpp-cuda = pkgs.llama-cpp.override { cudaSupport = true; };
       llama-server = "${lib.getExe' llama-cpp-cuda "llama-server"}";
@@ -26,10 +25,10 @@
         SupplementaryGroups = [ "video" "render" ];
         PrivateDevices = false;
       };
-      sopsFile = ../../../secrets/poweredge/secrets.yaml;
+      sopsFile = ../../../../secrets/poweredge/secrets.yaml;
     in lib.mkMerge [
       # ── Serenity: 3 llama.cpp systemd units (CUDA) ──────────────────────
-      (lib.optionalAttrs isSerenity {
+      (lib.mkIf (config.networking.hostName == "serenity") {
         systemd.services.llama-embedder = {
           description = "llama.cpp bge-m3 embedder";
           after = [ "network.target" ]; wantedBy = [ "multi-user.target" ];
@@ -70,13 +69,14 @@
             ExecStart = ''
               ${llama-server} --host 127.0.0.1 --port 8083 \
                 -m ${modelsDir}/gemma-3-4b-it-q2_k.gguf \
+                --mmproj ${modelsDir}/mmproj-gemma-3-4b-it-f16.gguf \
                 -ngl 99 --ctx-size 4096
             '';
             Restart = "no";
             DynamicUser = true; StateDirectory = "llama-cpp-gemma";
           };
         };
-        system.activationScripts."nc-rag-models" = lib.stringAfter [ "setupSecrets" ] ''
+        system.activationScripts."nc-rag-models".text = ''
           mkdir -p "${modelsDir}"; chmod 755 "${modelsDir}"
           EMBED="${modelsDir}/bge-m3-q4_k_m.gguf"
           if [ ! -f "$EMBED" ]; then
@@ -92,16 +92,21 @@
           fi; chmod 644 "$RERANK"
           GEMMA="${modelsDir}/gemma-3-4b-it-q2_k.gguf"
           if [ ! -f "$GEMMA" ]; then
-            # TODO-verify: bartowski/google_gemma-3-4b-it-GGUF Q2_K (vision build)
             ${pkgs.curl}/bin/curl -L --fail -o "$GEMMA.tmp" \
               "https://huggingface.co/bartowski/google_gemma-3-4b-it-GGUF/resolve/main/gemma-3-4b-it-Q2_K.gguf"
             mv "$GEMMA.tmp" "$GEMMA"
           fi; chmod 644 "$GEMMA"
+          MMPROJ="${modelsDir}/mmproj-gemma-3-4b-it-f16.gguf"
+          if [ ! -f "$MMPROJ" ]; then
+            ${pkgs.curl}/bin/curl -L --fail -o "$MMPROJ.tmp" \
+              "https://huggingface.co/bartowski/google_gemma-3-4b-it-GGUF/resolve/main/mmproj-google_gemma-3-4b-it-f16.gguf"
+            mv "$MMPROJ.tmp" "$MMPROJ"
+          fi; chmod 644 "$MMPROJ"
         '';
       })
 
       # ── PowerEdge: Qdrant + nextcloud-mcp ────────────────────────────────
-      (lib.optionalAttrs isPoweredge {
+      (lib.mkIf (config.networking.hostName == "poweredge") {
         services.qdrant = {
           enable = true;
           settings = {

@@ -133,7 +133,7 @@
               QDRANT__SERVICE__HOST = "127.0.0.1";
               QDRANT__TELEMETRY_DISABLED = "true";
             };
-            extraOptions = [ "--pull=newer" ];
+            extraOptions = [ "--pull=newer" "--network=pasta" ];
           };
           containers.nextcloud-mcp = {
             image = "ghcr.io/pi0n00r/nextcloud-mcp-server:v1.5.1.1";
@@ -153,7 +153,7 @@
               MCP_HOST = "0.0.0.0";
               MCP_PORT = "8000";
             };
-            extraOptions = [ "--pull=newer" ];
+            extraOptions = [ "--pull=newer" "--network=pasta" ];
           };
         };
         sops.secrets."nextcloud/mcp-app-password" = {

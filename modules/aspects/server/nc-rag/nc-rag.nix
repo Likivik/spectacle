@@ -120,6 +120,7 @@
             image = "m.daocloud.io/docker.io/qdrant/qdrant:v1.18.2";
             autoStart = true;
             podman.user = "qdrant";   # rootless; per-service user (matches obsidian-publish pattern)
+            podman.sdnotify = "container";
             ports = [
               "127.0.0.1:6333:6333"   # HTTP
               "127.0.0.1:6334:6334"   # gRPC
@@ -138,6 +139,7 @@
             image = "ghcr.io/pi0n00r/nextcloud-mcp-server:v1.5.1.1";
             autoStart = true;
             podman.user = "nc-mcp";   # rootless; per-service user
+            podman.sdnotify = "container";
             ports = [ "127.0.0.1:8000:8000" ];
             environment = {
               NEXTCLOUD_URL = "http://127.0.0.1";

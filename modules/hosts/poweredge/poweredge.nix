@@ -41,13 +41,13 @@
 
       # Per-service system users for rootless podman containers.
       # IMPORTANT: occi-containers default --sdnotify=conmon is INCOMPATIBLE with
-      # linger=true (see nixpkgs issue #389088). Must pick one or the other.
-      # We use sdnotify=conmon (default) → NO linger.
+      # sdnotify=container (not conmon) — container PID writes NOTIFY_SOCKET,
+      # so linger=true is compatible (no user-session conflict).
       # subUidRanges/subGidRanges required for rootless container UID mapping.
       users.users.qdrant = {
         isSystemUser = true;
         group = "qdrant";
-        linger = false;
+        linger = true;
         home = "/var/lib/qdrant";
         createHome = true;
         subUidRanges = [{ startUid = 200000; count = 65536; }];
@@ -57,7 +57,7 @@
       users.users.nc-mcp = {
         isSystemUser = true;
         group = "nc-mcp";
-        linger = false;
+        linger = true;
         home = "/var/lib/nc-mcp";
         createHome = true;
         subUidRanges = [{ startUid = 265536; count = 65536; }];
@@ -67,7 +67,7 @@
       users.users.cloudflared = {
         isSystemUser = true;
         group = "cloudflared";
-        linger = false;
+        linger = true;
         home = "/var/lib/cloudflared";
         createHome = true;
         subUidRanges = [{ startUid = 331072; count = 65536; }];

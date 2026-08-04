@@ -32,7 +32,7 @@ Always check host first: `hostname -s` (traversal = here, erebus = VPS). `nh` is
 
 **Gotcha**: Remote targets with NOPASSWD sudo need `--elevate=sudo`. Without it, `nix-env --set` on the remote runs as the SSH user (non-root) → `Permission denied` on the profile symlink.
 
-**Gotcha**: Do NOT pass `--build-host localhost` for remote deploys — it tries to SSH to localhost (port 22 refused). Omit `--build-host` entirely; nixos-rebuild builds locally by default and copies the closure via `ssh://`.
+**Gotcha**: Remote deploys **MUST** pass `--build-host <user>@<host>` (matching `--target-host`). Building remotely on the target host keeps heavy compilation (rustc, LLVM, etc.) on the target's CPU/RAM and avoids transferring large closures across the network. Erebus is the orchestrator; poweredge is the build+target. Omitting `--build-host` makes nixos-rebuild build locally on erebus and copy the closure via `ssh://` — acceptable for tiny closures but slow for big ones.
 
 ### Local (current machine)
 ```bash
@@ -50,7 +50,8 @@ sudo nixos-rebuild switch --flake .#
 
 ### Remote (erebus/poweredge from traversal)
 ```bash
-nixos-rebuild switch --target-host <user>@<host> --elevate=sudo --flake .#<hostname>
+# Build AND activate on the target host. --build-host required for big closures.
+nixos-rebuild switch --target-host <user>@<host> --build-host <user>@<host> --elevate=sudo --flake .#<hostname>
 ```
 
 ### Ghostty (agent spawns terminal — local or remote)
@@ -59,7 +60,7 @@ nixos-rebuild switch --target-host <user>@<host> --elevate=sudo --flake .#<hostn
 ghostty -e bash -c 'sudo nixos-rebuild switch --flake .# 2>&1 | tee /tmp/traversal-deploy.log; read -p "Press enter"'
 
 # Remote
-ghostty -e bash -c 'nixos-rebuild switch --target-host likivik@<host> --elevate=sudo --flake .#<hostname> 2>&1 | tee /tmp/<host>-deploy.log; read -p "Press enter"'
+ghostty -e bash -c 'nixos-rebuild switch --target-host likivik@<host> --build-host likivik@<host> --elevate=sudo --flake .#<hostname> 2>&1 | tee /tmp/<host>-deploy.log; read -p "Press enter"'
 ```
 
 ### Verification (no deployment — agent can run)

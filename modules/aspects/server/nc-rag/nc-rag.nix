@@ -105,24 +105,33 @@
         '';
       })
 
-      # ── PowerEdge: Qdrant + nextcloud-mcp ────────────────────────────────
+      # ── PowerEdge: Qdrant (podman) + nextcloud-mcp ────────────────────────
+      # Qdrant is run as a container (not nixpkgs-built) because nixpkgs
+      # qdrant 1.18.2 fails to build on rustc 1.97.0 + LLVM 16 (vpdpbusd.512
+      # intrinsic signature mismatch in lib/quantization). The upstream
+      # qdrant container ships the same 1.18.2 binary and bypasses the rustc
+      # build entirely. Same host:port (127.0.0.1:6333), so nextcloud-mcp
+      # config is unchanged.
       (lib.mkIf (config.networking.hostName == "poweredge") {
-        services.qdrant = {
-          enable = true;
-          settings = {
-            service = { host = "127.0.0.1"; http_port = 6333; grpc_port = 6334; };
-            storage = {
-              storage_path = "/var/lib/qdrant/storage";
-              snapshots_path = "/var/lib/qdrant/snapshots";
-            };
-            telemetry_disabled = true;
-          };
-        };
-        sops.secrets."nextcloud/mcp-app-password" = {
-          sopsFile = sopsFile; owner = "root"; group = "root"; mode = "0400";
-        };
         virtualisation.oci-containers = {
           backend = "podman";
+          containers.qdrant = {
+            image = "docker.io/qdrant/qdrant:v1.18.2";
+            autoStart = true;
+            ports = [
+              "127.0.0.1:6333:6333"   # HTTP
+              "127.0.0.1:6334:6334"   # gRPC
+            ];
+            volumes = [
+              "/var/lib/qdrant/storage:/qdrant/storage"
+              "/var/lib/qdrant/snapshots:/qdrant/snapshots"
+            ];
+            environment = {
+              QDRANT__SERVICE__HOST = "127.0.0.1";
+              QDRANT__TELEMETRY_DISABLED = "true";
+            };
+            extraOptions = [ "--pull=newer" ];
+          };
           containers.nextcloud-mcp = {
             image = "ghcr.io/pi0n00r/nextcloud-mcp-server:v1.5.1.1";
             autoStart = true;
@@ -142,6 +151,15 @@
             extraOptions = [ "--pull=newer" ];
           };
         };
+        sops.secrets."nextcloud/mcp-app-password" = {
+          sopsFile = sopsFile; owner = "root"; group = "root"; mode = "0400";
+        };
+        # Ensure podman storage dirs exist before container volume mounts.
+        system.activationScripts."nc-rag-qdrant-dirs".text = ''
+          mkdir -p /var/lib/qdrant/storage /var/lib/qdrant/snapshots
+          chown -R root:root /var/lib/qdrant
+          chmod 0750 /var/lib/qdrant /var/lib/qdrant/storage /var/lib/qdrant/snapshots
+        '';
       })
     ];
   };

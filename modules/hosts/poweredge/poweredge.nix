@@ -44,22 +44,31 @@
       # (matches obsidian-publish / obsidian-live-share pattern).
       # linger = true is required for oci-containers to wire up
       # linger-users.service dependency.
+      # createHome = true + home = /var/lib/<service> avoids the
+      # "stat /var/empty/.config: no such file or directory" failure
+      # that rootless podman hits when HOME defaults to /var/empty.
       users.users.qdrant = {
         isSystemUser = true;
         group = "qdrant";
         linger = true;
+        home = "/var/lib/qdrant";
+        createHome = true;
       };
       users.groups.qdrant = {};
       users.users.nc-mcp = {
         isSystemUser = true;
         group = "nc-mcp";
         linger = true;
+        home = "/var/lib/nc-mcp";
+        createHome = true;
       };
       users.groups.nc-mcp = {};
       users.users.cloudflared = {
         isSystemUser = true;
         group = "cloudflared";
         linger = true;
+        home = "/var/lib/cloudflared";
+        createHome = true;
       };
       users.groups.cloudflared = {};
 

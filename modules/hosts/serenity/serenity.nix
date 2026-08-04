@@ -14,6 +14,8 @@
 
       den.aspects.cprocsp
       den.aspects.firefox
+
+      den.aspects.server.nc-rag
     ];
 
     maid = {

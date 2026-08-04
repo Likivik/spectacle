@@ -24,17 +24,71 @@
 
     settings = {
       model_list = [
+        # ── Strong models FIRST (simple-shuffle prefers low order) ──
+        # Groq — Llama 3.3 70B, reliable JSON extraction, permanent free tier.
         {
           model_name = "graphiti-free";
           litellm_params = {
-            model = "openrouter/openrouter/free";
-            api_key = "os.environ/OPENROUTER_KEY";
-            rpm = 20;
+            model = "openai/llama-3.3-70b-versatile";
+            api_base = "https://api.groq.com/openai/v1";
+            api_key = "os.environ/GROQ_KEY";
+            rpm = 30;
             order = 1;
           };
         }
-        # OpenCode Zen (pay-per-use; has 7 free models e.g. deepseek-v4-flash-free).
-        # One key covers Zen + Go; only the base URL differs.
+        # Mistral — small-latest, decent JSON, free experimentation tier.
+        {
+          model_name = "graphiti-free";
+          litellm_params = {
+            model = "openai/mistral-small-latest";
+            api_base = "https://api.mistral.ai/v1";
+            api_key = "os.environ/MISTRAL_KEY";
+            rpm = 20;
+            order = 2;
+          };
+        }
+        # OpenCode Go (subscription; open-source models, no free tier) — medium strength.
+        {
+          model_name = "graphiti-free";
+          litellm_params = {
+            model = "openai/deepseek-v4-flash";
+            api_base = "https://opencode.ai/zen/go/v1";
+            api_key = "os.environ/OPENCODE_KEY1";
+            rpm = 20;
+            order = 3;
+          };
+        }
+        {
+          model_name = "graphiti-free";
+          litellm_params = {
+            model = "openai/deepseek-v4-flash";
+            api_base = "https://opencode.ai/zen/go/v1";
+            api_key = "os.environ/OPENCODE_KEY2";
+            rpm = 20;
+            order = 4;
+          };
+        }
+        {
+          model_name = "graphiti-free";
+          litellm_params = {
+            model = "openai/deepseek-v4-flash";
+            api_base = "https://opencode.ai/zen/go/v1";
+            api_key = "os.environ/OPENCODE_KEY3";
+            rpm = 20;
+            order = 5;
+          };
+        }
+        {
+          model_name = "graphiti-free";
+          litellm_params = {
+            model = "openai/deepseek-v4-flash";
+            api_base = "https://opencode.ai/zen/go/v1";
+            api_key = "os.environ/OPENCODE_KEY4";
+            rpm = 20;
+            order = 6;
+          };
+        }
+        # OpenCode Zen (pay-per-use; 7 free models e.g. deepseek-v4-flash-free). Weak but free.
         {
           model_name = "graphiti-free";
           litellm_params = {
@@ -42,7 +96,7 @@
             api_base = "https://opencode.ai/zen/v1";
             api_key = "os.environ/OPENCODE_KEY1";
             rpm = 20;
-            order = 2;
+            order = 7;
           };
         }
         {
@@ -52,7 +106,7 @@
             api_base = "https://opencode.ai/zen/v1";
             api_key = "os.environ/OPENCODE_KEY2";
             rpm = 20;
-            order = 3;
+            order = 8;
           };
         }
         {
@@ -62,7 +116,28 @@
             api_base = "https://opencode.ai/zen/v1";
             api_key = "os.environ/OPENCODE_KEY3";
             rpm = 20;
-            order = 4;
+            order = 9;
+          };
+        }
+        # Hugging Face — free tier, 20B model, weakest. Last free resort.
+        {
+          model_name = "graphiti-free";
+          litellm_params = {
+            model = "openai/gpt-oss-20b:fastest";
+            api_base = "https://router.huggingface.co/v1";
+            api_key = "os.environ/HF_TOKEN";
+            rpm = 20;
+            order = 10;
+          };
+        }
+        # OpenRouter free — meta-router to random free models, variable quality. Last.
+        {
+          model_name = "graphiti-free";
+          litellm_params = {
+            model = "openrouter/openrouter/free";
+            api_key = "os.environ/OPENROUTER_KEY";
+            rpm = 20;
+            order = 11;
           };
         }
         # OpenCode Zen key4 — api-key4 NOT in runtime sops mount (only 1-3 are).
@@ -74,96 +149,7 @@
         #     api_base = "https://opencode.ai/zen/v1";
         #     api_key = "os.environ/OPENCODE_KEY4";
         #     rpm = 20;
-        #     order = 5;
-        #   };
-        # }
-        # OpenCode Go (subscription; open-source models only, no free tier).
-        {
-          model_name = "graphiti-free";
-          litellm_params = {
-            model = "openai/deepseek-v4-flash";
-            api_base = "https://opencode.ai/zen/go/v1";
-            api_key = "os.environ/OPENCODE_KEY1";
-            rpm = 20;
-            order = 6;
-          };
-        }
-        {
-          model_name = "graphiti-free";
-          litellm_params = {
-            model = "openai/deepseek-v4-flash";
-            api_base = "https://opencode.ai/zen/go/v1";
-            api_key = "os.environ/OPENCODE_KEY2";
-            rpm = 20;
-            order = 7;
-          };
-        }
-        {
-          model_name = "graphiti-free";
-          litellm_params = {
-            model = "openai/deepseek-v4-flash";
-            api_base = "https://opencode.ai/zen/go/v1";
-            api_key = "os.environ/OPENCODE_KEY3";
-            rpm = 20;
-            order = 8;
-          };
-        }
-        {
-          model_name = "graphiti-free";
-          litellm_params = {
-            model = "openai/deepseek-v4-flash";
-            api_base = "https://opencode.ai/zen/go/v1";
-            api_key = "os.environ/OPENCODE_KEY4";
-            rpm = 20;
-            order = 9;
-          };
-        }
-        # NousPortal dropped: Hermes-4-405B is paid (404 on $0 free tier) and
-        # Hermes-4 is tuned for chat, not rapid tool-calling — poor Graphiti fit.
-        # Also redundant with OpenRouter (Nous is OpenRouter-powered).
-        # Groq — permanent free tier (Llama 3.3 70B etc.), no card.
-        {
-          model_name = "graphiti-free";
-          litellm_params = {
-            model = "openai/llama-3.3-70b-versatile";
-            api_base = "https://api.groq.com/openai/v1";
-            api_key = "os.environ/GROQ_KEY";
-            rpm = 30;
-            order = 12;
-          };
-        }
-        # Hugging Face — free tier (router.huggingface.co/v1, $0.10/mo credits, no card).
-        # 200+ models; server-side provider selection. GitHub Models was retired 2026-07-30.
-        {
-          model_name = "graphiti-free";
-          litellm_params = {
-            model = "openai/gpt-oss-20b:fastest";
-            api_base = "https://router.huggingface.co/v1";
-            api_key = "os.environ/HF_TOKEN";
-            rpm = 20;
-            order = 13;
-          };
-        }
-        # Mistral — free experimentation tier (La Plateforme), no card, permissive terms.
-        {
-          model_name = "graphiti-free";
-          litellm_params = {
-            model = "openai/mistral-small-latest";
-            api_base = "https://api.mistral.ai/v1";
-            api_key = "os.environ/MISTRAL_KEY";
-            rpm = 20;
-            order = 14;
-          };
-        }
-        # DeepSeek fallback — key NOT in runtime sops mount; disabled to avoid
-        # empty api_key at config load. Re-enable if deepseek/api-key is mounted.
-        # {
-        #   model_name = "graphiti-free";
-        #   litellm_params = {
-        #     model = "deepseek/deepseek-v4-flash-0731";
-        #     api_key = "os.environ/DEEPSEEK_KEY";
-        #     rpm = 20;
-        #     order = 20;
+        #     order = 12;
         #   };
         # }
       ];
@@ -171,8 +157,10 @@
         routing_strategy = "simple-shuffle";
         num_retries = 3;
         timeout = 60;
+        # Fallback on API error/timeout → Groq 70B (strong, free, reliable).
+        # (Does NOT catch bad-JSON; reordering above handles that.)
         fallbacks = [
-          { "graphiti-free" = [ "openrouter/openrouter/free" "deepseek/deepseek-v4-flash-0731" ]; }
+          { "graphiti-free" = [ "openai/llama-3.3-70b-versatile" ]; }
         ];
       };
       litellm_settings = {

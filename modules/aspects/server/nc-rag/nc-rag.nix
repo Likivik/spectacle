@@ -118,6 +118,7 @@
           containers.qdrant = {
             image = "docker.io/qdrant/qdrant:v1.18.2";
             autoStart = true;
+            podman.user = "likivik";   # rootless; requires users.users.likivik.linger = true
             ports = [
               "127.0.0.1:6333:6333"   # HTTP
               "127.0.0.1:6334:6334"   # gRPC
@@ -135,6 +136,7 @@
           containers.nextcloud-mcp = {
             image = "ghcr.io/pi0n00r/nextcloud-mcp-server:v1.5.1.1";
             autoStart = true;
+            podman.user = "likivik";   # rootless; requires users.users.likivik.linger = true
             ports = [ "127.0.0.1:8000:8000" ];
             environment = {
               NEXTCLOUD_URL = "http://127.0.0.1";
@@ -152,12 +154,12 @@
           };
         };
         sops.secrets."nextcloud/mcp-app-password" = {
-          sopsFile = sopsFile; owner = "root"; group = "root"; mode = "0400";
+          sopsFile = sopsFile; owner = "likivik"; group = "likivik"; mode = "0400";
         };
-        # Ensure podman storage dirs exist before container volume mounts.
+        # Ensure podman storage dirs exist and are owned by likivik (rootless containers).
         system.activationScripts."nc-rag-qdrant-dirs".text = ''
           mkdir -p /var/lib/qdrant/storage /var/lib/qdrant/snapshots
-          chown -R root:root /var/lib/qdrant
+          chown -R likivik:likivik /var/lib/qdrant
           chmod 0750 /var/lib/qdrant /var/lib/qdrant/storage /var/lib/qdrant/snapshots
         '';
       })

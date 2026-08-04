@@ -28,6 +28,7 @@
       users.users.likivik = {
         isNormalUser = true;
         extraGroups = [ "wheel" ];
+        linger = true;   # rootless podman containers; triggers linger-users.service
         hashedPassword = "$y$j9T$CflOiBqf7adw8VPM1HjjD0$I.UH24kDyF8m75kAe3c4pO87oujxnUah7vBIDuTetR9";
         openssh.authorizedKeys.keys = [
           # hermes@erebus

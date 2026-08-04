@@ -8,6 +8,7 @@
         containers.cloudflared = {
           image = "cloudflare/cloudflared:latest";
           autoStart = true;
+          podman.user = "likivik";   # rootless; requires users.users.likivik.linger = true
           cmd = [ "tunnel" "run" ];
           environmentFiles = [ config.sops.secrets."cloudflare/tunnel-token".path ];
           ports = [ "127.0.0.1:2000:2000" ];

@@ -39,35 +39,39 @@
         ];
       };
 
-      # Per-service system users for rootless podman containers
-      # (matches obsidian-publish / obsidian-live-share pattern).
-      # linger = true is required for oci-containers to wire up
-      # linger-users.service dependency.
-      # createHome = true + home = /var/lib/<service> avoids the
-      # "stat /var/empty/.config: no such file or directory" failure
-      # that rootless podman hits when HOME defaults to /var/empty.
+      # Per-service system users for rootless podman containers.
+      # IMPORTANT: occi-containers default --sdnotify=conmon is INCOMPATIBLE with
+      # linger=true (see nixpkgs issue #389088). Must pick one or the other.
+      # We use sdnotify=conmon (default) → NO linger.
+      # subUidRanges/subGidRanges required for rootless container UID mapping.
       users.users.qdrant = {
         isSystemUser = true;
         group = "qdrant";
-        linger = true;
+        linger = false;
         home = "/var/lib/qdrant";
         createHome = true;
+        subUidRanges = [{ startUid = 200000; count = 65536; }];
+        subGidRanges = [{ startGid = 200000; count = 65536; }];
       };
       users.groups.qdrant = {};
       users.users.nc-mcp = {
         isSystemUser = true;
         group = "nc-mcp";
-        linger = true;
+        linger = false;
         home = "/var/lib/nc-mcp";
         createHome = true;
+        subUidRanges = [{ startUid = 265536; count = 65536; }];
+        subGidRanges = [{ startGid = 265536; count = 65536; }];
       };
       users.groups.nc-mcp = {};
       users.users.cloudflared = {
         isSystemUser = true;
         group = "cloudflared";
-        linger = true;
+        linger = false;
         home = "/var/lib/cloudflared";
         createHome = true;
+        subUidRanges = [{ startUid = 331072; count = 65536; }];
+        subGidRanges = [{ startGid = 331072; count = 65536; }];
       };
       users.groups.cloudflared = {};
 

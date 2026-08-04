@@ -116,7 +116,8 @@
         virtualisation.oci-containers = {
           backend = "podman";
           containers.qdrant = {
-            image = "docker.io/qdrant/qdrant:v1.18.2";
+            # DaoCloud mirror to dodge Docker Hub unauthenticated pull rate limit.
+            image = "m.daocloud.io/docker.io/qdrant/qdrant:v1.18.2";
             autoStart = true;
             podman.user = "qdrant";   # rootless; per-service user (matches obsidian-publish pattern)
             ports = [

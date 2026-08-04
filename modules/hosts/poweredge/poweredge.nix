@@ -40,6 +40,29 @@
         ];
       };
 
+      # Per-service system users for rootless podman containers
+      # (matches obsidian-publish / obsidian-live-share pattern).
+      # linger = true is required for oci-containers to wire up
+      # linger-users.service dependency.
+      users.users.qdrant = {
+        isSystemUser = true;
+        group = "qdrant";
+        linger = true;
+      };
+      users.groups.qdrant = {};
+      users.users.nc-mcp = {
+        isSystemUser = true;
+        group = "nc-mcp";
+        linger = true;
+      };
+      users.groups.nc-mcp = {};
+      users.users.cloudflared = {
+        isSystemUser = true;
+        group = "cloudflared";
+        linger = true;
+      };
+      users.groups.cloudflared = {};
+
       security.sudo.extraRules = [{
         users = [ "likivik" ];
         commands = [{ command = "ALL"; options = [ "NOPASSWD" ]; }];
@@ -68,8 +91,8 @@
 
       sops.secrets."cloudflare/poweredge-tunnel-token" = {
         sopsFile = ../../../secrets/poweredge/secrets.yaml;
-        owner = "root";
-        group = "root";
+        owner = "cloudflared";
+        group = "cloudflared";
         mode = "0400";
       };
 
@@ -122,16 +145,13 @@
         };
       };
 
+      # Disable the legacy NixOS cloudflared binary service —
+      # the podman container in aspects/server/cloudflare-tunnel/default.nix
+      # is its replacement. Both would conflict on the same tunnel token.
       systemd.services.cloudflared-poweredge = {
-        description = "Cloudflare Tunnel — poweredge";
-        after = [ "network-online.target" ];
-        wants = [ "network-online.target" ];
-        wantedBy = [ "multi-user.target" ];
-        serviceConfig = {
-          ExecStart = "${pkgs.bash}/bin/bash -c 'exec ${pkgs.cloudflared}/bin/cloudflared tunnel --no-autoupdate run --token \"$(<${config.sops.secrets."cloudflare/poweredge-tunnel-token".path})\"'";
-          Restart = "on-failure";
-          RestartSec = 5;
-        };
+        enable = false;
+        wantedBy = [];
+        serviceConfig = { ExecStart = "/bin/true"; };
       };
 
       boot.kernelParams = [ "elevator=none" ];

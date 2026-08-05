@@ -10,13 +10,18 @@
 # VRAM (1660 = 6GB): embedder 1.2 + reranker 0.4 + gemma 2.9 ≈ 4.5 GB hot.
 # allowUnfree = true (core/nix.nix) → CUDA override permitted.
 # Secrets (poweredge/secrets.yaml): nextcloud/mcp-app-password
-# Gemma GGUF URL TODO-verify before deploy.
+# Gemma GGUF URL verified 2026-08-05.
 #
-# Lesson from poweredge deploy (2026-08): podman/netavark bridge+DNT
+# Lesson from poweredge deploy (2026-08): podman/netavark bridge+DNAT
 # is broken on this NixOS. Poweredge quadlets use --network=host
 # (see poweredge.nix + NOTES/poweredge-nc-rag-port-forwarding.md).
-# Serenity uses native systemd → no podman involvement → no lesson to
-# apply here; this just listens on host's 0.0.0.0:8081/8082 directly.
+# Serenity uses native systemd → no podman involvement.
+#
+# Semantic-search bridge: nc-mcp's Ollama client hardcodes /api/{tags,embed}
+# (Ollama-native API). llama.cpp reverted /api/tags in PR #22165 (Apr 2026).
+# Solution: small FastAPI proxy from deposist/llama.cpp-Control-Deck —
+# translates /api/{tags,embed,chat} → llama.cpp's OpenAI endpoints. Bypass
+# Ollama entirely (Ollama itself has unpatched CVE-2026-7482 CVSS 9.1).
 
 {
   den.aspects.server.nc-rag = {
@@ -31,8 +36,22 @@
         SupplementaryGroups = [ "video" "render" ];
         PrivateDevices = false;
       };
+      # Control Deck ollama_proxy.py: translates Ollama /api/{tags,embed,chat}
+      # to llama.cpp's OpenAI endpoints. Pinned to upstream commit
+      # 87f531e5f7b868cbcd87a65ab54333f51d21dbdc (2026-07-25).
+      # Source: https://github.com/deposist/llama.cpp-Control-Deck
+      ollamaProxy = pkgs.stdenvNoCC.mkDerivation {
+        name = "ollama-proxy-87f531e";
+        src = pkgs.fetchurl {
+          url = "https://raw.githubusercontent.com/deposist/llama.cpp-Control-Deck/87f531e5f7b868cbcd87a65ab54333f51d21dbdc/ollama_proxy.py";
+          sha256 = "1nrrypq460csx2g0ph66p0xh255mjvvcicrylpffhkkdhwzsdd8i";
+        };
+        dontUnpack = true;
+        installPhase = "install -Dm755 $src $out/bin/ollama_proxy.py";
+      };
+      pythonWithProxyDeps = pkgs.python3.withPackages (ps: with ps; [ fastapi uvicorn httpx ]);
     in lib.mkMerge [
-      # ── Serenity: 3 llama.cpp systemd units (CUDA) ──────────────────────
+      # ── Serenity: 3 llama.cpp systemd units + ollama-compat proxy ───────
       (lib.mkIf (config.networking.hostName == "serenity") {
         systemd.services.llama-embedder = {
           description = "llama.cpp bge-m3 embedder";
@@ -81,6 +100,30 @@
             DynamicUser = true; StateDirectory = "llama-cpp-gemma";
           };
         };
+        # Ollama-compat proxy: enables nc-mcp semantic search by translating
+        # /api/{tags,embed,chat} → llama.cpp's OpenAI endpoints.
+        # Bound 127.0.0.1:11434 only (Tailscale + poweredge reach it via serenity DNS).
+        # Starts after llama-embedder so 127.0.0.1:8081 is ready.
+        systemd.services.llama-ollama-proxy = {
+          description = "Ollama-compat proxy for llama.cpp (nc-mcp semantic search)";
+          after = [ "llama-embedder.service" "network.target" ];
+          wantedBy = [ "multi-user.target" ];
+          path = [ pkgs.bash ];
+          serviceConfig = {
+            Type = "exec";
+            ExecStart = ''
+              ${pythonWithProxyDeps}/bin/python ${ollamaProxy}/bin/ollama_proxy.py \
+                --host 127.0.0.1 --port 11434 \
+                --target-base-url http://127.0.0.1:8081/v1 \
+                --model bge-m3
+            '';
+            Restart = "on-failure"; RestartSec = 5;
+            DynamicUser = true; StateDirectory = "llama-ollama-proxy";
+          };
+        };
+        # Open 11434 on tailscale0 only (loopback already reachable from poweredge
+        # via Tailscale's magic DNS routing). 127.0.0.1 is implicit via Type=exec.
+        networking.firewall.interfaces.tailscale0.allowedTCPPorts = [ 11434 ];
         system.activationScripts."nc-rag-models".text = ''
           mkdir -p "${modelsDir}"; chmod 755 "${modelsDir}"
           EMBED="${modelsDir}/bge-m3-q4_k_m.gguf"

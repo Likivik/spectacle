@@ -213,18 +213,19 @@
               NEXTCLOUD_USERNAME = "likivik";
               NEXTCLOUD_PASSWORD = "file://${config.sops.secrets."nextcloud/mcp-app-password".path}";
               MCP_DEPLOYMENT_MODE = "single_user_basic";
-              # Semantic search — llama.cpp backends on serenity via Tailscale.
-              # llama.cpp b9999+ implements Ollama's /api/tags (PR #13659), so
-              # OLLAMA_BASE_URL must point at server root (NOT /v1) — the
-              # nc-mcp library appends `/api/tags` to OLLAMA_BASE_URL.
-              VECTOR_SYNC_ENABLED = "true";
+              # Semantic search — ENABLE_SEMANTIC_SEARCH enables Qdrant-backed
+              # search. nc-mcp hardcodes Ollama client (POST /api/embed),
+              # so we point at the ollama-compat proxy on serenity:11434
+              # (deposist/llama.cpp-Control-Deck ollama_proxy.py translating
+              # Ollama-native API → llama.cpp's OpenAI endpoints).
+              # Why not llama.cpp directly? llama.cpp reverted /api/tags in
+              # PR #22165 (April 2026). Why not Ollama? CVE-2026-7482 (9.1).
+              # Why proxy on serenity: keeps embedder/reranker on GPU host.
+              ENABLE_SEMANTIC_SEARCH = "true";
               QDRANT_URL = "http://127.0.0.1:6333";
-              OLLAMA_BASE_URL = "http://serenity:8081";
+              OLLAMA_BASE_URL = "http://serenity:11434";
               OLLAMA_EMBEDDING_MODEL = "bge-m3";
-              # Reranker: llama.cpp's /v1/rerank endpoint. RERANKER_URL
-              # semantics vary by client; if nc-mcp library appends a path,
-              # strip /v1 here. Verify after first restart.
-              RERANKER_URL = "http://serenity:8082";
+              SEARCH_MODE = "hybrid";  # dense (via Ollama/proxy) + sparse (Qdrant BM25)
             };
           };
           serviceConfig = { Restart = "always"; };

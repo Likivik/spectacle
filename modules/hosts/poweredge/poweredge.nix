@@ -273,8 +273,9 @@
             # systemd decrypts the blob in-memory, exposes at %d/mcp-password
             LoadCredentialEncrypted = "mcp-password:/run/credentials-cache/nc-mcp/mcp-password.cred";
             # ExecStartPre: convert credential file → env file the container reads.
-            # Note: %d expands to $CREDENTIALS_DIRECTORY (/run/credentials/<unit>/).
-            ExecStartPre = "${pkgs.bash}/bin/bash -c 'install -m 0600 /dev/null /run/nextcloud-mcp.env && printf \"NEXTCLOUD_PASSWORD=%s\\n\" \"$(cat %d/mcp-password)\" > /run/nextcloud-mcp.env'";
+            # Note: %d is only expanded in ExecStart by systemd; for nested
+            # bash -c scripts, use $CREDENTIALS_DIRECTORY env var instead.
+            ExecStartPre = "${pkgs.bash}/bin/bash -c 'install -m 0600 /dev/null /run/nextcloud-mcp.env && printf \"NEXTCLOUD_PASSWORD=%s\\n\" \"$(cat $CREDENTIALS_DIRECTORY/mcp-password)\" > /run/nextcloud-mcp.env'";
           };
         };
       };

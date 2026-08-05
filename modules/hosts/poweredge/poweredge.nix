@@ -285,7 +285,10 @@
         description = "Encrypt nc-mcp app password with systemd-creds for nc-mcp.service";
         wantedBy = [ "multi-user.target" ];
         before = [ "nc-mcp.service" ];
-        after = [ "sops-nix.service" ];
+        # sops-nix installs secrets via systemd activation script during boot
+        # (NOT a separate systemd unit). Rely on NixOS ordering — sops secrets
+        # are written to /run/secrets before any systemd unit starts.
+        after = [ "local-fs.target" ];
         serviceConfig = {
           Type = "oneshot";
           RemainAfterExit = true;
@@ -293,14 +296,19 @@
           UMask = "0077";
         };
         script = ''
+          set -e
           mkdir -p /run/credentials-cache/nc-mcp
           # - reads plaintext from sops-installed secret
           # - encrypts with host key (systemd 258+ supports this via creds setup)
           # - writes to /run/credentials-cache/nc-mcp/mcp-password.cred
+          tmp=$(mktemp /tmp/nc-mcp-plain-XXXXXX.txt)
+          chmod 0600 "$tmp"
+          cp ${config.sops.secrets."nextcloud/mcp-app-password".path} "$tmp"
           ${pkgs.systemd}/bin/systemd-creds encrypt \
             --name=mcp-password \
-            - < ${config.sops.secrets."nextcloud/mcp-app-password".path} \
-            > /run/credentials-cache/nc-mcp/mcp-password.cred
+            "$tmp" \
+            /run/credentials-cache/nc-mcp/mcp-password.cred
+          rm -f "$tmp"
         '';
       };
       # Ensure qdrant storage dirs exist (rootful quadlets: root-owned).

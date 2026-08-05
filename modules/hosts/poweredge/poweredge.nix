@@ -222,14 +222,16 @@
             # --network=host: same rationale as qdrant (sidestep netavark DNAT bug)
             networks = [ "host" ];
             # Env vars per upstream docs (README + 'Required configuration' log).
-            # Auth: OAuth2 client_credentials flow. App passwords are blocked
-            # because Nextcloud enforces 2FA on user likivik. Register via:
-            #   occ oauth2:add-client nc-mcp <redirect_uri>
-            # Vector sync: needs bge-m3 + reranker + qdrant (all on serenity or local).
+            # Auth: Basic auth with app password. Note: app passwords created
+            # BEFORE 2FA was enforced (via UI Settings → Security) get flagged
+            # 'PasswordLoginForbidden' by Nextcloud's Sabre DAV. To regenerate:
+            #   occ user:add-app-password likivik --name='nc-mcp'
+            # (any newly-created app password works with 2FA + twofactor_enforced)
+            # Vector sync: needs bge-m3 + qdrant (on serenity + local).
             environments = {
               NEXTCLOUD_HOST = "https://poweredge.oryx-galaxy.ts.net";
-              NEXTCLOUD_OAUTH_CLIENT_ID = "file://${config.sops.secrets."nextcloud/oauth2-client-id".path}";
-              NEXTCLOUD_OAUTH_CLIENT_SECRET = "file://${config.sops.secrets."nextcloud/oauth2-client-secret".path}";
+              NEXTCLOUD_USERNAME = "likivik";
+              NEXTCLOUD_PASSWORD = "file://${config.sops.secrets."nextcloud/mcp-app-password".path}";
               MCP_DEPLOYMENT_MODE = "single_user_basic";
               # Semantic search — ENABLE_SEMANTIC_SEARCH enables Qdrant-backed
               # search. nc-mcp hardcodes Ollama client (POST /api/embed),

@@ -221,24 +221,30 @@
             image = "ghcr.io/pi0n00r/nextcloud-mcp-server:v1.5.1.1";
             # --network=host: same rationale as qdrant (sidestep netavark DNAT bug)
             networks = [ "host" ];
-            # Mount sops secrets dir so file://... URLs can read password at runtime.
-            # sops-nix creates these at /run/secrets/<name>; without bind-mount,
-            # the container can't see them and nc-mcp uses the literal "file://..."
-            # string as the password (which fails auth with 401).
-            volumes = [
-              "/run/secrets/nextcloud:/run/secrets/nextcloud:ro"
-            ];
             # Env vars per upstream docs (README + 'Required configuration' log).
-            # Auth: Basic auth with app password. Note: app passwords created
-            # BEFORE 2FA was enforced (via UI Settings → Security) get flagged
+            # Auth: Basic auth with app password. nc-mcp reads NEXTCLOUD_PASSWORD
+            # as a literal string (no file:// support), so we use systemd's
+            # credential mechanism to hand it the password without plaintext
+            # ever living on disk:
+            #   1. nc-mcp-encrypt-secret.service (oneshot, Before=nc-mcp.service)
+            #      reads the sops secret at /run/secrets/nextcloud/mcp-app-password
+            #      and encrypts it with systemd-creds (host-bound key in
+            #      /var/lib/systemd/credential.secret), writing the blob to
+            #      /run/credentials-cache/nc-mcp/mcp-password.cred
+            #   2. nc-mcp.service loads that blob via LoadCredentialEncrypted=,
+            #      systemd decrypts it in-memory and exposes the path at %d/mcp-password
+            #   3. ExecStartPre= reads %d/mcp-password and writes a single-line
+            #      KEY=VALUE env file to /run/nextcloud-mcp.env (mode 0600, tmpfs)
+            #   4. EnvironmentFile= feeds it into the container as env vars
+            # Note: app passwords created BEFORE 2FA enforcement get flagged
             # 'PasswordLoginForbidden' by Nextcloud's Sabre DAV. To regenerate:
             #   occ user:add-app-password likivik --name='nc-mcp'
             # (any newly-created app password works with 2FA + twofactor_enforced)
             # Vector sync: needs bge-m3 + qdrant (on serenity + local).
+            environmentFiles = [ "/run/nextcloud-mcp.env" ];
             environments = {
               NEXTCLOUD_HOST = "https://poweredge.oryx-galaxy.ts.net";
               NEXTCLOUD_USERNAME = "likivik";
-              NEXTCLOUD_PASSWORD = "file://${config.sops.secrets."nextcloud/mcp-app-password".path}";
               MCP_DEPLOYMENT_MODE = "single_user_basic";
               # Semantic search — ENABLE_SEMANTIC_SEARCH enables Qdrant-backed
               # search. nc-mcp hardcodes Ollama client (POST /api/embed),
@@ -260,8 +266,42 @@
               SEARCH_MODE = "hybrid";  # dense (via Ollama/proxy) + sparse (Qdrant BM25)
             };
           };
-          serviceConfig = { Restart = "always"; };
+          # systemd service config: encrypt sops secret → LoadCredentialEncrypted →
+          # ExecStartPre writes env file → EnvironmentFile feeds container.
+          serviceConfig = {
+            Restart = "always";
+            # systemd decrypts the blob in-memory, exposes at %d/mcp-password
+            LoadCredentialEncrypted = "mcp-password:/run/credentials-cache/nc-mcp/mcp-password.cred";
+            # ExecStartPre: convert credential file → env file the container reads.
+            # Note: %d expands to $CREDENTIALS_DIRECTORY (/run/credentials/<unit>/).
+            ExecStartPre = "${pkgs.bash}/bin/bash -c 'install -m 0600 /dev/null /run/nextcloud-mcp.env && printf \"NEXTCLOUD_PASSWORD=%s\\n\" \"$(cat %d/mcp-password)\" > /run/nextcloud-mcp.env'";
+          };
         };
+      };
+      # systemd-creds encrypt the sops secret at boot, write encrypted blob
+      # to /run/credentials-cache/nc-mcp/. Runs BEFORE nc-mcp.service so the
+      # LoadCredentialEncrypted= resolves successfully.
+      systemd.services.nc-mcp-encrypt-secret = {
+        description = "Encrypt nc-mcp app password with systemd-creds for nc-mcp.service";
+        wantedBy = [ "multi-user.target" ];
+        before = [ "nc-mcp.service" ];
+        after = [ "sops-nix.service" ];
+        serviceConfig = {
+          Type = "oneshot";
+          RemainAfterExit = true;
+          # Don't let anyone read the encrypted blob except root
+          UMask = "0077";
+        };
+        script = ''
+          mkdir -p /run/credentials-cache/nc-mcp
+          # - reads plaintext from sops-installed secret
+          # - encrypts with host key (systemd 258+ supports this via creds setup)
+          # - writes to /run/credentials-cache/nc-mcp/mcp-password.cred
+          ${pkgs.systemd}/bin/systemd-creds encrypt \
+            --name=mcp-password \
+            - < ${config.sops.secrets."nextcloud/mcp-app-password".path} \
+            > /run/credentials-cache/nc-mcp/mcp-password.cred
+        '';
       };
       # Ensure qdrant storage dirs exist (rootful quadlets: root-owned).
       system.activationScripts."nc-rag-qdrant-dirs".text = ''

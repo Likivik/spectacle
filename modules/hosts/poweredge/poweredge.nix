@@ -39,41 +39,11 @@
         ];
       };
 
-      # Per-service system users for rootless podman containers.
-      # IMPORTANT: occi-containers default --sdnotify=conmon is INCOMPATIBLE with
-      # sdnotify=container (not conmon) — container PID writes NOTIFY_SOCKET,
-      # so linger=true is compatible (no user-session conflict).
-      # subUidRanges/subGidRanges required for rootless container UID mapping.
-      users.users.qdrant = {
-        isSystemUser = true;
-        group = "qdrant";
-        linger = true;
-        home = "/var/lib/qdrant";
-        createHome = true;
-        subUidRanges = [{ startUid = 200000; count = 65536; }];
-        subGidRanges = [{ startGid = 200000; count = 65536; }];
-      };
-      users.groups.qdrant = {};
-      users.users.nc-mcp = {
-        isSystemUser = true;
-        group = "nc-mcp";
-        linger = true;
-        home = "/var/lib/nc-mcp";
-        createHome = true;
-        subUidRanges = [{ startUid = 265536; count = 65536; }];
-        subGidRanges = [{ startGid = 265536; count = 65536; }];
-      };
-      users.groups.nc-mcp = {};
-      users.users.cloudflared = {
-        isSystemUser = true;
-        group = "cloudflared";
-        linger = true;
-        home = "/var/lib/cloudflared";
-        createHome = true;
-        subUidRanges = [{ startUid = 331072; count = 65536; }];
-        subGidRanges = [{ startGid = 331072; count = 65536; }];
-      };
-      users.groups.cloudflared = {};
+      # Rootless podman was attempted (per-service users, subuid/subgid,
+      # linger, sdnotify) but rootless has known issues with pasta port
+      # forwarding on podman 5.x — connections accepted but immediately
+      # dropped. Reverted to rootful: simpler, works. Containers run as
+      # root on this single-tenant host.
 
       security.sudo.extraRules = [{
         users = [ "likivik" ];
@@ -103,8 +73,8 @@
 
       sops.secrets."cloudflare/poweredge-tunnel-token" = {
         sopsFile = ../../../secrets/poweredge/secrets.yaml;
-        owner = "cloudflared";
-        group = "cloudflared";
+        owner = "root";
+        group = "root";
         mode = "0400";
       };
 

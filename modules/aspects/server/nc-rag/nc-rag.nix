@@ -105,13 +105,17 @@
         '';
       })
 
-      # ── PowerEdge: Qdrant (podman) + nextcloud-mcp ────────────────────────
-      # Qdrant is run as a container (not nixpkgs-built) because nixpkgs
+      # ── PowerEdge: Qdrant (podman rootful) + nextcloud-mcp ────────────
+      # Qdrant runs in a container (not nixpkgs-built) because nixpkgs
       # qdrant 1.18.2 fails to build on rustc 1.97.0 + LLVM 16 (vpdpbusd.512
       # intrinsic signature mismatch in lib/quantization). The upstream
       # qdrant container ships the same 1.18.2 binary and bypasses the rustc
       # build entirely. Same host:port (127.0.0.1:6333), so nextcloud-mcp
       # config is unchanged.
+      #
+      # Rootful (not rootless): rootless podman has known issues with
+      # pasta port forwarding dropping connections on podman 5.x.
+      # Rootful = boring, just works.
       (lib.mkIf (config.networking.hostName == "poweredge") {
         virtualisation.oci-containers = {
           backend = "podman";
@@ -119,8 +123,6 @@
             # DaoCloud mirror to dodge Docker Hub unauthenticated pull rate limit.
             image = "m.daocloud.io/docker.io/qdrant/qdrant:v1.18.2";
             autoStart = true;
-            podman.user = "qdrant";   # rootless; per-service user (matches obsidian-publish pattern)
-            podman.sdnotify = "conmon";
             ports = [
               "127.0.0.1:6333:6333"   # HTTP
               "127.0.0.1:6334:6334"   # gRPC
@@ -133,13 +135,10 @@
               QDRANT__SERVICE__HOST = "127.0.0.1";
               QDRANT__TELEMETRY_DISABLED = "true";
             };
-            extraOptions = [ "--pull=newer" ];
           };
           containers.nextcloud-mcp = {
             image = "ghcr.io/pi0n00r/nextcloud-mcp-server:v1.5.1.1";
             autoStart = true;
-            podman.user = "nc-mcp";   # rootless; per-service user
-            podman.sdnotify = "conmon";
             ports = [ "127.0.0.1:8000:8000" ];
             environment = {
               NEXTCLOUD_URL = "http://127.0.0.1";
@@ -153,16 +152,14 @@
               MCP_HOST = "0.0.0.0";
               MCP_PORT = "8000";
             };
-            extraOptions = [ "--pull=newer" ];
           };
         };
         sops.secrets."nextcloud/mcp-app-password" = {
-          sopsFile = sopsFile; owner = "nc-mcp"; group = "nc-mcp"; mode = "0400";
+          sopsFile = sopsFile; owner = "root"; group = "root"; mode = "0400";
         };
-        # Ensure podman storage dirs exist and are owned by qdrant (rootless container).
+        # Ensure qdrant storage dirs exist (rootful: root-owned).
         system.activationScripts."nc-rag-qdrant-dirs".text = ''
           mkdir -p /var/lib/qdrant/storage /var/lib/qdrant/snapshots
-          chown -R qdrant:qdrant /var/lib/qdrant
           chmod 0750 /var/lib/qdrant /var/lib/qdrant/storage /var/lib/qdrant/snapshots
         '';
       })

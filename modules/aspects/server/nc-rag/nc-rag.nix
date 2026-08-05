@@ -1,16 +1,22 @@
 { den, inputs, lib, pkgs, ... }:
 
-# ─── NC-RAG stack (PowerEdge + Serenity, one aspect) ──────────────────────
+# ─── NC-RAG stack (Serenity only) ─────────────────────────────────────────
 # Den registers this folder as den.aspects.server.nc-rag. Internally gated by
 # hostname via lib.mkIf (deferred config eval — do NOT compute hostName in a
 # `let`; that forces `config` during module collection → infinite recursion).
 #   serenity  → bge-m3 embedder + bge-reranker + gemma-3 vision (1660, CUDA)
-#   poweredge → Qdrant + pi0n00r nextcloud-mcp (reaches Serenity via Tailscale)
+#   poweredge → Qdrant + pi0n00r nextcloud-mcp quadlets (in poweredge.nix)
 #
 # VRAM (1660 = 6GB): embedder 1.2 + reranker 0.4 + gemma 2.9 ≈ 4.5 GB hot.
 # allowUnfree = true (core/nix.nix) → CUDA override permitted.
 # Secrets (poweredge/secrets.yaml): nextcloud/mcp-app-password
 # Gemma GGUF URL TODO-verify before deploy.
+#
+# Lesson from poweredge deploy (2026-08): podman/netavark bridge+DNT
+# is broken on this NixOS. Poweredge quadlets use --network=host
+# (see poweredge.nix + NOTES/poweredge-nc-rag-port-forwarding.md).
+# Serenity uses native systemd → no podman involvement → no lesson to
+# apply here; this just listens on host's 0.0.0.0:8081/8082 directly.
 
 {
   den.aspects.server.nc-rag = {
@@ -102,23 +108,6 @@
             mv "$MMPROJ.tmp" "$MMPROJ"
           fi; chmod 644 "$MMPROJ"
         '';
-      })
-
-      # ── PowerEdge: Qdrant + nextcloud-mcp (quadlets defined in poweredge.nix)
-      # Why quadlets (not oci-containers):
-      #   1. Rootless port-forwarding (pasta splice bug) — quadlets can use
-      #      --network=pasta which doesn't hit the broken podman0 bridge.
-      #   2. Tailscale 10.88.0.0/16 route hijack (we hit this) — pasta netns
-      #      sidesteps the conflict entirely.
-      #   3. sdnotify + linger compatibility handled by quadlet generator.
-      #   4. Podman-native — closer to upstream semantics than NixOS glue.
-      #
-      # The quadlet config lives in modules/hosts/poweredge/poweredge.nix
-      # (this den aspect only contains the serenity-side llama.cpp services).
-      # Reference: https://github.com/SEIAROTg/quadlet-nix
-      (lib.mkIf (config.networking.hostName == "poweredge") {
-        # Nothing here — quadlets + Tailscale route fix are in the host module.
-        # This branch exists for documentation; harmless when empty.
       })
     ];
   };

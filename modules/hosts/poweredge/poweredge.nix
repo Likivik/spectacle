@@ -221,6 +221,13 @@
             image = "ghcr.io/pi0n00r/nextcloud-mcp-server:v1.5.1.1";
             # --network=host: same rationale as qdrant (sidestep netavark DNAT bug)
             networks = [ "host" ];
+            # Mount sops secrets dir so file://... URLs can read password at runtime.
+            # sops-nix creates these at /run/secrets/<name>; without bind-mount,
+            # the container can't see them and nc-mcp uses the literal "file://..."
+            # string as the password (which fails auth with 401).
+            volumes = [
+              "/run/secrets/nextcloud:/run/secrets/nextcloud:ro"
+            ];
             # Env vars per upstream docs (README + 'Required configuration' log).
             # Auth: Basic auth with app password. Note: app passwords created
             # BEFORE 2FA was enforced (via UI Settings → Security) get flagged

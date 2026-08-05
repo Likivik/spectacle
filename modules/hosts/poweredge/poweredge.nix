@@ -214,12 +214,17 @@
               NEXTCLOUD_PASSWORD = "file://${config.sops.secrets."nextcloud/mcp-app-password".path}";
               MCP_DEPLOYMENT_MODE = "single_user_basic";
               # Semantic search — llama.cpp backends on serenity via Tailscale.
-              # Verified reachable: poweredge curl serenity:8081/health → ok.
+              # llama.cpp b9999+ implements Ollama's /api/tags (PR #13659), so
+              # OLLAMA_BASE_URL must point at server root (NOT /v1) — the
+              # nc-mcp library appends `/api/tags` to OLLAMA_BASE_URL.
               VECTOR_SYNC_ENABLED = "true";
               QDRANT_URL = "http://127.0.0.1:6333";
-              OLLAMA_BASE_URL = "http://serenity:8081/v1";
+              OLLAMA_BASE_URL = "http://serenity:8081";
               OLLAMA_EMBEDDING_MODEL = "bge-m3";
-              RERANKER_URL = "http://serenity:8082/v1";
+              # Reranker: llama.cpp's /v1/rerank endpoint. RERANKER_URL
+              # semantics vary by client; if nc-mcp library appends a path,
+              # strip /v1 here. Verify after first restart.
+              RERANKER_URL = "http://serenity:8082";
             };
           };
           serviceConfig = { Restart = "always"; };

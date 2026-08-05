@@ -97,11 +97,11 @@
           fi; chmod 644 "$RERANK"
           GEMMA="${modelsDir}/gemma-3-4b-it-q2_k.gguf"
           if [ ! -f "$GEMMA" ]; then
-            # bartowski/google_gemma-3-4b-it-GGUF filenames use bare
-            # `gemma-3-4b-it-*` (NOT `google_gemma-3-4b-it-*`). Earlier config
-            # had the wrong prefix → 404. Verified 2026-08-05.
+            # bartowski/google_gemma-3-4b-it-GGUF repo filenames DO use the
+            # `google_` prefix (same as mmproj). Verified via
+            # https://huggingface.co/api/models/bartowski/google_gemma-3-4b-it-GGUF/tree/main
             ${pkgs.curl}/bin/curl -L --fail -o "$GEMMA.tmp" \
-              "https://huggingface.co/bartowski/google_gemma-3-4b-it-GGUF/resolve/main/gemma-3-4b-it-Q2_K.gguf"
+              "https://huggingface.co/bartowski/google_gemma-3-4b-it-GGUF/resolve/main/google_gemma-3-4b-it-Q2_K.gguf"
             mv "$GEMMA.tmp" "$GEMMA"
           fi; chmod 644 "$GEMMA"
           MMPROJ="${modelsDir}/mmproj-gemma-3-4b-it-f16.gguf"

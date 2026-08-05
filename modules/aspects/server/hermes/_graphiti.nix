@@ -27,14 +27,17 @@
       WorkingDirectory = "/var/lib/hermes/graphiti/mcp_server";
       Environment = [
         "LD_LIBRARY_PATH=${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.zlib}/lib"
-        # OPENAI_API_KEY is required by graphiti_core's default OpenAIRerankerClient,
-        # which constructs an AsyncOpenAI client at init time even though the
-        # reranker is never used in our setup (we have bge-reranker on serenity).
-        # The reranker would route via OPENAI_BASE_URL if invoked. We point at
-        # the local litellm gateway so any accidental call lands on our proxy
-        # instead of api.openai.com. The LLM and embedder still read api_key
-        # from /var/lib/hermes/graphiti/mcp_server/config/config.yaml which is
-        # seeded from /var/lib/litellm/master-key.txt at activation time.
+        # PLACEHOLDER — required by graphiti_core, do NOT remove!
+        # graphiti_core's default OpenAIRerankerClient constructs an
+        # AsyncOpenAI client at init time. If OPENAI_API_KEY is unset the
+        # service fails to start: "Missing credentials. Please pass an
+        # `api_key` or set the `OPENAI_API_KEY` environment variable."
+        # Our reranker is never invoked (bge-reranker on serenity does it)
+        # so a dummy value is fine. Reranker calls would route via
+        # OPENAI_BASE_URL — we point at our local litellm so any stray
+        # call lands on our proxy instead of api.openai.com. The LLM and
+        # embedder still read api_key from config.yaml (seeded from
+        # /var/lib/litellm/master-key.txt), not from this env var.
         "OPENAI_API_KEY=sk-local-litellm-noop"
         "OPENAI_BASE_URL=http://127.0.0.1:4000/v1"
         "HTTPS_PROXY=http://127.0.0.1:7899"

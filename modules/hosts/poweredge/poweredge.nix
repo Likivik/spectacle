@@ -207,11 +207,19 @@
             # Host: Tailscale magic DNS — nc-mcp sees this host's tailscale IP via
             # host netns, and trusted_domains already includes this hostname.
             # Password: sops secret (Nextcloud app password, not user password).
+            # Vector sync: needs bge-m3 + reranker + qdrant (all on serenity or local).
             environments = {
               NEXTCLOUD_HOST = "https://poweredge.oryx-galaxy.ts.net";
               NEXTCLOUD_USERNAME = "likivik";
               NEXTCLOUD_PASSWORD = "file://${config.sops.secrets."nextcloud/mcp-app-password".path}";
               MCP_DEPLOYMENT_MODE = "single_user_basic";
+              # Semantic search — llama.cpp backends on serenity via Tailscale.
+              # Verified reachable: poweredge curl serenity:8081/health → ok.
+              VECTOR_SYNC_ENABLED = "true";
+              QDRANT_URL = "http://127.0.0.1:6333";
+              OLLAMA_BASE_URL = "http://serenity:8081/v1";
+              OLLAMA_EMBEDDING_MODEL = "bge-m3";
+              RERANKER_URL = "http://serenity:8082/v1";
             };
           };
           serviceConfig = { Restart = "always"; };

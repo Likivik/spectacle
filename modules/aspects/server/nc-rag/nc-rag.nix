@@ -97,6 +97,9 @@
           fi; chmod 644 "$RERANK"
           GEMMA="${modelsDir}/gemma-3-4b-it-q2_k.gguf"
           if [ ! -f "$GEMMA" ]; then
+            # bartowski/google_gemma-3-4b-it-GGUF filenames use bare
+            # `gemma-3-4b-it-*` (NOT `google_gemma-3-4b-it-*`). Earlier config
+            # had the wrong prefix → 404. Verified 2026-08-05.
             ${pkgs.curl}/bin/curl -L --fail -o "$GEMMA.tmp" \
               "https://huggingface.co/bartowski/google_gemma-3-4b-it-GGUF/resolve/main/gemma-3-4b-it-Q2_K.gguf"
             mv "$GEMMA.tmp" "$GEMMA"

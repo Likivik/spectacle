@@ -12,6 +12,7 @@
     nixos = { config, lib, pkgs, ... }: {
       imports = [
         inputs.disko.nixosModules.disko
+        inputs.quadlet-nix.nixosModules.quadlet
         ./_disko.nix
         ./_hardware-configuration.nix
       ];
@@ -72,6 +73,12 @@
       };
 
       sops.secrets."cloudflare/poweredge-tunnel-token" = {
+        sopsFile = ../../../secrets/poweredge/secrets.yaml;
+        owner = "root";
+        group = "root";
+        mode = "0400";
+      };
+      sops.secrets."nextcloud/mcp-app-password" = {
         sopsFile = ../../../secrets/poweredge/secrets.yaml;
         owner = "root";
         group = "root";
@@ -143,6 +150,78 @@
       networking.firewall.interfaces.eno1.allowedTCPPorts = lib.mkForce [ ];
       networking.firewall.interfaces.tailscale0.allowedTCPPorts = lib.mkForce [ ];
       networking.firewall.interfaces.lo.allowedTCPPorts = lib.mkForce [ 2000 6333 6334 8000 ];
+
+      # Tailscale route hijack: tailscaled installs `10.88.0.0/16 dev tailscale0`
+      # in its own table (52). podman0 also uses 10.88.0.0/16, so without
+      # a higher-priority rule the kernel routes podman container traffic
+      # to tailscale0 → silently dropped. Force the main table to handle
+      # the podman subnet first. See poweredge deploy notes (Aug 2026).
+      boot.kernel.sysctl."net.ipv4.conf.lo.route_localnet" = 1;
+      systemd.services."podman-route-override" = {
+        description = "Force 10.88.0.0/16 to use main table (podman0), not table 52 (tailscale0)";
+        wantedBy = [ "multi-user.target" ];
+        after = [ "tailscaled.service" "podman.service" ];
+        serviceConfig = {
+          Type = "oneshot";
+          RemainAfterExit = true;
+        };
+        script = ''
+          ${pkgs.iproute2}/bin/ip rule add to 10.88.0.0/16 lookup main priority 100 || true
+        '';
+      };
+
+      # Qdrant + nextcloud-mcp as Podman Quadlets (rootful).
+      # Quadlets handle sdnotify, restart, and lifecycle natively — sidestepping
+      # oci-containers module quirks. See modules/aspects/server/nc-rag/nc-rag.nix
+      # for the rationale on why quadlets (Tailscale route hijack, pasta netns).
+      virtualisation.quadlet = {
+        enable = true;
+        containers.qdrant = {
+          autoStart = true;
+          containerConfig = {
+            # DaoCloud mirror to dodge Docker Hub unauthenticated pull rate limit.
+            image = "m.daocloud.io/docker.io/qdrant/qdrant:v1.18.2";
+            publishPorts = [
+              "0.0.0.0:6333:6333"   # HTTP
+              "0.0.0.0:6334:6334"   # gRPC
+            ];
+            volumes = [
+              "/var/lib/qdrant/storage:/qdrant/storage"
+              "/var/lib/qdrant/snapshots:/qdrant/snapshots"
+            ];
+            environments = {
+              QDRANT__SERVICE__HOST = "127.0.0.1";
+              QDRANT__TELEMETRY_DISABLED = "true";
+            };
+          };
+          serviceConfig = { Restart = "always"; };
+        };
+        containers.nextcloud-mcp = {
+          autoStart = true;
+          containerConfig = {
+            image = "ghcr.io/pi0n00r/nextcloud-mcp-server:v1.5.1.1";
+            publishPorts = [ "0.0.0.0:8000:8000" ];
+            environments = {
+              NEXTCLOUD_URL = "http://127.0.0.1";
+              NEXTCLOUD_PASSWORD = "file://${config.sops.secrets."nextcloud/mcp-app-password".path}";
+              QDRANT_URL = "http://127.0.0.1:6333";
+              OLLAMA_URL = "http://serenity:8081/v1";   # Tailscale magic DNS
+              OLLAMA_EMBEDDING_MODEL = "bge-m3";
+              RERANKER_URL = "http://serenity:8082/v1";
+              ENABLE_SEMANTIC_SEARCH = "true";
+              MCP_DEPLOYMENT_MODE = "single_user_basic";
+              MCP_HOST = "0.0.0.0";
+              MCP_PORT = "8000";
+            };
+          };
+          serviceConfig = { Restart = "always"; };
+        };
+      };
+      # Ensure qdrant storage dirs exist (rootful quadlets: root-owned).
+      system.activationScripts."nc-rag-qdrant-dirs".text = ''
+        mkdir -p /var/lib/qdrant/storage /var/lib/qdrant/snapshots
+        chmod 0750 /var/lib/qdrant /var/lib/qdrant/storage /var/lib/qdrant/snapshots
+      '';
       # 8GB swapfile on root SSD
       swapDevices = [{
         device = "/swapfile";

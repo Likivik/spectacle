@@ -52,6 +52,9 @@
     obsidian-live-share = {
       url = "github:Mewski/obsidian-live-share";
     };
+    quadlet-nix = {
+      url = "github:SEIAROTg/quadlet-nix";
+    };
 
   };
 }

@@ -25,7 +25,6 @@
         SupplementaryGroups = [ "video" "render" ];
         PrivateDevices = false;
       };
-      sopsFile = ../../../../secrets/poweredge/secrets.yaml;
     in lib.mkMerge [
       # ── Serenity: 3 llama.cpp systemd units (CUDA) ──────────────────────
       (lib.mkIf (config.networking.hostName == "serenity") {
@@ -105,63 +104,21 @@
         '';
       })
 
-      # ── PowerEdge: Qdrant (podman rootful) + nextcloud-mcp ────────────
-      # Qdrant runs in a container (not nixpkgs-built) because nixpkgs
-      # qdrant 1.18.2 fails to build on rustc 1.97.0 + LLVM 16 (vpdpbusd.512
-      # intrinsic signature mismatch in lib/quantization). The upstream
-      # qdrant container ships the same 1.18.2 binary and bypasses the rustc
-      # build entirely. Same host:port (127.0.0.1:6333), so nextcloud-mcp
-      # config is unchanged.
+      # ── PowerEdge: Qdrant + nextcloud-mcp (quadlets defined in poweredge.nix)
+      # Why quadlets (not oci-containers):
+      #   1. Rootless port-forwarding (pasta splice bug) — quadlets can use
+      #      --network=pasta which doesn't hit the broken podman0 bridge.
+      #   2. Tailscale 10.88.0.0/16 route hijack (we hit this) — pasta netns
+      #      sidesteps the conflict entirely.
+      #   3. sdnotify + linger compatibility handled by quadlet generator.
+      #   4. Podman-native — closer to upstream semantics than NixOS glue.
       #
-      # Rootful (not rootless): rootless podman has known issues with
-      # pasta port forwarding dropping connections on podman 5.x.
-      # Rootful = boring, just works.
+      # The quadlet config lives in modules/hosts/poweredge/poweredge.nix
+      # (this den aspect only contains the serenity-side llama.cpp services).
+      # Reference: https://github.com/SEIAROTg/quadlet-nix
       (lib.mkIf (config.networking.hostName == "poweredge") {
-        virtualisation.oci-containers = {
-          backend = "podman";
-          containers.qdrant = {
-            # DaoCloud mirror to dodge Docker Hub unauthenticated pull rate limit.
-            image = "m.daocloud.io/docker.io/qdrant/qdrant:v1.18.2";
-            autoStart = true;
-            ports = [
-              "0.0.0.0:6333:6333"   # HTTP
-              "0.0.0.0:6334:6334"   # gRPC
-            ];
-            volumes = [
-              "/var/lib/qdrant/storage:/qdrant/storage"
-              "/var/lib/qdrant/snapshots:/qdrant/snapshots"
-            ];
-            environment = {
-              QDRANT__SERVICE__HOST = "127.0.0.1";
-              QDRANT__TELEMETRY_DISABLED = "true";
-            };
-          };
-          containers.nextcloud-mcp = {
-            image = "ghcr.io/pi0n00r/nextcloud-mcp-server:v1.5.1.1";
-            autoStart = true;
-            ports = [ "0.0.0.0:8000:8000" ];
-            environment = {
-              NEXTCLOUD_URL = "http://127.0.0.1";
-              NEXTCLOUD_PASSWORD = "file://${config.sops.secrets."nextcloud/mcp-app-password".path}";
-              QDRANT_URL = "http://127.0.0.1:6333";
-              OLLAMA_URL = "http://serenity:8081/v1";   # Tailscale magic DNS
-              OLLAMA_EMBEDDING_MODEL = "bge-m3";
-              RERANKER_URL = "http://serenity:8082/v1";
-              ENABLE_SEMANTIC_SEARCH = "true";
-              MCP_DEPLOYMENT_MODE = "single_user_basic";
-              MCP_HOST = "0.0.0.0";
-              MCP_PORT = "8000";
-            };
-          };
-        };
-        sops.secrets."nextcloud/mcp-app-password" = {
-          sopsFile = sopsFile; owner = "root"; group = "root"; mode = "0400";
-        };
-        # Ensure qdrant storage dirs exist (rootful: root-owned).
-        system.activationScripts."nc-rag-qdrant-dirs".text = ''
-          mkdir -p /var/lib/qdrant/storage /var/lib/qdrant/snapshots
-          chmod 0750 /var/lib/qdrant /var/lib/qdrant/storage /var/lib/qdrant/snapshots
-        '';
+        # Nothing here — quadlets + Tailscale route fix are in the host module.
+        # This branch exists for documentation; harmless when empty.
       })
     ];
   };

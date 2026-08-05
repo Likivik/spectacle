@@ -2587,6 +2587,21 @@
         "type": "github"
       }
     },
+    "quadlet-nix": {
+      "locked": {
+        "lastModified": 1785695563,
+        "narHash": "sha256-kE3JCUeQA4CXlLl5TglmKceOJP+ZF/CwkHngiZ3yS00=",
+        "owner": "SEIAROTg",
+        "repo": "quadlet-nix",
+        "rev": "b6ff6c4d6b36b8e29bce417b668597fab3e03160",
+        "type": "github"
+      },
+      "original": {
+        "owner": "SEIAROTg",
+        "repo": "quadlet-nix",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
         "den": "den",
@@ -2612,6 +2627,7 @@
         "nixpkgs": "nixpkgs_11",
         "nixpkgs-master": "nixpkgs-master",
         "obsidian-live-share": "obsidian-live-share",
+        "quadlet-nix": "quadlet-nix",
         "sops-nix": "sops-nix",
         "torrserver": "torrserver"
       }

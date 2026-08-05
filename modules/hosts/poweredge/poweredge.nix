@@ -136,8 +136,13 @@
         serviceConfig = { ExecStart = "/bin/true"; };
       };
 
-      boot.kernelParams = [ "elevator=none" ];
-
+      # Podman 0.0.0.0:X:X publishes work; 127.0.0.1:X:X silently drops
+      # packets after DNAT on this NixOS+podman. Firewall restricts the
+      # published ports to loopback only (not exposed to LAN).
+      # Compare erebus kokoro-tts (works, 0.0.0.0) vs falkordb (broken, 127.0.0.1).
+      networking.firewall.interfaces.eno1.allowedTCPPorts = lib.mkForce [ ];
+      networking.firewall.interfaces.tailscale0.allowedTCPPorts = lib.mkForce [ ];
+      networking.firewall.interfaces.lo.allowedTCPPorts = lib.mkForce [ 2000 6333 6334 8000 ];
       # 8GB swapfile on root SSD
       swapDevices = [{
         device = "/swapfile";

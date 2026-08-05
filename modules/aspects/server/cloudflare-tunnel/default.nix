@@ -14,7 +14,7 @@
           autoStart = true;
           cmd = [ "tunnel" "run" ];
           environmentFiles = [ config.sops.secrets."cloudflare/poweredge-tunnel-token".path ];
-          ports = [ "127.0.0.1:2000:2000" ];
+          ports = [ "0.0.0.0:2000:2000" ];
         };
       };
 

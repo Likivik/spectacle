@@ -27,7 +27,10 @@
       WorkingDirectory = "/var/lib/hermes/graphiti/mcp_server";
       Environment = [
         "LD_LIBRARY_PATH=${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.zlib}/lib"
-        "OPENAI_API_KEY=«redacted:sk-…»"
+        # OPENAI_API_KEY is intentionally NOT set as an env var. Graphiti reads
+        # api_key from /var/lib/hermes/graphiti/mcp_server/config/config.yaml
+        # which is seeded at activation time from /var/lib/litellm/master-key.txt.
+        # Setting it here would override that — usually with a stale value.
         "HTTPS_PROXY=http://127.0.0.1:7899"
         "SSL_CERT_FILE=/etc/ssl/certs/hermes-with-proxy-ca.crt"
         "NO_PROXY=127.0.0.1,localhost,127.0.0.1:4000"

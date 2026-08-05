@@ -148,7 +148,13 @@
       # published ports to loopback only (not exposed to LAN).
       # Compare erebus kokoro-tts (works, 0.0.0.0) vs falkordb (broken, 127.0.0.1).
       networking.firewall.interfaces.eno1.allowedTCPPorts = lib.mkForce [ ];
-      networking.firewall.interfaces.tailscale0.allowedTCPPorts = lib.mkForce [ ];
+      # tailscale0: ports exposed over Tailscale for cross-host MCP access.
+      # 6333/6334: qdrant HTTP+gRPC (only poweredge itself uses qdrant
+      #   internally; keep for nc-rag ops + qdrant dashboard from remote).
+      # 8000: nextcloud-mcp MCP endpoint (Hermes MCP client).
+      # Other hosts use Tailscale magic DNS to reach
+      # http://poweredge.oryx-galaxy.ts.net:8000/mcp.
+      networking.firewall.interfaces.tailscale0.allowedTCPPorts = lib.mkForce [ 6333 6334 8000 ];
       networking.firewall.interfaces.lo.allowedTCPPorts = lib.mkForce [ 2000 6333 6334 8000 ];
 
       # Tailscale route hijack: tailscaled installs `10.88.0.0/16 dev tailscale0`
@@ -221,7 +227,12 @@
               # Why not llama.cpp directly? llama.cpp reverted /api/tags in
               # PR #22165 (April 2026). Why not Ollama? CVE-2026-7482 (9.1).
               # Why proxy on serenity: keeps embedder/reranker on GPU host.
+              # VECTOR_SYNC_INTERVAL=60 → re-scan every 60s (default 3600s/1h).
+              # Set short here so initial indexing kicks in within minutes of
+              # a new note being created, instead of waiting for the next
+              # hourly tick. Bump back to 3600 once indexing is healthy.
               ENABLE_SEMANTIC_SEARCH = "true";
+              VECTOR_SYNC_INTERVAL = "60";
               QDRANT_URL = "http://127.0.0.1:6333";
               OLLAMA_BASE_URL = "http://serenity:11434";
               OLLAMA_EMBEDDING_MODEL = "bge-m3";

@@ -9,7 +9,20 @@
       den.aspects.server.nc-rag
     ];
 
-    nixos = { config, lib, pkgs, ... }: {
+    nixos = { config, lib, pkgs, ... }: let
+      # Helper script to convert a systemd-decrypted credential file
+      # into a single-line env var file. Used by ExecStartPre so the
+      # password never appears in Nix store or as a literal env var
+      # embedded in unit files.
+      ncMcpCredsToEnvScript = pkgs.writeShellScript "nc-mcp-creds-to-env" ''
+        set -eu
+        : "''${CREDENTIALS_DIRECTORY:?must be set by systemd}"
+        install -m 0600 /dev/null /run/nextcloud-mcp.env
+        printf 'NEXTCLOUD_PASSWORD=%s\n' \
+          "$(cat "$CREDENTIALS_DIRECTORY/mcp-password")" \
+          > /run/nextcloud-mcp.env
+      '';
+    in {
       imports = [
         inputs.disko.nixosModules.disko
         inputs.quadlet-nix.nixosModules.quadlet
@@ -268,14 +281,15 @@
           };
           # systemd service config: encrypt sops secret → LoadCredentialEncrypted →
           # ExecStartPre writes env file → EnvironmentFile feeds container.
+          # Helper script: convert credential file → env file.
+          # Defined outside serviceConfig to keep serviceConfig pure.
           serviceConfig = {
             Restart = "always";
-            # systemd decrypts the blob in-memory, exposes at %d/mcp-password
+            # systemd decrypts the blob in-memory, exposes at
+            # /run/credentials/<unit>/mcp-password
             LoadCredentialEncrypted = "mcp-password:/run/credentials-cache/nc-mcp/mcp-password.cred";
-            # ExecStartPre: convert credential file → env file the container reads.
-            # Note: %d is only expanded in ExecStart by systemd; for nested
-            # bash -c scripts, use $CREDENTIALS_DIRECTORY env var instead.
-            ExecStartPre = "${pkgs.bash}/bin/bash -c 'install -m 0600 /dev/null /run/nextcloud-mcp.env && printf \"NEXTCLOUD_PASSWORD=%s\\n\" \"$(cat $CREDENTIALS_DIRECTORY/mcp-password)\" > /run/nextcloud-mcp.env'";
+            # ExecStartPre runs the helper script defined in the let block.
+            ExecStartPre = "${toString pkgs.bash}/bin/bash ${ncMcpCredsToEnvScript}";
           };
         };
       };

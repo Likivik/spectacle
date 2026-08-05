@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import http.server
 import os
 import queue
 import re
@@ -168,6 +169,10 @@ class TTLCache:
         self._expires: dict[str, float] = {}
 
     def get(self, key: str) -> str | None:
+        result = self.get_with_age(key)
+        return result[0] if result else None
+
+    def get_with_age(self, key: str) -> tuple[str, float] | None:
         if key not in self._data:
             return None
         now = time.monotonic()
@@ -176,7 +181,9 @@ class TTLCache:
             self._expires.pop(key, None)
             return None
         self._data.move_to_end(key)
-        return self._data[key]
+        put_at = self._expires.get(key, now) - self._ttl
+        age_ms = max(0, (now - put_at) * 1000.0)
+        return self._data[key], age_ms
 
     def put(self, key: str, value: str) -> None:
         if key in self._data:
@@ -394,6 +401,7 @@ class GraphitiMemoryProvider(MemoryProvider):
             self._last_flush_time = time.monotonic()
             self._metrics = GraphitiMetrics()
             self._ensure_sync_worker()
+            self._ensure_metrics_server()
             log_event("late_init", ok=True)
             return True
         except Exception as e:
@@ -467,11 +475,27 @@ class GraphitiMemoryProvider(MemoryProvider):
                 self._cache[query] = packed
                 with self._prefetch_lock:
                     self._prefetch_result[query] = packed
+                node_count = 0
+                fact_count = 0
+                try:
+                    node_envelope = nodes.get("result", nodes)
+                    fact_envelope = facts.get("result", facts)
+                    if isinstance(node_envelope, dict):
+                        node_count = len(node_envelope.get("nodes", []) or [])
+                    if isinstance(fact_envelope, dict):
+                        fact_count = len(fact_envelope.get("facts", []) or [])
+                except Exception:
+                    pass
                 if packed:
                     self._metrics.prefetch_ok += 1
                     self._metrics.record_search_relevance(bool(packed.strip()))
+                    log_event("prefetch_ok", query=query[:80],
+                              nodes=node_count, facts=fact_count,
+                              chars=len(packed))
                 else:
                     self._metrics.prefetch_empty += 1
+                    log_event("prefetch_empty", query=query[:80],
+                              nodes=node_count, facts=fact_count)
             except Exception as e:
                 log_event("prefetch_error", exc=str(e))
                 self._metrics.prefetch_error += 1
@@ -479,17 +503,24 @@ class GraphitiMemoryProvider(MemoryProvider):
 
     def prefetch(self, query: str, *, session_id: str = "") -> str:
         if not should_prefetch(query):
+            log_event("prefetch_skipped", query=query[:80], reason="too_short_or_command")
             return ""
         if not self._ensure_client():
+            log_event("prefetch_skipped", query=query[:80], reason="client_unavailable")
             return ""
-        cached = self._cache.get(query)
-        if cached is not None:
+        cached_with_age = self._cache.get_with_age(query)
+        if cached_with_age is not None:
+            cached, age_ms = cached_with_age
+            log_event("prefetch_hit", query=query[:80],
+                      chars=len(cached), age_ms=int(age_ms))
             return cached
         with self._prefetch_lock:
             inflight = self._prefetch_result.get(query)
         if inflight is not None:
+            log_event("prefetch_inflight", query=query[:80], chars=len(inflight))
             return inflight
         self._start_prefetch(query)
+        log_event("prefetch_started", query=query[:80])
         return ""
 
     def _sync_loop(self) -> None:
@@ -516,6 +547,100 @@ class GraphitiMemoryProvider(MemoryProvider):
                 target=self._sync_loop, daemon=True, name="graphiti-sync",
             )
             self._sync_worker.start()
+
+    def _ensure_metrics_server(self) -> None:
+        """Background HTTP server exposing Prometheus-style metrics on
+        http://127.0.0.1:<PORT>/metrics (default 8765). Stdlib only —
+        no extra deps. Idempotent; one server per provider instance.
+        """
+        if getattr(self, "_metrics_server_started", False):
+            return
+        port = int(os.environ.get("GRAPHITI_METRICS_PORT", "8765"))
+
+        def _render_metrics() -> bytes:
+            m = self._metrics
+            total_search = m.search_relevance_hits + m.search_relevance_misses
+            relevance_pct = (
+                m.search_relevance_hits * 100.0 / total_search
+                if total_search else 0.0
+            )
+            avg_lat = (
+                sum(m.latencies) / len(m.latencies)
+                if m.latencies else 0.0
+            )
+            return (
+                "# HELP graphiti_prefetch_ok_total Prefetch completions with results\n"
+                "# TYPE graphiti_prefetch_ok_total counter\n"
+                f"graphiti_prefetch_ok_total {m.prefetch_ok}\n"
+                "# HELP graphiti_prefetch_empty_total Prefetch completions with no results\n"
+                "# TYPE graphiti_prefetch_empty_total counter\n"
+                f"graphiti_prefetch_empty_total {m.prefetch_empty}\n"
+                "# HELP graphiti_prefetch_error_total Prefetch errors\n"
+                "# TYPE graphiti_prefetch_error_total counter\n"
+                f"graphiti_prefetch_error_total {m.prefetch_error}\n"
+                "# HELP graphiti_search_ok_total Internal search hits with results\n"
+                "# TYPE graphiti_search_ok_total counter\n"
+                f"graphiti_search_ok_total {m.search_ok}\n"
+                "# HELP graphiti_search_empty_total Internal searches with no results\n"
+                "# TYPE graphiti_search_empty_total counter\n"
+                f"graphiti_search_empty_total {m.search_empty}\n"
+                "# HELP graphiti_write_ok_total graphiti_remember successes\n"
+                "# TYPE graphiti_write_ok_total counter\n"
+                f"graphiti_write_ok_total {m.write_ok}\n"
+                "# HELP graphiti_write_error_total graphiti_remember errors\n"
+                "# TYPE graphiti_write_error_total counter\n"
+                f"graphiti_write_error_total {m.write_error}\n"
+                "# HELP graphiti_flushes_total Successful sync flushes\n"
+                "# TYPE graphiti_flushes_total counter\n"
+                f"graphiti_flushes_total {m.flushes}\n"
+                "# HELP graphiti_session_reinits_total MCP session reinitializations\n"
+                "# TYPE graphiti_session_reinits_total counter\n"
+                f"graphiti_session_reinits_total {m.session_reinits}\n"
+                "# HELP graphiti_max_queue_depth Max sync queue depth observed\n"
+                "# TYPE graphiti_max_queue_depth gauge\n"
+                f"graphiti_max_queue_depth {m.max_queue_depth}\n"
+                "# HELP graphiti_search_relevance_pct % of prefetch_ok events with non-empty packed results\n"
+                "# TYPE graphiti_search_relevance_pct gauge\n"
+                f"graphiti_search_relevance_pct {relevance_pct:.2f}\n"
+                "# HELP graphiti_avg_latency_ms Mean latency across prefetch + tool calls\n"
+                "# TYPE graphiti_avg_latency_ms gauge\n"
+                f"graphiti_avg_latency_ms {avg_lat:.2f}\n"
+            ).encode("utf-8")
+
+        class _Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                if self.path == "/metrics":
+                    body = _render_metrics()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/plain; version=0.0.4")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                elif self.path == "/health":
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/plain")
+                    self.end_headers()
+                    self.wfile.write(b"ok\n")
+                else:
+                    self.send_response(404)
+                    self.end_headers()
+
+            def log_message(self, format, *args):  # silence stderr noise
+                pass
+
+        try:
+            server = http.server.HTTPServer(("127.0.0.1", port), _Handler)
+            thread = threading.Thread(
+                target=server.serve_forever,
+                daemon=True,
+                name="graphiti-metrics",
+            )
+            thread.start()
+            self._metrics_server_started = True
+            self._metrics_port = port
+            log_event("metrics_server_started", port=port)
+        except OSError as e:
+            log_event("metrics_server_failed", port=port, exc=str(e))
 
     def _enqueue_sync(self, name: str, body: str) -> None:
         try:

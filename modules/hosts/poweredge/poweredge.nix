@@ -203,17 +203,15 @@
             image = "ghcr.io/pi0n00r/nextcloud-mcp-server:v1.5.1.1";
             # --network=host: same rationale as qdrant (sidestep netavark DNAT bug)
             networks = [ "host" ];
+            # Env vars per upstream docs (README + 'Required configuration' log).
+            # Host: Tailscale magic DNS — nc-mcp sees this host's tailscale IP via
+            # host netns, and trusted_domains already includes this hostname.
+            # Password: sops secret (Nextcloud app password, not user password).
             environments = {
-              NEXTCLOUD_URL = "http://127.0.0.1";
+              NEXTCLOUD_HOST = "https://poweredge.oryx-galaxy.ts.net";
+              NEXTCLOUD_USERNAME = "likivik";
               NEXTCLOUD_PASSWORD = "file://${config.sops.secrets."nextcloud/mcp-app-password".path}";
-              QDRANT_URL = "http://127.0.0.1:6333";
-              OLLAMA_URL = "http://serenity:8081/v1";   # Tailscale magic DNS
-              OLLAMA_EMBEDDING_MODEL = "bge-m3";
-              RERANKER_URL = "http://serenity:8082/v1";
-              ENABLE_SEMANTIC_SEARCH = "true";
               MCP_DEPLOYMENT_MODE = "single_user_basic";
-              MCP_HOST = "0.0.0.0";
-              MCP_PORT = "8000";
             };
           };
           serviceConfig = { Restart = "always"; };

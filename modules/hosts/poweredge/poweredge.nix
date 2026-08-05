@@ -197,7 +197,7 @@
               "/var/lib/qdrant/snapshots:/qdrant/snapshots"
             ];
             environments = {
-              QDRANT__SERVICE__HOST = "127.0.0.1";
+              QDRANT__SERVICE__HOST = "0.0.0.0";
               QDRANT__TELEMETRY_DISABLED = "true";
             };
           };

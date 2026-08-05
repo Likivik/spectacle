@@ -30,6 +30,10 @@ Always check host first: `hostname -s` (traversal = here, erebus = VPS). `nh` is
 
 **Gotcha**: `.#erebus` on traversal without `--target-host` builds erebus config for traversal hardware — wrong machine.
 
+**Gotcha**: SSH key auth. `nixos-rebuild switch --target-host likivik@<host>` requires `likivik@<host>`'s `~/.ssh/authorized_keys` to contain a public key matching the SSH key on the **calling** host's `~/.ssh/id_*`. If the agent on host A is missing A's key in B's authorized_keys, deploys to B fail with `Permission denied (publickey,keyboard-interactive)`. **Workaround**: deploy via a third host C where (A→C, C→B) both work, OR add the missing key to `modules/hosts/B/B.nix` `users.users.likivik.openssh.authorizedKeys.keys` and deploy.
+
+**Gotcha**: The current hermes-agent SSH key is `/var/lib/hermes/.ssh/id_ed25519` (comment `hermes@erebus`, even when running from a different host — the comment is just a label). The same key works on every host because it's the one the agent uses everywhere. Each host's `authorizedKeys.keys` for `likivik` must list this key.
+
 **Gotcha**: Remote targets with NOPASSWD sudo need `--elevate=sudo`. Without it, `nix-env --set` on the remote runs as the SSH user (non-root) → `Permission denied` on the profile symlink.
 
 **Gotcha**: Remote deploys **MUST** pass `--build-host <user>@<host>` (matching `--target-host`). Building remotely on the target host keeps heavy compilation (rustc, LLVM, etc.) on the target's CPU/RAM and avoids transferring large closures across the network. Erebus is the orchestrator; poweredge is the build+target. Omitting `--build-host` makes nixos-rebuild build locally on erebus and copy the closure via `ssh://` — acceptable for tiny closures but slow for big ones.
@@ -48,18 +52,27 @@ sudo nixos-rebuild switch --flake .#
 ```
 **Gotcha**: These hosts DON'T build from erebus. Clone the `dev` branch at `/Storage/Git/spectacle`.
 
-### Remote (erebus/poweredge from traversal)
+### Remote (deploy to ANOTHER host — must SSH from elsewhere)
 ```bash
 # Build AND activate on the target host. --build-host required for big closures.
 nixos-rebuild switch --target-host <user>@<host> --build-host <user>@<host> --elevate=sudo --flake .#<hostname>
 ```
 
+**Gotcha**: DO NOT use this pattern to deploy the host you're currently ON. From inside erebus running `nixos-rebuild switch --target-host likivik@erebus ...` SSHes to itself and fails (`Host key verification failed`, `--build-host likivik@erebus` triggers the same loopback). Use the **Local** pattern instead:
+
+### Self-deploy (you are already on the target host)
+```bash
+sudo nixos-rebuild switch --flake .#<hostname>
+```
+
+This builds locally, copies closure via the local Nix store, activates. No SSH involved. The hostname in `--flake .#<hostname>` tells the flake which config to use; you can switch any host's config from any other host (e.g. from serenity build serenity's config, or build poweredge's config locally on serenity if you really want to), but the activation happens on the local machine only.
+
 ### Ghostty (agent spawns terminal — local or remote)
 ```bash
-# Local
+# Local (self-deploy on current host)
 ghostty -e bash -c 'sudo nixos-rebuild switch --flake .# 2>&1 | tee /tmp/traversal-deploy.log; read -p "Press enter"'
 
-# Remote
+# Remote (deploy to a DIFFERENT host from this one)
 ghostty -e bash -c 'nixos-rebuild switch --target-host likivik@<host> --build-host likivik@<host> --elevate=sudo --flake .#<hostname> 2>&1 | tee /tmp/<host>-deploy.log; read -p "Press enter"'
 ```
 

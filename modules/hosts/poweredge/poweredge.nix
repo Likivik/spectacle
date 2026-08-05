@@ -84,6 +84,18 @@
         group = "root";
         mode = "0400";
       };
+      # OAuth2 client credentials for nc-mcp. Registered via:
+      #   occ oauth2:add-client nc-mcp <redirect_uri>
+      # nc-mcp uses client_credentials flow against Nextcloud OAuth2 endpoint
+      # (works for users with 2FA — app passwords are blocked).
+      sops.secrets."nextcloud/oauth2-client-id" = {
+        sopsFile = ../../../secrets/poweredge/secrets.yaml;
+        owner = "root"; group = "root"; mode = "0400";
+      };
+      sops.secrets."nextcloud/oauth2-client-secret" = {
+        sopsFile = ../../../secrets/poweredge/secrets.yaml;
+        owner = "root"; group = "root"; mode = "0400";
+      };
 
       services.tailscale.authKeyFile =
         config.sops.secrets."tailscale/auth-key".path;
@@ -210,14 +222,14 @@
             # --network=host: same rationale as qdrant (sidestep netavark DNAT bug)
             networks = [ "host" ];
             # Env vars per upstream docs (README + 'Required configuration' log).
-            # Host: Tailscale magic DNS — nc-mcp sees this host's tailscale IP via
-            # host netns, and trusted_domains already includes this hostname.
-            # Password: sops secret (Nextcloud app password, not user password).
+            # Auth: OAuth2 client_credentials flow. App passwords are blocked
+            # because Nextcloud enforces 2FA on user likivik. Register via:
+            #   occ oauth2:add-client nc-mcp <redirect_uri>
             # Vector sync: needs bge-m3 + reranker + qdrant (all on serenity or local).
             environments = {
               NEXTCLOUD_HOST = "https://poweredge.oryx-galaxy.ts.net";
-              NEXTCLOUD_USERNAME = "likivik";
-              NEXTCLOUD_PASSWORD = "file://${config.sops.secrets."nextcloud/mcp-app-password".path}";
+              NEXTCLOUD_OAUTH_CLIENT_ID = "file://${config.sops.secrets."nextcloud/oauth2-client-id".path}";
+              NEXTCLOUD_OAUTH_CLIENT_SECRET = "file://${config.sops.secrets."nextcloud/oauth2-client-secret".path}";
               MCP_DEPLOYMENT_MODE = "single_user_basic";
               # Semantic search — ENABLE_SEMANTIC_SEARCH enables Qdrant-backed
               # search. nc-mcp hardcodes Ollama client (POST /api/embed),

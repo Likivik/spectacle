@@ -181,10 +181,11 @@
           containerConfig = {
             # DaoCloud mirror to dodge Docker Hub unauthenticated pull rate limit.
             image = "m.daocloud.io/docker.io/qdrant/qdrant:v1.18.2";
-            publishPorts = [
-              "0.0.0.0:6333:6333"   # HTTP
-              "0.0.0.0:6334:6334"   # gRPC
-            ];
+            # --network=host: container shares host netns → qdrant listens on
+            # host's 0.0.0.0:6333 directly. Sidesteps netavark bridge + DNAT bug
+            # (FORWARD chain stays at 0 packets on poweredge NixOS 26.11).
+            # Trade-off: "insecure" per podman docs, fine for internal RAG.
+            networks = [ "host" ];
             volumes = [
               "/var/lib/qdrant/storage:/qdrant/storage"
               "/var/lib/qdrant/snapshots:/qdrant/snapshots"
@@ -200,7 +201,8 @@
           autoStart = true;
           containerConfig = {
             image = "ghcr.io/pi0n00r/nextcloud-mcp-server:v1.5.1.1";
-            publishPorts = [ "0.0.0.0:8000:8000" ];
+            # --network=host: same rationale as qdrant (sidestep netavark DNAT bug)
+            networks = [ "host" ];
             environments = {
               NEXTCLOUD_URL = "http://127.0.0.1";
               NEXTCLOUD_PASSWORD = "file://${config.sops.secrets."nextcloud/mcp-app-password".path}";

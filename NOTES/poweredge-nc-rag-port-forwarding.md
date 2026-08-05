@@ -165,3 +165,104 @@ sudo journalctl -u nextcloud-mcp --since '15:55' | grep "Qdrant collection ready
 - Ollama CVE-2026-7482 is patched + new release
 - Need reranking (would require Ollama — it bundles embeddings +
   reranker in same model API)...[truncated]
+## Pass secrets to quadlet containers — the 17-commit adventure
+
+**Session:** 2026-08-05. Goal: get nc-mcp running with the correct
+fresh app password (2FA enforced → must regenerate, old ones die).
+
+### The 5 attempted patterns (chronological)
+
+1. **`file://...` URL in env var** (`1880e9e`)
+   - Instinct: nc-mcp supports `file://`-style reads.
+   - Reality: nc-mcp uses `password = cfg("NEXTCLOUD_PASSWORD")` and
+     passes it raw to `BasicAuth`. Doesn't strip `file://`, doesn't read.
+   - **Lesson**: ALWAYS grep the upstream source for how an env var is
+     consumed before assuming pattern support.
+
+2. **`volumes = [ "/run/secrets/nextcloud:/run/secrets/nextcloud:ro" ]`**
+   - Same commit. Worked for visibility (container could read the file)
+     but didn't help because nc-mcp doesn't read from file.
+   - **Lesson**: still needed for nc-mcp to NOT see `file://` as literal
+     password... wait, it still saw the literal `file://` string as the
+     password env value. The mount was for OTHER configs that might read
+     files. **Actually didn't help here at all.** Removed in later commit.
+
+3. **OAuth2 client_credentials** (`c1f8293` → `7363181` revert)
+   - Hypothesis: 2FA blocks app passwords → switch to OAuth2.
+   - Reality: Nextcloud OAuth2 (issue #14219 closed, no plans) doesn't
+     support `client_credentials` grant. nc-mcp only has 3 auth modes:
+     `single_user_basic`, `multi_user_basic`, `login_flow` (browser).
+   - **Lesson**: confirm grant type support on the SERVER side before
+     picking auth strategy. `client_credentials` is the obvious M2M
+     choice but Nextcloud doesn't support it.
+
+4. **Login Flow v2 (OAuth2 authorization_code)** (researched, abandoned)
+   - Needs Fernet key, persistent token_storage_db, OIDC discovery URL,
+     browser once. Overkill for 1-user setup.
+   - **Lesson**: when "obvious" OAuth path doesn't fit, test the
+     UNAUTHENTICATED fallback hypothesis first. The "stale app password"
+     diagnosis was 1 curl away.
+
+5. **systemd `LoadCredentialEncrypted` + `ExecStartPre` helper** (final)
+   - systemd `LoadCredentialEncrypted=name:/path/to/blob.cred` decrypts
+     in-memory using host key, exposes at `$CREDENTIALS_DIRECTORY/name`.
+   - Podman containers can `--env-file` a systemd-written env file.
+   - Architecture: sops → tmpfs plain → systemd-creds encrypt → blob
+     → systemd decrypt → plaintext in tmpfs → ExecStartPre writes env
+     file (mode 0600) → podman `--env-file` → container env.
+   - **5 plaintext-on-tmpfs stops** in our case. Security-paranoid only.
+
+### Why final pattern works (and earlier didn't)
+
+The end-state of nc-mcp env vars is identical to env-var-from-sops:
+**secret lands in container's `NEXTCLOUD_PASSWORD` env var regardless**.
+The "secure" layers (encrypt-on-disk) just protect the at-rest blob from
+dump-the-disk attacks. They don't protect against anything inside the
+container from reading the env var, which is unavoidable given nc-mcp's
+API surface.
+
+### Three-bug Nix debugging journey (commit `d0944f8` → `7f8df28`)
+
+| Bug | Cause | Fix |
+|-----|-------|-----|
+| `systemd-creds encrypt - < ... > ...`: "Too few arguments" | `-` as stdin/stdout args requires TWO dashes (input + output), not one | Use temp files: `encrypt input.txt output.cred` |
+| `nc-mcp-encrypt-secret.service` never ran | `after = [ "sops-nix.service" ]` — that service doesn't exist in current sops-nix | `after = [ "local-fs.target" ]` (sops secrets land during activation script) |
+| ExecStartPre wrote `NEXTCLOUD_PASSWORD=/run/current-system/sw/bin/bash` | `%d` systemd specifier is only expanded by systemd in ExecStart, NOT inside `bash -c '...'` arg | Use `$CREDENTIALS_DIRECTORY` env var (systemd sets it for the unit) — and to avoid quote-escaping hell between Nix and shell layers, move the script out of inline `bash -c` into `pkgs.writeShellScript "nc-mcp-creds-to-env" ''...''` then reference `${script}` |
+
+### Final encoding contract for nc-mcp single_user_basic
+
+```nix
+# Container env vars (visible to mc processes inside)
+NEXTCLOUD_HOST = "https://poweredge.oryx-galaxy.ts.net"
+NEXTCLOUD_USERNAME = "likivik"
+NEXTCLOUD_PASSWORD = "<plaintext app password, NOT a file:// URL>"
+MCP_DEPLOYMENT_MODE = "single_user_basic"
+ENABLE_SEMANTIC_SEARCH = "true"
+SEARCH_MODE = "hybrid"
+OLLAMA_BASE_URL = "http://serenity:11434"
+OLLAMA_EMBEDDING_MODEL = "bge-m3"
+QDRANT_URL = "http://127.0.0.1:6333"
+VECTOR_SYNC_INTERVAL = "60"  # seconds; default 3600
+```
+
+### How to add a Nextcloud MCP server to Hermes
+
+`hermes mcp add` is interactive (TTY required for "select tools" prompt
+with 151 options). Skip it entirely — set URL config directly:
+
+```bash
+hermes config set mcp_servers.nextcloud.url http://poweredge.oryx-galaxy.ts.net:8000/mcp
+hermes config set mcp_servers.nextcloud.connect_timeout 30.0
+hermes config set mcp_servers.nextcloud.enabled true
+hermes mcp test nextcloud  # validates, lists all 151 tools
+```
+
+All tools enabled by default with `enabled: true`. No need to pick.
+When TTY not available (cron, agent context), this is the only path.
+
+### Obsidian MCP precedent
+
+Obsidian was added the same way — direct config edit (or `hermes config
+set`). Tool selection happened via the GUI Config tab. For self-hosted
+HTTP MCPs, `hermes config set` with `enabled: true` always wins.
+

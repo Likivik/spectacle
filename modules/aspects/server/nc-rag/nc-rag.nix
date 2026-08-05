@@ -112,11 +112,11 @@
           serviceConfig = {
             Type = "exec";
             ExecStart = ''
-              ${pythonWithProxyDeps}/bin/python ${ollamaProxy}/bin/ollama_proxy.py \
-                --host 127.0.0.1 --port 11434 \
-                --target-base-url http://127.0.0.1:8081/v1 \
-                --model bge-m3
-            '';
+                      ${pythonWithProxyDeps}/bin/python ${ollamaProxy}/bin/ollama_proxy.py \
+                        --host 0.0.0.0 --port 11434 \
+                        --target-base-url http://127.0.0.1:8081/v1 \
+                        --model bge-m3
+                    '';
             Restart = "on-failure"; RestartSec = 5;
             DynamicUser = true; StateDirectory = "llama-ollama-proxy";
           };

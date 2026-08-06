@@ -68,13 +68,12 @@
           pkgs = nixpkgs.legacyPackages.${system};
           env = envs.${system}.default;
           app = envs.${system}.all;  # incl. all optional / dev deps
-          thisProjectAsNixPkg = pythonSets.${system}.${projectName};
         in
         {
           default = self.packages.${system}.graphiti-mcp;
           graphiti-mcp = pkgs.stdenv.mkDerivation {
-            pname = "${projectName}-${thisProjectAsNixPkg.version}";
-            inherit (thisProjectAsNixPkg) version;
+            pname = "graphiti-mcp-server";
+            version = "1.0.2+526dcad";
             src = ./.;
 
             nativeBuildInputs = [ pkgs.makeWrapper ];
@@ -86,7 +85,7 @@
               chmod +x $out/bin/main
               makeWrapper ${app}/bin/python $out/bin/graphiti-mcp-server \
                 --add-flags $out/bin/main
-              ln -s $out/bin/graphiti-mcp-server $out/bin/${projectName}
+              ln -s $out/bin/graphiti-mcp-server $out/bin/mcp-server
             '';
           };
         });

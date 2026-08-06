@@ -484,20 +484,27 @@ class GraphitiMemoryProvider(MemoryProvider):
         """
         if getattr(self, "_client", None) is not None:
             return True
+        return self._late_init()
+
+    def _late_init(self) -> bool:
+        """Common bring-up path used by both `initialize()` and `_ensure_client()`.
+        Idempotent after first success. Logs late_init or late_init_failed.
+        Must NOT raise."""
         try:
-            self._agent_context = getattr(self, "_agent_context", "primary")
-            self._scope = current_scope(self._agent_context)
-            self._cache = TTLCache()
-            self._prefetch_result = {}
-            self._prefetch_lock = threading.Lock()
-            self._sync_queue = queue.Queue(maxsize=QUEUE_MAXSIZE)
-            self._sync_worker = None
-            self._client = GraphitiClient()
-            self._turn_counter = 0
-            self._turn_buffer = []
-            self._sync_batch_every = 25
-            self._last_flush_time = time.monotonic()
-            self._metrics = GraphitiMetrics()
+            if getattr(self, "_client", None) is None:
+                self._agent_context = getattr(self, "_agent_context", "primary")
+                self._scope = current_scope(self._agent_context)
+                self._cache = TTLCache()
+                self._prefetch_result = {}
+                self._prefetch_lock = threading.Lock()
+                self._sync_queue = queue.Queue(maxsize=QUEUE_MAXSIZE)
+                self._sync_worker = None
+                self._client = GraphitiClient()
+                self._turn_counter = 0
+                self._turn_buffer = []
+                self._sync_batch_every = 25
+                self._last_flush_time = time.monotonic()
+                self._metrics = GraphitiMetrics()
             self._ensure_sync_worker()
             self._ensure_metrics_server()
             log_event("late_init", ok=True)
@@ -505,6 +512,10 @@ class GraphitiMemoryProvider(MemoryProvider):
         except Exception as e:
             log_event("late_init_failed", exc=str(e))
             return False
+
+    def late_init(self) -> bool:
+        """Hermes MemoryProvider hook — called after initialize()."""
+        return self._late_init()
 
     def initialize(self, session_id: str, **kwargs) -> None:
         self._session_id = session_id

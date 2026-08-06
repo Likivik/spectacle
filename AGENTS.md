@@ -70,6 +70,22 @@ nixos-switch-cn() {
 }
 ```
 
+## Prefetching hashes
+
+```bash
+# GitHub repo (URL form, default rev = HEAD)
+nix-prefetch-url --unpack https://github.com/<owner>/<repo>/archive/<rev>.tar.gz
+
+# Better: prints SRI hash + narHash, used in flake inputs
+nix-prefetch-github <owner> <repo>        # needs nix-prefetch-github in shell
+nix prefetch --json github:<owner>/<repo>/<rev>  | jq -r '.hash'   # modern, gives SRI
+
+# pypi/gitlab/sourcehut/etc
+nix-prefetch-url --unpack <url>           # prints sha256 (base32) — convert to SRI: nix-hash --type sha256 --to-sri <hash>
+```
+
+**When to use:** adding/updating a `flake.lock` entry, or building a `fetchurl`/`fetchFromGitHub` derivation without a known hash. SRI is preferred over base32 in modern Nix.
+
 ## Conventions
 
 - Special case: modules/defaults/topAspectDefinitions.nix - don't include new sub aspects into .desktopManager.includes (they are always used only one at a time)

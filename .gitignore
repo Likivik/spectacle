@@ -19,3 +19,7 @@ modules/users/*/dotfiles/DankMaterialShell/.firstlaunch
 .opencode/agent-monitor.log*
 result-bin
 worktrees/
+
+# Python bytecode
+__pycache__/
+*.pyc

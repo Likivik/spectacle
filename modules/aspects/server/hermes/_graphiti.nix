@@ -68,6 +68,31 @@
 
     ${pkgs.gnused}/bin/sed -i 's/pythonVersion = "3.10"/pythonVersion = "3.12"/' /var/lib/hermes/graphiti/mcp_server/pyproject.toml || true
 
+    # Apply upstream-aligned edge-search perf patches (PR #1500).
+    # Patches live in the repo so they survive venv rebuilds/uv sync.
+    # graphiti-core is installed non-editable from pypi, so we apply the
+    # patch directly to the venv's site-packages. Idempotent: a sha256
+    # sentinel file records the last-applied patch state.
+    PATCH=/var/lib/hermes/spectacle/NOTES/patches/graphiti-core-edge-search.patch
+    SENTINEL=/var/lib/hermes/graphiti/mcp_server/.venv/.graphiti-core-patch.applied
+    CURRENT_SHA=$(sha256sum "$PATCH" | cut -d' ' -f1)
+    if [ -f "$SENTINEL" ] && [ "$(cat "$SENTINEL" 2>/dev/null)" = "$CURRENT_SHA" ]; then
+      echo "graphiti-core edge-search patch already at sha256=$CURRENT_SHA"
+    else
+      ${pkgs.sudo}/bin/sudo -u hermes bash -c "
+        cd /var/lib/hermes/graphiti/mcp_server/.venv/lib/python3.12/site-packages
+        if patch -p1 --dry-run < $PATCH >/dev/null 2>&1; then
+          patch -p1 < $PATCH
+          find graphiti_core -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null
+          echo '$CURRENT_SHA' > '$SENTINEL'
+          echo 'graphiti-core edge-search patch applied (PR #1500)'
+        else
+          echo '$CURRENT_SHA' > '$SENTINEL'
+          echo 'graphiti-core edge-search patch state recorded (no-op)'
+        fi
+      "
+    fi
+
     mkdir -p /var/lib/hermes/graphiti/mcp_server/config
     cat > /var/lib/hermes/graphiti/mcp_server/config/config.yaml << CONFIGEOF
 llm:

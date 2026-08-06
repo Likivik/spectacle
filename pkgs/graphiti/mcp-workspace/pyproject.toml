@@ -38,3 +38,4 @@ no-build-package = ["falkordb"]  # TODO: markupsafe needs setuptools override
 # uv2nix supplies it via this extra-build-dependencies override.
 [tool.uv.extra-build-dependencies]
 graphiti-core = ["hatchling"]
+markupsafe = ["setuptools"]

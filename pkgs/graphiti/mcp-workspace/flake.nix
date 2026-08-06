@@ -36,11 +36,14 @@
 
       # Inject PR #1500 patch into the uv-resolved graphiti-core sdist.
       # Patch lives in the repo's pkgs/graphiti/patches/ directory.
+      # -p1: strip leading `a/` from `--- a/...` paths. Default is -p0 which
+      # fails on uv-sdist unpacked dirs (graphiti_core/ subdir needs strip).
       pyprojectOverrides = final: prev: {
         graphiti-core = prev.graphiti-core.overrideAttrs (old: {
           patches = (old.patches or [ ]) ++ [
             ../patches/edge-search.patch
           ];
+          patchFlags = (old.patchFlags or [ ]) ++ [ "-p1" ];
         });
       };
 

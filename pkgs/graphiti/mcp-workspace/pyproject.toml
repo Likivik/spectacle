@@ -27,3 +27,9 @@ package = false
 # graphiti-core: PR #1500 patch only applies against the source tree
 # (wheel .whl archives aren't extracted by Nix's unpackPhase).
 no-binary-package = ["graphiti-core"]
+
+# graphiti-core's sdist uses hatchling but doesn't declare it in
+# pyproject.toml's [build-system].requires (upstream oversight).
+# uv2nix supplies it via this extra-build-dependencies override.
+[tool.uv.extra-build-dependencies]
+graphiti-core = ["hatchling"]

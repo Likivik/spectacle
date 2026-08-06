@@ -2,9 +2,7 @@
   description = "graphiti-mcp-server (uv2nix workspace, pinned to commit 526dcad7)";
 
   inputs = {
-    nixpkgs = {
-      url = "github:nixos/nixpkgs/nixos-unstable";
-    };
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     pyproject-nix = {
       url = "github:pyproject-nix/pyproject.nix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -35,10 +33,9 @@
       forAllSystems = lib.genAttrs lib.systems.flakeExposed;
 
       workspace = uv2nix.lib.workspace.loadWorkspace { workspaceRoot = ./.; };
+      uvLockedOverlay = workspace.mkPyprojectOverlay { sourcePreference = "wheel"; };
 
-      overlay = workspace.mkPyprojectOverlay {
-        sourcePreference = "wheel";
-      };
+      projectName = "mcp-server";  # matches [project.name] in pyproject.toml
 
       pythonSets = forAllSystems (
         system:
@@ -48,11 +45,10 @@
         in
         (pkgs.callPackage pyproject-nix.build.packages { inherit python; })
           .overrideScope (lib.composeManyExtensions [
-            pyproject-build-systems.overlays.wheel
-            overlay
+            pyproject-build-systems.overlays.default
+            uvLockedOverlay
             (final: prev: {
-              # Force mcp_server's `graphiti-core[falkordb]>=0.29.2`
-              # and core.nix's `falkordb-py` arg to our Nix-built derivations.
+              # Replace graphiti-core + falkordb-py with our vendored Nix builds.
               graphiti-core = pkgs.python3Packages.callPackage ../core.nix {
                 falkordb-py = pkgs.python3Packages.callPackage ../falkordb-py.nix { };
               };
@@ -60,22 +56,39 @@
             })
           ])
       );
+
+      envs = forAllSystems (system: {
+        default = pythonSets.${system}.mkVirtualEnv "${projectName}-env" workspace.deps.default;
+        all = pythonSets.${system}.mkVirtualEnv "${projectName}-env-all" workspace.deps.all;
+      });
     in
     {
-      packages = forAllSystems (system: {
-        default = self.packages.${system}.graphiti-mcp;
-        graphiti-mcp =
-          let
-            pkgs = nixpkgs.legacyPackages.${system};
-            pythonSet = pythonSets.${system};
-            virtualenv = pythonSet.mkVirtualEnv "graphiti-mcp-server-env" workspace.deps.all;
-          in
-          pkgs.runCommand "graphiti-mcp-server-${system}" { } ''
-            mkdir -p $out/bin
-            ln -s ${virtualenv}/bin/main $out/bin/graphiti-mcp-server 2>/dev/null || true
-            ln -s ${virtualenv} $out/lib
-            cp -r ${./.}/* $out/lib/ 2>/dev/null || true
-          '';
-      });
+      packages = forAllSystems (system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+          env = envs.${system}.default;
+          app = envs.${system}.all;  # incl. all optional / dev deps
+          thisProjectAsNixPkg = pythonSets.${system}.${projectName};
+        in
+        {
+          default = self.packages.${system}.graphiti-mcp;
+          graphiti-mcp = pkgs.stdenv.mkDerivation {
+            pname = "${projectName}-${thisProjectAsNixPkg.version}";
+            inherit (thisProjectAsNixPkg) version;
+            src = ./.;
+
+            nativeBuildInputs = [ pkgs.makeWrapper ];
+            buildInputs = [ app ];
+
+            installPhase = ''
+              mkdir -p $out/bin
+              cp ${./main.py} $out/bin/main
+              chmod +x $out/bin/main
+              makeWrapper ${app}/bin/python $out/bin/graphiti-mcp-server \
+                --add-flags $out/bin/main
+              ln -s $out/bin/graphiti-mcp-server $out/bin/${projectName}
+            '';
+          };
+        });
     };
 }

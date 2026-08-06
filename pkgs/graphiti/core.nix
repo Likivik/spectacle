@@ -17,8 +17,8 @@ buildPythonPackage rec {
   version = "0.29.3";
 
   src = fetchPypi {
-    inherit pname version;
-    format = "sdist";
+    pname = "graphiti_core";
+    version = "0.29.3";
     sha256 = "sha256-w2UGJsDrYcG6J2XObwiQCr5o7H+YTy4Ji0ki6/XoEpg=";
   };
 

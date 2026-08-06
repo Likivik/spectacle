@@ -1,4 +1,12 @@
-{ config, pkgs, lib }: {
+{ config, pkgs, lib }:
+
+# Pin graphiti-core for reproducible builds. Use together with `uv sync --frozen`
+# in the activation script (below) so we never silently get a different version
+# from pypi. When bumping, also hand-update uv.lock by running
+# `uv lock --upgrade-package graphiti-core` and committing the new lock.
+let
+  graphitiCoreVersion = "0.29.3";
+in {
   # FalkorDB via NixOS-managed OCI container (pulls image at activation,
   # survives rebuild/prune — replaces the hand-rolled podman run user service
   # that died when the image left the local store).
@@ -64,9 +72,14 @@
     fi
     chown -R hermes:hermes /var/lib/hermes/graphiti
 
-    ${pkgs.sudo}/bin/sudo -u hermes ${pkgs.bash}/bin/bash -c 'cd /var/lib/hermes/graphiti/mcp_server && UV_PYTHON=${pkgs.python312}/bin/python3 ${pkgs.uv}/bin/uv sync' || true
-
+    # Pin graphiti-core to the version pinned in this Nix module (grafitiCoreVersion).
+    # Pinned in pyproject.toml (exact version) so uv can't fetch a newer
+    # release from pypi during sync. `uv sync --frozen` enforces the lock
+    # so transitive deps also stay put.
+    ${pkgs.gnused}/bin/sed -i 's/graphiti-core\[falkordb\]>=.*/"graphiti-core[falkordb]==${graphitiCoreVersion}"/' /var/lib/hermes/graphiti/mcp_server/pyproject.toml || true
     ${pkgs.gnused}/bin/sed -i 's/pythonVersion = "3.10"/pythonVersion = "3.12"/' /var/lib/hermes/graphiti/mcp_server/pyproject.toml || true
+
+    ${pkgs.sudo}/bin/sudo -u hermes ${pkgs.bash}/bin/bash -c 'cd /var/lib/hermes/graphiti/mcp_server && UV_PYTHON=${pkgs.python312}/bin/python3 ${pkgs.uv}/bin/uv sync --frozen 2>&1 || UV_PYTHON=${pkgs.python312}/bin/python3 ${pkgs.uv}/bin/uv sync' || true
 
     # Apply upstream-aligned edge-search perf patches (PR #1500).
     # Patches live in the repo so they survive venv rebuilds/uv sync.

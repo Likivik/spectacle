@@ -48,26 +48,12 @@
         inherit (final) resolveBuildSystem;
         inherit (builtins) mapAttrs;
         # Per-package spec: { <build-backend> = [optional-extras] }
-        # Examples below cover common build backends seen in mcp_server's
-        # transitive deps; extend as uv.lock grows.
+        # Required only for sdist-built packages: graphiti-core (we patch it),
+        # numpy (no cp314 wheel in uv.lock — but pinned to 3.13 now so usually
+        # a wheel exists), markupsafe (no `[build-system]` in its sdist).
         specs = {
-          attrs = { hatchling = [ ]; };
-          falkordb = { hatchling = [ ]; hatch-vcs = [ ]; };
           graphiti-core = { hatchling = [ ]; hatch-fancy-pypi-readme = [ ]; };
           markupsafe = { setuptools = [ ]; };
-          numpy = { meson-python = [ ]; ninja = [ ]; };
-          jinja2 = { setuptools = [ ]; };
-          pyyaml = { setuptools = [ ]; cython = [ ]; };
-          cffi = { setuptools = [ ]; };
-          cryptography = { setuptools = [ ]; };
-          brotli = { setuptools = [ ]; };
-          pyasn1 = { setuptools = [ ]; };
-          rust-python = { setuptools = [ ]; };
-          certifi = { setuptools = [ ]; };
-          pydantic = { hatchling = [ ]; };
-          packaging = { flit-core = [ ]; };
-          python-dotenv = { hatchling = [ ]; };
-          charset-normalizer = { hatchling = [ ]; };
         };
       in mapAttrs (name: spec:
         prev.${name}.overrideAttrs (old: {
@@ -108,7 +94,10 @@
       );
 
       envs = forAllSystems (system: {
-        default = pythonSets.${system}.mkVirtualEnv "${projectName}-env" workspace.deps.default;
+        # Runtime deps only — no providers/azure/dev extras. Drops torch,
+        # transformers, sentence-transformers and their nvidia CUDA libraries
+        # which fail to build without GPU libs (libmlx5, librdmacm, etc).
+        runtime = pythonSets.${system}.mkVirtualEnv "${projectName}-env" workspace.deps.default;
         all = pythonSets.${system}.mkVirtualEnv "${projectName}-env-all" workspace.deps.all;
       });
     in
@@ -126,7 +115,7 @@
             src = ./.;
 
             nativeBuildInputs = [ pkgs.makeWrapper ];
-            buildInputs = [ app ];
+            buildInputs = [ envs.${system}.runtime ];
 
             installPhase = ''
               mkdir -p $out/bin

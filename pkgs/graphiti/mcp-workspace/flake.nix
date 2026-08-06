@@ -20,13 +20,6 @@
       inputs.uv2nix.follows = "uv2nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-
-    # Our pre-built Nix-native graphiti-core (PR #1500 patch baked in,
-    # exact 0.29.3). mcp_server's pyproject requires >=0.29.2 so 0.29.3 fits.
-    graphiti-core = {
-      url = "path:../core-flake";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
   };
 
   outputs =
@@ -35,7 +28,6 @@
     , pyproject-nix
     , uv2nix
     , pyproject-build-systems
-    , graphiti-core
     , ...
     }:
     let
@@ -53,6 +45,8 @@
         let
           pkgs = nixpkgs.legacyPackages.${system};
           python = pkgs.python3;
+          # Local callPackage our Nix-built graphiti-core (no separate sub-flake).
+          graphiti-core = pkgs.python3Packages.callPackage ../core.nix { };
         in
         (pkgs.callPackage pyproject-nix.build.packages { inherit python; })
           .overrideScope (lib.composeManyExtensions [
@@ -61,7 +55,7 @@
             (final: prev: {
               # Force mcp_server's `graphiti-core[falkordb]>=0.29.2`
               # to resolve to our Nix-built graphiti-core derivation.
-              graphiti-core = final.pythonSet.callPackage graphiti-core.packages.${system}.graphiti-core { };
+              graphiti-core = graphiti-core;
             })
           ])
       );
@@ -75,12 +69,10 @@
             pythonSet = pythonSets.${system};
             virtualenv = pythonSet.mkVirtualEnv "graphiti-mcp-server-env" workspace.deps.all;
           in
-          # Wrap the venv's main.py so it works as an executable.
           pkgs.runCommand "graphiti-mcp-server-${system}" { } ''
             mkdir -p $out/bin
             ln -s ${virtualenv}/bin/main $out/bin/graphiti-mcp-server 2>/dev/null || true
             ln -s ${virtualenv} $out/lib
-            ln -s ${virtualenv}/bin $out/bin/.venv
             cp -r ${./.}/* $out/lib/ 2>/dev/null || true
           '';
       });

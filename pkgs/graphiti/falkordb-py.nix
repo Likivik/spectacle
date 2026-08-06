@@ -8,12 +8,18 @@ buildPythonPackage rec {
   pname = "falkordb";
   version = "1.6.2";
 
-  format = "setuptools";
+  pyproject = true;
 
   src = fetchPypi {
     inherit pname version;
     sha256 = "sha256-c9u9nfYcVvRc8v6LkCiIitSJJxJ5DOTkDXzqvhGGCa4=";
   };
+
+  hatchling, python-dateutil, redis;
+
+  build-system = [ hatchling ];
+
+  propagatedBuildInputs = [ python-dateutil redis ];
 
   doCheck = false;
 

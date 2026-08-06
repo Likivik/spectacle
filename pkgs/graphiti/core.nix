@@ -9,7 +9,7 @@
 , numpy
 , python-dotenv
 , posthog
-, falkordb
+, falkordb-py
 }:
 
 buildPythonPackage rec {

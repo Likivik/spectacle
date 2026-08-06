@@ -26,8 +26,6 @@ nix flake check --no-build --keep-going
 
 ## Deployment — `nixos-rebuild switch`
 
-The fleet uses **remote builds + remote activation** from erebus (the orchestrator).
-
 **Step 1 — check what host you are on:**
 ```bash
 hostname -s
@@ -35,16 +33,19 @@ hostname -s
 
 **Step 2 — does the host have a local clone of `spectacle`?**
 
-Check `ls /Storage/Git/spectacle` (or wherever the repo lives on the host).
-- **No** → stop. Ask the user. Don't improvise: cloning + branch choice + auth setup is a multi-decision setup, not a deploy step.
-- **Yes** → make sure the repo is synced with the remote and on the correct branch.
-  ```bash
-  cd /Storage/Git/spectacle
-  git fetch
-  git status -sb        # check: clean? ahead/behind? on the right branch?
-  git pull --rebase     # if behind
-  ```
-  Branch is `dev` unless told otherwise. **Gotcha**: never `git push` without explicit user approval.
+Expected location per host:
+- `erebus` → `/var/lib/hermes/spectacle`
+- `serenity`, `traversal` → `/Storage/Git/spectacle`
+- anything else → repo doesn't exist yet; stop and ask the user.
+
+If the repo exists, sync with the remote and confirm branch:
+```bash
+cd <repo-path>
+git fetch
+git status -sb
+git pull --rebase   # if behind
+```
+Branch is `dev` unless told otherwise.
 
 **Step 3 — local or remote deploy?**
 
@@ -57,8 +58,6 @@ Check `ls /Storage/Git/spectacle` (or wherever the repo lives on the host).
 - `--target-host` and `--build-host` must match — the target's `/nix/store` already holds most of the closure, so building remotely avoids re-deriving it from scratch. **Future note**: a dedicated build host may become a separate 3rd box.
 - `--elevate=sudo` required for remote deploys when the remote `likivik` has NOPASSWD sudo — without it `nix-env --set` runs as the SSH user → `Permission denied` on the profile symlink.
 - `--flake .#<target-hostname>` selects which config to build; **activation always happens on the local machine**. Match `.#<target-hostname>` to the target, never the calling host.
-
-**First-deploy setup** (new host, no key wired yet): see `NOTES/first-deploy.md`.
 
 ### Verification (no deployment — agent can run)
 ```bash

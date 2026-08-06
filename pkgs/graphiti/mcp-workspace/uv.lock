@@ -318,9 +318,9 @@ dependencies = [
     { name = "python-dateutil" },
     { name = "redis" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/00/31/53c339695148ac01c7c2032f1dc06e69a6ddc8a276bd85d2eddacc2e38e8/falkordb-1.6.2.tar.gz", hash = "sha256:73dbbd9df61c56f45cf2fe8b9028888ad4892712790ce4e40d7ceabe118609ae", size = 107376 }
+sdist = { url = "https://files.pythonhosted.org/packages/00/31/53c339695148ac01c7c2032f1dc06e69a6ddc8a276bd85d2eddacc2e38e8/falkordb-1.6.2.tar.gz", hash = "sha256:73dbbd9df61c56f45cf2fe8b9028888ad4892712790ce4e40d7ceabe118609ae", size = 107376, upload-time = "2026-07-19T12:22:30.476Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ff/05/6b6f02a0d16547b492a925d8165091b90723729f2a15b877c1f4fb237128/falkordb-1.6.2-py3-none-any.whl", hash = "sha256:b17571ebf4d65dbd3588e8c470b16f0ddfea820e0a15ed73af0dd1a4728b480d", size = 37964 },
+    { url = "https://files.pythonhosted.org/packages/ff/05/6b6f02a0d16547b492a925d8165091b90723729f2a15b877c1f4fb237128/falkordb-1.6.2-py3-none-any.whl", hash = "sha256:b17571ebf4d65dbd3588e8c470b16f0ddfea820e0a15ed73af0dd1a4728b480d", size = 37964, upload-time = "2026-07-19T12:22:29.225Z" },
 ]
 
 [[package]]
@@ -546,7 +546,7 @@ requires-dist = [
     { name = "openai", specifier = ">=2.41.0" },
     { name = "pydantic-settings", specifier = ">=2.0.0" },
     { name = "pyyaml", specifier = ">=6.0.3" },
-    { name = "redis", specifier = ">=5.0,<6" },
+    { name = "redis", specifier = ">=7.0,<8" },
     { name = "typing-extensions", specifier = ">=4.0.0" },
 ]
 
@@ -929,15 +929,14 @@ wheels = [
 
 [[package]]
 name = "redis"
-version = "5.3.1"
+version = "7.4.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "async-timeout", marker = "python_full_version < '3.11.3'" },
-    { name = "pyjwt" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/6a/cf/128b1b6d7086200c9f387bd4be9b2572a30b90745ef078bd8b235042dc9f/redis-5.3.1.tar.gz", hash = "sha256:ca49577a531ea64039b5a36db3d6cd1a0c7a60c34124d46924a45b956e8cf14c", size = 4626200, upload-time = "2025-07-25T08:06:27.778Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/51/93/05e7d4a65285066a74f48697f9b9cde5cfce71398033d69ed83c3d98f5c9/redis-7.4.1.tar.gz", hash = "sha256:1a1df5067062cf7cbe677994e391f8ee0840f499d370f1a71266e0dd3aa9308e", size = 4945742, upload-time = "2026-06-05T09:10:06.703Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7f/26/5c5fa0e83c3621db835cfc1f1d789b37e7fa99ed54423b5f519beb931aa7/redis-5.3.1-py3-none-any.whl", hash = "sha256:dc1909bd24669cc31b5f67a039700b16ec30571096c5f1f0d9d2324bff31af97", size = 272833, upload-time = "2025-07-25T08:06:26.317Z" },
+    { url = "https://files.pythonhosted.org/packages/4a/2e/2677f3f93dae0497e7e33b6637302e7f3744efc553f34231183e32584885/redis-7.4.1-py3-none-any.whl", hash = "sha256:1fa4647af1c5e93a2c685aa248ee44cce092691146d41390518dabe9a99839b0", size = 410171, upload-time = "2026-06-05T09:10:05.128Z" },
 ]
 
 [[package]]

@@ -33,30 +33,34 @@
       forAllSystems = lib.genAttrs lib.systems.flakeExposed;
 
       workspace = uv2nix.lib.workspace.loadWorkspace { workspaceRoot = ./.; };
-      uvLockedOverlay = workspace.mkPyprojectOverlay { sourcePreference = "wheel"; };
 
-      projectName = "mcp-server";  # matches [project.name] in pyproject.toml
+      # Inject PR #1500 patch into the uv-resolved graphiti-core sdist.
+      # Patch lives in the repo's pkgs/graphiti/patches/ directory.
+      pyprojectOverrides = final: prev: {
+        graphiti-core = prev.graphiti-core.overrideAttrs (old: {
+          patches = (old.patches or [ ]) ++ [
+            ../../patches/edge-search.patch
+          ];
+        });
+      };
+
+      uvLockedOverlay = workspace.mkPyprojectOverlay {
+        sourcePreference = "wheel";
+      };
+
+      projectName = "mcp-server";
 
       pythonSets = forAllSystems (
         system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
           python = pkgs.python3;
-          # Build our vendored derivations at evaluation time so
-          # callPackage gets concrete store paths, not relative paths.
-          falkordb-py = pkgs.python3Packages.callPackage ../falkordb-py.nix { };
-          graphiti-core = pkgs.python3Packages.callPackage ../core.nix {
-            inherit falkordb-py;
-          };
         in
         (pkgs.callPackage pyproject-nix.build.packages { inherit python; })
           .overrideScope (lib.composeManyExtensions [
             pyproject-build-systems.overlays.default
             uvLockedOverlay
-            (final: prev: {
-              # Replace graphiti-core + falkordb-py with our vendored Nix builds.
-              inherit graphiti-core falkordb-py;
-            })
+            pyprojectOverrides
           ])
       );
 
@@ -69,8 +73,7 @@
       packages = forAllSystems (system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
-          env = envs.${system}.default;
-          app = envs.${system}.all;  # incl. all optional / dev deps
+          app = envs.${system}.all;
         in
         {
           default = self.packages.${system}.graphiti-mcp;

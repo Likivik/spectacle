@@ -35,6 +35,46 @@ PRIORITY_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# ── Salience filter (drop trivial turns before they hit the graph) ────
+# Skipping low-signal turns keeps the graph lean so retrieval stays precise.
+# Anything matching is dropped entirely (no episode written). Conservative.
+# Pattern: anchored `^...$` (whole string must match) for greeting-only
+# strings; falling out of `match()` means the turn is salient.
+SALIENCE_PATTERNS = re.compile(
+    r"^(\s*)$"                              # whitespace only
+    r"|^(hi|hello|hey|yo|sup|hola|привет|здравствуйте)\s*[!,.?]*$"
+    r"|^(thanks|thx|ty|спасибо|благодарю)\s*[!,.?]*$"
+    r"|^(ok|okay|короче|ладно|да|yes|no|нет|ага|угу)\s*[!,.?]*$"
+    r"|^(bye|goodbye|cya|пока|до встречи)\s*[!,.?]*$"
+    r"|^[\U0001F300-\U0001FAFF\U0001F000-\U0001F9FF\u2600-\u27BF]+$"
+    r"|^[\.\?\,\!]{1,5}$",
+    re.IGNORECASE,
+)
+
+SALIENCE_MIN_WORDS = 3
+
+# ── Episode naming convention ─────────────────────────────────────────
+# First line of the turn body is matched against these patterns to pick a
+# Category prefix for the graphiti episode name. Episodes get organized
+# under "Category:Topic - Aspect" headers so search_nodes groups them nicely.
+# Order matters: more-specific patterns (Tool Usage, Anti-Pattern) come before
+# broader ones (Procedure, Lesson) so a turn that says "Run uv sync" lands
+# under Tool Usage:, not Procedure:.
+EPISODE_CATEGORIES = [
+    ("Question:",     re.compile(r"^(what|why|when|where|как|что|почему|где|кто)\b", re.IGNORECASE)),
+    ("Anti-Pattern:", re.compile(r"\b(don'?t|avoid|never|wrong|bad|bug|mistake|broken|fail)\b", re.IGNORECASE)),
+    ("Preference:",   re.compile(r"\b(prefer|like|want|love|hate|always|never use|use x over y)\b", re.IGNORECASE)),
+    ("Decision:",     re.compile(r"\b(decided|agreed|chose|going to|will use|switching to|plan)\b", re.IGNORECASE)),
+    ("Lesson:",       re.compile(r"\b(learned|lesson|realized|insight|found out|figured out|now i know|takeaway)\b", re.IGNORECASE)),
+    ("Procedure:",    re.compile(r"\b(how to|step[- ]by[- ]step|setup|install|configure|workflow)\b", re.IGNORECASE)),
+    ("Tool Usage:",   re.compile(r"\b(uv sync|git apply|nixos-rebuild|uvicorn|pytest|deploy|restart|docker|podman|graphiti|mcp|falkordb|commit|push|pull|chmod|chown|patch|run\s+\w+)\b", re.IGNORECASE)),
+]
+
+# Max chars per chunk when sub-chunking. Graphiti chokes on episodes >~5kB
+# (issue #1516) so we cap at SAFE_CHUNK_CHARS and split long bodies on
+# paragraph boundaries.
+SAFE_CHUNK_CHARS = 2500
+
 # ── Smart gate ─────────────────────────────────────────────────────────
 
 SYNTHETIC_PATTERNS = re.compile(
@@ -54,6 +94,64 @@ ENVELOPE_PATTERNS_SENDER = re.compile(
 
 def is_synthetic(user: str) -> bool:
     return bool(SYNTHETIC_PATTERNS.search(user.strip()))
+
+
+def is_salient(text: str) -> bool:
+    """Return True if a turn is worth storing in the graph.
+
+    Filters out trivial turns (greetings, thanks, pure filler, emoji-only,
+    <5 words). Conservative by design — only drops obvious noise.
+    """
+    stripped = text.strip()
+    if not stripped:
+        return False
+    if len(stripped.split()) < SALIENCE_MIN_WORDS:
+        return False
+    if SALIENCE_PATTERNS.match(stripped):
+        return False
+    return True
+
+
+def category_for_turn(body: str) -> str:
+    """Pick a Category prefix for an episode name based on content.
+
+    Returns "" when no category matches. Synced to EPISODE_CATEGORIES.
+    """
+    first_line = body.split("\n", 1)[0]
+    for prefix, pattern in EPISODE_CATEGORIES:
+        if pattern.search(first_line):
+            return prefix
+    return ""
+
+
+def chunk_episode(body: str, max_chars: int = SAFE_CHUNK_CHARS) -> list[str]:
+    """Split a long episode body into sub-chunks at paragraph boundaries.
+
+    Graphiti's add_episode is impractically slow for >5kB bodies (issue #1516).
+    Keeps the chunk count small — appends `:p0`, `:p1` suffixes for provenance.
+    Returns a single-element list when the body fits. Lossless: the joined
+    chunks reproduce the original body (including blank-line separators).
+    """
+    if len(body) <= max_chars:
+        return [body]
+    chunks: list[str] = []
+    paragraphs = body.split("\n\n")
+    current: list[str] = []
+    current_len = 0
+    for para in paragraphs:
+        # Add 2 for the `\n\n` separator we will re-insert on join, but only
+        # if this is not the first paragraph in the chunk.
+        sep_len = 2 if current else 0
+        para_len = len(para) + sep_len
+        if current_len + para_len > max_chars and current:
+            chunks.append("\n\n".join(current))
+            current = []
+            current_len = 0
+        current.append(para)
+        current_len += len(para) + (2 if len(current) > 1 else 0)
+    if current:
+        chunks.append("\n\n".join(current))
+    return chunks
 
 
 def strip_envelopes(content: str) -> str:
@@ -789,6 +887,11 @@ class GraphitiMemoryProvider(MemoryProvider):
         user = strip_envelopes(user_content)
         if is_synthetic(user):
             return
+        # Salience filter: skip trivial turns so the graph stays focused
+        # on decisions, lessons, and procedures rather than greetings/filler.
+        if not is_salient(user):
+            log_event("sync_salience_filtered", reason="low_signal", chars=len(user))
+            return
         body = f"User: {user}\nAssistant: {assistant_content}"
         if len(body) > MAX_EPISODE_CHARS:
             body = body[:MAX_EPISODE_CHARS]
@@ -810,15 +913,28 @@ class GraphitiMemoryProvider(MemoryProvider):
     def _flush_buffer(self, session_id: str) -> None:
         if not self._turn_buffer:
             return
-        name = f"turn-{(session_id or 'noctx')[-8:]}-{int(time.time() * 1000)}"
         combined = "\n---\n".join(self._turn_buffer)
-        if len(combined) > MAX_EPISODE_CHARS:
-            combined = combined[:MAX_EPISODE_CHARS]
         self._turn_buffer.clear()
         self._turn_counter = 0
         self._last_flush_time = time.monotonic()
         self._metrics.flushes += 1
-        self._enqueue_sync(name, combined)
+
+        # Sub-chunk: split long combined bodies on paragraph boundaries so
+        # each graphiti add_memory call is small. Issue #1516.
+        chunks = chunk_episode(combined)
+        if len(chunks) > 1:
+            log_event("sync_subchunked", chunks=len(chunks), chars=len(combined))
+
+        # Naming: pick a Category prefix from the combined first line, then
+        # suffix :p0, :p1 when sub-chunked. Falls back to timestamp.
+        category = category_for_turn(combined)
+        base_ts = int(time.time() * 1000)
+        for i, chunk_body in enumerate(chunks):
+            if len(chunks) > 1:
+                name = f"{category}turn-{base_ts}:p{i}" if category else f"turn-{base_ts}:p{i}"
+            else:
+                name = f"{category}turn-{base_ts}" if category else f"turn-{base_ts}"
+            self._enqueue_sync(name, chunk_body)
 
     def get_tool_schemas(self):
         return [

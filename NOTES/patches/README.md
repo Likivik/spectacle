@@ -8,14 +8,17 @@ with ~900+ `RELATES_TO` edges.
 
 ## Files
 
-- `graphiti-core-edge-search.patch` — falkordb driver (2 hunks: `edge_fulltext_search` + `edge_bfs_search`)
-- bundled in `_graphiti.nix` `hermes-graphiti-seed` activation script via `git apply`
+- `graphiti-core-edge-search.patch` — fix in 3 places:
+  - `graphiti_core/driver/falkordb/operations/search_ops.py` (`edge_fulltext_search`)
+  - `graphiti_core/driver/falkordb/operations/search_ops.py` (`edge_bfs_search`)
+  - `graphiti_core/search/search_utils.py` (the live path used by `Graphiti.search()`)
+- applied in `_graphiti.nix` `hermes-graphiti-seed` activation script via `patch -p1`
 
 ## Status
 
-- Tested on `graphiti-core 0.29.2` + FalkorDB `edge-alpine`
-- 9 facts retrieved in 1.7s (was 0 — `Query timed out`)
-- Plugin prefetch logs `facts: 10` post-patch
+- Tested on `graphiti-core 0.29.2` + FalkorDB
+- Both `search_nodes` and `search_memory_facts` succeed with patched source
+- Plugin prefetch logged `facts: 10` post-patch
 
 ## Upstream merge
 
@@ -26,8 +29,7 @@ Remove this patch and the activation hook once `graphiti-core >= 0.29.4` lands
 ## Apply manually
 
 ```bash
-cd /var/lib/hermes/graphiti
-git apply /var/lib/hermes/spectacle/NOTES/patches/graphiti-core-edge-search.patch
-sudo -u hermes bash -c 'cd /var/lib/hermes/graphiti/mcp_server && uv sync --reinstall-package graphiti-core'
+cd /var/lib/hermes/graphiti/mcp_server/.venv/lib/python3.12/site-packages
+patch -p1 < /var/lib/hermes/spectacle/NOTES/patches/graphiti-core-edge-search.patch
 sudo -u hermes XDG_RUNTIME_DIR=/run/user/$(id -u hermes) systemctl --user restart graphiti-mcp
 ```

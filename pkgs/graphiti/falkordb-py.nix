@@ -2,6 +2,9 @@
   buildPythonPackage,
   fetchPypi,
   lib,
+  hatchling,
+  python-dateutil,
+  redis,
 }:
 
 buildPythonPackage rec {
@@ -14,8 +17,6 @@ buildPythonPackage rec {
     inherit pname version;
     sha256 = "sha256-c9u9nfYcVvRc8v6LkCiIitSJJxJ5DOTkDXzqvhGGCa4=";
   };
-
-  hatchling, python-dateutil, redis;
 
   build-system = [ hatchling ];
 

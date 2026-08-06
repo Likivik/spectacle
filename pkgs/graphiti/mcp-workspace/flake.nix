@@ -45,10 +45,6 @@
         let
           pkgs = nixpkgs.legacyPackages.${system};
           python = pkgs.python3;
-          # Inject our vendored falkordb-py + graphiti-core into the
-          # uv2nix pythonSet so core.nix's callPackage resolves correctly.
-          graphiti-core = pkgs.python3Packages.callPackage ../core.nix { };
-          falkordb-py = pkgs.python3Packages.callPackage ../falkordb-py.nix { };
         in
         (pkgs.callPackage pyproject-nix.build.packages { inherit python; })
           .overrideScope (lib.composeManyExtensions [
@@ -57,8 +53,10 @@
             (final: prev: {
               # Force mcp_server's `graphiti-core[falkordb]>=0.29.2`
               # and core.nix's `falkordb-py` arg to our Nix-built derivations.
-              graphiti-core = graphiti-core;
-              falkordb-py = falkordb-py;
+              graphiti-core = pkgs.python3Packages.callPackage ../core.nix {
+                falkordb-py = pkgs.python3Packages.callPackage ../falkordb-py.nix { };
+              };
+              falkordb-py = pkgs.python3Packages.callPackage ../falkordb-py.nix { };
             })
           ])
       );

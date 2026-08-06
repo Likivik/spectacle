@@ -16,8 +16,14 @@
       ...
     }:
     let
-      graphiti-core = pkgs.callPackage ../../pkgs/graphiti/core.nix { };
-      graphiti-mcp = pkgs.callPackage ../../pkgs/graphiti/mcp.nix {
+      inherit (pkgs) python3Packages;
+      python = python3Packages.python;
+      graphiti-core = python3Packages.callPackage ../../pkgs/graphiti/core.nix {
+        # python3Packages attrs visible to callPackage automatically:
+        # buildPythonPackage, fetchPypi, hatchling, pydantic, neo4j, openai,
+        # tenacity, numpy, python-dotenv, posthog, falkordb, lib
+      };
+      graphiti-mcp = python3Packages.callPackage ../../pkgs/graphiti/mcp.nix {
         inherit graphiti-core;
       };
     in

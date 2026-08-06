@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import http.server
@@ -10,8 +11,6 @@ import queue
 import re
 import threading
 import time
-import urllib.error
-import urllib.request
 from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -200,79 +199,91 @@ class TTLCache:
         self.put(key, value)
 
 
-# ── Graphiti MCP Client (stdlib only) ──────────────────────────────────
+# ── Graphiti MCP Client (mcp library) ────────────────────────────────
 
 class GraphitiClient:
-    """Sync MCP client for graphiti-mcp via HTTP streamable transport."""
+    """Async-backed MCP client for graphiti-mcp via HTTP streamable transport.
+
+    Uses the official `mcp` Python library for protocol parsing, SSE framing,
+    session lifecycle, and error recovery. Each sync method runs its async
+    work via `asyncio.run` (the prefetch thread already provides isolation).
+    """
 
     BASE_URL = "http://127.0.0.1:8000/mcp"
-    TIMEOUT = 30.0
+    TIMEOUT_S = 30.0
 
     def __init__(self) -> None:
         self._session_id: str | None = None
-        self._initialize()
 
-    def _post(self, body: dict, *, session: bool = False) -> str:
-        data = json.dumps(body).encode()
-        headers = {
-            "Content-Type": "application/json",
-            "Accept": "application/json, text/event-stream",
-        }
-        if session and self._session_id:
-            headers["mcp-session-id"] = self._session_id
-        req = urllib.request.Request(self.BASE_URL, data=data, headers=headers, method="POST")
-        try:
-            with urllib.request.urlopen(req, timeout=self.TIMEOUT) as resp:
-                sid = resp.headers.get("mcp-session-id")
-                if sid:
-                    self._session_id = sid
-                return resp.read().decode()
-        except urllib.error.HTTPError as e:
-            body_text = e.read().decode()[:200]
-            raise RuntimeError(f"graphiti-mcp HTTP {e.code}: {body_text}")
+    async def _connect(self):
+        from mcp.client.session import ClientSession
+        from mcp.client.streamable_http import streamablehttp_client
+        # NOTE: we deliberately use streamablehttp_client as a real async context
+        # manager and NEST ClientSession inside it — this keeps all anyio task
+        # groups and cancel scopes in the SAME task, which is required by anyio.
+        # Calling `.__aenter__()` directly on the outer CM then `await
+        # session.__aexit__()` in a finally works too, but only when both halves
+        # happen in the same coroutine (which they do here since _connect/_call_tool
+        # are awaited together).
+        cm = streamablehttp_client(self.BASE_URL, timeout=self.TIMEOUT_S)
+        read, write, get_session = await cm.__aenter__()
+        self._transport_cm = cm
+        session = ClientSession(read, write)
+        await session.__aenter__()
+        self._mcp_session = session
+        await session.initialize()
+        sid = get_session()
+        if sid:
+            self._session_id = sid
+        return session
 
-    def _call(self, method: str, params: dict) -> dict:
-        body = {
-            "jsonrpc": "2.0",
-            "id": uuid4().int % 100000,
-            "method": method,
-            "params": params,
-        }
+    async def _call_tool(self, name: str, arguments: dict) -> "CallToolResult":
+        """Connect → initialize → call tool → disconnect. Each call is a fresh
+        session. Cheap (HTTP), eliminates stale-session error handling."""
         try:
-            text = self._post(body, session=(method != "initialize"))
+            session = await self._connect()
+            try:
+                result = await session.call_tool(name, arguments)
+                if result.isError:
+                    raise RuntimeError(
+                        f"graphiti-mcp tool error: {result.content}"
+                    )
+                return result
+            finally:
+                await session.__aexit__(None, None, None)
+                await self._transport_cm.__aexit__(None, None, None)
+        except Exception:
+            self._session_id = None
+            raise
+
+    def _run(self, coro):
+        try:
+            return asyncio.run(coro)
         except RuntimeError as e:
             if "Session not found" in str(e) or "404" in str(e):
-                log_event("session_expired_reinit", method=method)
+                log_event("session_expired_reinit")
                 self._session_id = None
-                self._initialize()
-                text = self._post(body, session=(method != "initialize"))
-            else:
-                raise
-        match = re.search(r"data: (.+)", text, re.DOTALL)
-        if not match:
-            raise RuntimeError(f"graphiti-mcp non-SSE response: {text[:200]}")
-        result = json.loads(match.group(1))
-        # Unwrap MCP tool call responses: extract content[0].text
-        # The MCP server returns: {"result": {"content": [{"type": "text", "text": "{...}"}]}}
-        # Callers expect the inner data dict directly.
-        if method == "tools/call" and "result" in result:
-            content = result["result"].get("content", [])
-            if content and isinstance(content[0], dict) and "text" in content[0]:
-                try:
-                    result = json.loads(content[0]["text"])
-                except (json.JSONDecodeError, IndexError):
-                    pass
-        return result
+                return asyncio.run(coro)
+            raise
 
-    def _initialize(self) -> None:
-        self._call("initialize", {
-            "protocolVersion": "2024-11-05",
-            "capabilities": {},
-            "clientInfo": {"name": "hermes-graphiti", "version": "0.1.0"},
-        })
-        self._post({
-            "jsonrpc": "2.0", "method": "notifications/initialized",
-        }, session=True)
+    @staticmethod
+    def _content_to_text(result) -> str:
+        """Extract text content from a CallToolResult."""
+        for block in result.content:
+            if hasattr(block, "text"):
+                return block.text
+        return ""
+
+    @staticmethod
+    def _parse_payload(result) -> dict:
+        """Parse the JSON payload inside a tool result's text content."""
+        text = GraphitiClient._content_to_text(result)
+        if not text:
+            return {}
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            return {"raw": text}
 
     def add_memory(
         self, name: str, body: str, group_id: str,
@@ -285,7 +296,7 @@ class GraphitiClient:
         }
         if reference_time:
             args["reference_time"] = reference_time
-        return self._call("tools/call", {"name": "add_memory", "arguments": args})
+        return self._run(self._call_tool("add_memory", args)).model_dump()
 
     def search_nodes(
         self, query: str, group_ids: list[str] | None = None, max_nodes: int = 10,
@@ -293,7 +304,8 @@ class GraphitiClient:
         args: dict[str, object] = {"query": query, "max_nodes": max_nodes}
         if group_ids:
             args["group_ids"] = group_ids
-        return self._call("tools/call", {"name": "search_nodes", "arguments": args})
+        result = self._run(self._call_tool("search_nodes", args))
+        return self._parse_payload(result)
 
     def search_memory_facts(
         self, query: str, group_ids: list[str] | None = None, max_facts: int = 10,
@@ -301,10 +313,21 @@ class GraphitiClient:
         args: dict[str, object] = {"query": query, "max_facts": max_facts}
         if group_ids:
             args["group_ids"] = group_ids
-        return self._call("tools/call", {"name": "search_memory_facts", "arguments": args})
+        result = self._run(self._call_tool("search_memory_facts", args))
+        return self._parse_payload(result)
+
+    def get_episodes(
+        self, group_ids: list[str] | None = None, limit: int = 10,
+    ) -> dict:
+        args: dict[str, object] = {"limit": limit}
+        if group_ids:
+            args["group_ids"] = group_ids
+        result = self._run(self._call_tool("get_episodes", args))
+        return self._parse_payload(result)
 
     def delete_episode(self, uuid: str) -> dict:
-        return self._call("tools/call", {"name": "delete_episode", "arguments": {"uuid": uuid}})
+        result = self._run(self._call_tool("delete_episode", {"uuid": uuid}))
+        return self._parse_payload(result)
 
     def close(self) -> None:
         pass
@@ -314,7 +337,12 @@ class GraphitiClient:
 
 SEARCH_SCHEMA = {
     "name": "graphiti_search",
-    "description": "Search the temporal knowledge graph for facts and entities related to a query.",
+    "description": (
+        "Search the temporal knowledge graph for facts and entities related to a query. "
+        "By default searches the user's cascading scope (likivik → likivik_<project> → likivik_<project>_<sub>). "
+        "Pass `group_ids` to scope to a specific subset (e.g. [\"likivik\"] for user-level only, "
+        "or [\"likivik_nc-rag\"] for a single project)."
+    ),
     "parameters": {
         "type": "object",
         "properties": {
@@ -326,6 +354,14 @@ SEARCH_SCHEMA = {
                 "type": "integer",
                 "description": "Maximum results to return (default 10).",
                 "default": 10,
+            },
+            "group_ids": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "Optional scope override. Defaults to cascading scopes for current "
+                    "agent context. Pass an explicit list to restrict or expand."
+                ),
             },
         },
         "required": ["query"],
@@ -346,6 +382,14 @@ REMEMBER_SCHEMA = {
                 "type": "string",
                 "description": "The fact or content to remember.",
             },
+            "group_id": {
+                "type": "string",
+                "description": (
+                    "Optional scope override. Defaults to current agent scope. "
+                    "Use 'likivik_<project>' or 'likivik_<project>_<sub>' "
+                    "to write to a specific subgraph."
+                ),
+            },
         },
         "required": ["content"],
     },
@@ -363,6 +407,60 @@ FORGET_SCHEMA = {
             },
         },
         "required": ["uuid"],
+    },
+}
+
+RECALL_EPISODE_SCHEMA = {
+    "name": "graphiti_recall_episode",
+    "description": (
+        "Fetch the full text of a single episode by its UUID. Use after a "
+        "graphiti_search returned an episode reference and you need to read it."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "uuid": {
+                "type": "string",
+                "description": "UUID of the episode to recall.",
+            },
+        },
+        "required": ["uuid"],
+    },
+}
+
+LIST_EPISODES_SCHEMA = {
+    "name": "graphiti_list_episodes",
+    "description": (
+        "List recent episodes in the knowledge graph, newest first. Useful for "
+        "debugging what was remembered, auditing memory state, or paginating "
+        "history before search."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "limit": {
+                "type": "integer",
+                "description": "Maximum episodes to return (default 10, max 100).",
+                "default": 10,
+            },
+            "group_ids": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Optional scope filter. Defaults to current agent scope.",
+            },
+        },
+    },
+}
+
+STATUS_SCHEMA = {
+    "name": "graphiti_status",
+    "description": (
+        "Report plugin health: graph node/edge/episode counts, sync queue depth, "
+        "prefetch cache hit rate, and recent error counts. Cheap call."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {},
     },
 }
 
@@ -699,7 +797,14 @@ class GraphitiMemoryProvider(MemoryProvider):
         self._enqueue_sync(name, combined)
 
     def get_tool_schemas(self):
-        return [SEARCH_SCHEMA, REMEMBER_SCHEMA, FORGET_SCHEMA]
+        return [
+            SEARCH_SCHEMA,
+            REMEMBER_SCHEMA,
+            FORGET_SCHEMA,
+            RECALL_EPISODE_SCHEMA,
+            LIST_EPISODES_SCHEMA,
+            STATUS_SCHEMA,
+        ]
 
     def handle_tool_call(self, tool_name: str, args: dict, **kwargs) -> str:
         try:
@@ -710,6 +815,12 @@ class GraphitiMemoryProvider(MemoryProvider):
                 result = self._graphiti_remember(**args)
             elif tool_name == "graphiti_forget":
                 result = self._graphiti_forget(**args)
+            elif tool_name == "graphiti_recall_episode":
+                result = self._graphiti_recall_episode(**args)
+            elif tool_name == "graphiti_list_episodes":
+                result = self._graphiti_list_episodes(**args)
+            elif tool_name == "graphiti_status":
+                result = self._graphiti_status()
             else:
                 return tool_error(f"Unknown tool: {tool_name}")
             elapsed = time.monotonic() - start
@@ -720,8 +831,11 @@ class GraphitiMemoryProvider(MemoryProvider):
             log_event("tool_call_error", tool=tool_name, exc=str(e))
             return tool_error(str(e))
 
-    def _graphiti_search(self, query: str, limit: int = 10) -> str:
-        group_ids = cascading_scopes(self._scope)
+    def _graphiti_search(
+        self, query: str, limit: int = 10, group_ids: list[str] | None = None,
+    ) -> str:
+        if group_ids is None:
+            group_ids = cascading_scopes(self._scope)
         nodes = self._client.search_nodes(query, group_ids, max_nodes=limit)
         facts = self._client.search_memory_facts(query, group_ids, max_facts=limit)
         formatted = self._format_results(nodes, facts)
@@ -729,15 +843,23 @@ class GraphitiMemoryProvider(MemoryProvider):
             self._metrics.search_ok += 1
         else:
             self._metrics.search_empty += 1
-        return json.dumps({"results": formatted})
+        return json.dumps({
+            "results": formatted,
+            "scopes_searched": group_ids,
+            "node_count": len(nodes.get("nodes", []) or []),
+            "fact_count": len(facts.get("facts", []) or []),
+        })
 
-    def _graphiti_remember(self, content: str) -> str:
+    def _graphiti_remember(
+        self, content: str, group_id: str | None = None,
+    ) -> str:
         episode_name = f"remember-{uuid4().hex[:8]}"
+        target_scope = group_id if group_id else self._scope
         try:
             self._client.add_memory(
                 name=episode_name,
                 body=content,
-                group_id=self._scope,
+                group_id=target_scope,
                 source="text",
                 source_description="explicit_remember",
                 reference_time=datetime.now(timezone.utc).isoformat(),
@@ -746,11 +868,77 @@ class GraphitiMemoryProvider(MemoryProvider):
         except Exception:
             self._metrics.write_error += 1
             raise
-        return json.dumps({"message": f"Saved: {content[:80]}...", "uuid": episode_name})
+        return json.dumps({
+            "message": f"Saved: {content[:80]}...",
+            "uuid": episode_name,
+            "group_id": target_scope,
+        })
 
     def _graphiti_forget(self, uuid: str) -> str:
         self._client.delete_episode(uuid)
         return json.dumps({"message": f"Forgot: {uuid}"})
+
+    def _graphiti_recall_episode(self, uuid: str) -> str:
+        # get_episodes returns recent ones; if uuid not in window, fall back to
+        # no result. Graphiti MCP doesn't expose a direct "get_episode(uuid)"
+        # endpoint, so the practical workaround is search by content or list.
+        result = self._client.get_episodes(limit=100)
+        episodes = result.get("episodes", [])
+        for ep in episodes:
+            if ep.get("uuid") == uuid:
+                return json.dumps({"episode": ep})
+        # Not found in recent window — caller should use graphiti_search instead.
+        return json.dumps({
+            "error": "not_found_in_recent",
+            "uuid": uuid,
+            "hint": "episode not in last 100; use graphiti_search to find older ones",
+            "recent_count": len(episodes),
+        })
+
+    def _graphiti_list_episodes(
+        self, limit: int = 10, group_ids: list[str] | None = None,
+    ) -> str:
+        if group_ids is None:
+            group_ids = cascading_scopes(self._scope)
+        result = self._client.get_episodes(group_ids, limit=min(limit, 100))
+        episodes = result.get("episodes", [])
+        # Trim content for list view
+        trimmed = []
+        for ep in episodes:
+            trimmed.append({
+                "uuid": ep.get("uuid"),
+                "name": ep.get("name"),
+                "group_id": ep.get("group_id"),
+                "created_at": ep.get("created_at"),
+                "source_description": ep.get("source_description"),
+                "content_preview": (ep.get("content", "") or "")[:200],
+            })
+        return json.dumps({
+            "count": len(trimmed),
+            "scopes_searched": group_ids,
+            "episodes": trimmed,
+        })
+
+    def _graphiti_status(self) -> str:
+        # Cheap: just plugin metrics. Graph counts are available via
+        # /var/lib/hermes/.hermes/scripts/graphiti-inspect.py if needed.
+        return json.dumps({
+            "plugin": {
+                "prefetch_ok": self._metrics.prefetch_ok,
+                "prefetch_empty": self._metrics.prefetch_empty,
+                "prefetch_error": self._metrics.prefetch_error,
+                "search_ok": self._metrics.search_ok,
+                "search_empty": self._metrics.search_empty,
+                "write_ok": self._metrics.write_ok,
+                "write_error": self._metrics.write_error,
+                "flushes": self._metrics.flushes,
+                "session_reinits": self._metrics.session_reinits,
+                "max_queue_depth": self._metrics.max_queue_depth,
+                "queue_depth_now": self._sync_queue.qsize() if self._sync_worker else 0,
+            },
+            "scope": self._scope,
+            "metrics_endpoint": f"http://127.0.0.1:{getattr(self, '_metrics_port', 8765)}/metrics",
+        })
 
     def shutdown(self) -> None:
         if self._client:

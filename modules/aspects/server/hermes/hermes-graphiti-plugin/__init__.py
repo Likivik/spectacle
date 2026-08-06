@@ -599,6 +599,15 @@ class GraphitiMemoryProvider(MemoryProvider):
                         fact_count = len(fact_envelope.get("facts", []) or [])
                 except Exception:
                     pass
+                # DEBUG: log what we actually got so we can diagnose the
+                # persistent facts=0 issue from log events. Remove after fix.
+                log_event("prefetch_raw_shape",
+                          nodes_type=type(nodes).__name__,
+                          facts_type=type(facts).__name__,
+                          nodes_keys=list(nodes.keys()) if isinstance(nodes, dict) else None,
+                          facts_keys=list(facts.keys()) if isinstance(facts, dict) else None,
+                          nodes_repr=str(nodes)[:200],
+                          facts_repr=str(facts)[:200])
                 if packed:
                     self._metrics.prefetch_ok += 1
                     self._metrics.record_search_relevance(bool(packed.strip()))

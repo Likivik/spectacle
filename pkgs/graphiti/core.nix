@@ -18,6 +18,7 @@ buildPythonPackage rec {
 
   src = fetchPypi {
     inherit pname version;
+    format = "sdist";
     sha256 = "sha256-w2UGJsDrYcG6J2XObwiQCr5o7H+YTy4Ji0ki6/XoEpg=";
   };
 

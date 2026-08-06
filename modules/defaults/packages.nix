@@ -1,28 +1,18 @@
-{
-  lib,
-  inputs,
-  ...
-}:
+# Flake-level `packages.x` outputs for graphiti (external consumers
+# can `nix build github:Likivik/spectacle#graphiti-mcp`).
+# graphiti-mcp is built via uv2nix from its uv.lock in
+# pkgs/graphiti/mcp-workspace/ — that workspace fully owns Python
+# resolution (no Nix substitutes). The uv2nix sub-flake applies PR #1500
+# patch to graphiti-core via pyprojectOverrides.
 {
   perSystem =
     {
-      pkgs,
+      inputs',
       ...
     }:
-    let
-      inherit (pkgs) python3Packages;
-      # Vendored: falkordb (Python client) is not in nixpkgs.
-      falkordb-py = python3Packages.callPackage ../../pkgs/graphiti/falkordb-py.nix { };
-      graphiti-core = python3Packages.callPackage ../../pkgs/graphiti/core.nix {
-        inherit falkordb-py;
-      };
-      graphiti-mcp = python3Packages.callPackage ../../pkgs/graphiti/mcp.nix {
-        inherit graphiti-core;
-      };
-    in
     {
       packages = {
-        inherit graphiti-core graphiti-mcp;
+        graphiti-mcp = inputs'.graphiti-mcp-workspace.packages.x86_64-linux.graphiti-mcp;
       };
     };
 }

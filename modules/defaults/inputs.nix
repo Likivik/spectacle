@@ -75,5 +75,14 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    # Sub-flake: graphiti-mcp-server packaged via uv2nix from uv.lock.
+    graphiti-mcp-workspace = {
+      url = "path:./pkgs/graphiti/mcp-workspace";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.uv2nix.follows = "uv2nix";
+      inputs.pyproject-nix.follows = "pyproject-nix";
+      inputs.pyproject-build-systems.follows = "pyproject-build-systems";
+    };
   };
+}
 }

@@ -28,11 +28,10 @@ package = false
 # Force build from sdist.
 no-binary-package = ["graphiti-core"]
 
-# Packages with broken source builds — use wheels instead. Both packages
-# declare [build-system] requires that don't list their actual backend
-# (falkordb 1.6.2 needs hatchling, markupsafe needs setuptools). Wheels
-# are pre-built so the build-system mishap is skipped.
-no-build-package = ["falkordb", "markupsafe"]
+# Packages with broken source builds — use wheels instead.
+# falkordb 1.6.2 needs hatchling but doesn't declare it; wheels skip the
+# broken build-system and use prebuilt binaries.
+no-build-package = ["falkordb"]  # TODO: markupsafe needs setuptools override
 
 # graphiti-core's sdist uses hatchling but doesn't declare it in
 # pyproject.toml's [build-system].requires (upstream oversight).

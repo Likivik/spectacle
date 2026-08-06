@@ -109,7 +109,7 @@
       packages = forAllSystems (system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
-          app = envs.${system}.all;
+          app = envs.${system}.runtime;
         in
         {
           default = self.packages.${system}.graphiti-mcp;

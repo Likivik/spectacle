@@ -48,7 +48,11 @@
       };
 
       uvLockedOverlay = workspace.mkPyprojectOverlay {
-        sourcePreference = "wheel";
+        # sdist: tar.gz with full source tree (graphiti_core/driver/...)
+        # so our edge-search.patch (a/graphiti_core/... -p1) applies cleanly.
+        # wheel: zip with graphiti_core/__init__.py at root — Nix's
+        # unpackPhase doesn't extract it, patch then fails silently.
+        sourcePreference = "sdist";
       };
 
       projectName = "mcp-server";

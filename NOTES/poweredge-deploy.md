@@ -30,13 +30,12 @@ All access via **Tailscale**. No public HTTP exposure for now.
 |--------|------|-------------|
 | `den.aspects.server.nextcloud` | `modules/aspects/server/nextcloud/default.nix` | Nextcloud + Collabora CODE + Postgres + Redis |
 | `den.aspects.server.immich` | `modules/aspects/server/immich/default.nix` | Immich with CPU ML |
-| `den.aspects.server.cloudflare-tunnel` | `modules/aspects/server/cloudflare-tunnel/default.nix` | (future use) Cloudflare Tunnel for public exposure |
 
 ### Host files
 
 | File | Notes |
 |------|-------|
-| `modules/hosts/poweredge/poweredge.nix` | Includes `nextcloud` + `immich`. **Not** `cloudflare-tunnel`. |
+| `modules/hosts/poweredge/poweredge.nix` | Includes `nextcloud` + `immich`. Cloudflare tunnel is defined inline in this file (see `cloudflared-poweredge` systemd service), not via an aspect. |
 | `modules/hosts/poweredge/_disko.nix` | Partitioning — uses confirmed `/dev/disk/by-id/` paths |
 | `modules/hosts/poweredge/_hardware-configuration.nix` | Nix wrapper: `hardware.facter.reportPath = ./facter.json;` |
 | `modules/hosts/poweredge/facter.json` | Hardware report from nixos-facter (auto-generated) |

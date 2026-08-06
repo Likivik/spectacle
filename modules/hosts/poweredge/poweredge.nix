@@ -159,13 +159,16 @@
         };
       };
 
-      # Disable the legacy NixOS cloudflared binary service —
-      # the podman container in aspects/server/cloudflare-tunnel/default.nix
-      # is its replacement. Both would conflict on the same tunnel token.
       systemd.services.cloudflared-poweredge = {
-        enable = false;
-        wantedBy = [];
-        serviceConfig = { ExecStart = "/bin/true"; };
+        description = "Cloudflare Tunnel — poweredge";
+        after = [ "network-online.target" ];
+        wants = [ "network-online.target" ];
+        wantedBy = [ "multi-user.target" ];
+        serviceConfig = {
+          ExecStart = "${pkgs.bash}/bin/bash -c 'exec ${pkgs.cloudflared}/bin/cloudflared tunnel --no-autoupdate run --token \"$(<${config.sops.secrets."cloudflare/poweredge-tunnel-token".path})\"'";
+          Restart = "on-failure";
+          RestartSec = 5;
+        };
       };
 
       # Podman 0.0.0.0:X:X publishes work; 127.0.0.1:X:X silently drops

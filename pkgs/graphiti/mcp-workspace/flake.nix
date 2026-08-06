@@ -38,10 +38,60 @@
         sourcePreference = "wheel";
       };
 
-      # Force graphiti-core to be built from sdist (tar.gz, full source tree)
-      # so PR #1500's patch can apply. Other packages stay as wheels —
-      # no source builds, no hatchling setup needed for falkordb, etc.
-      # Configured via [tool.uv.no-binary-package] in pyproject.toml.
+      # Per uv2nix docs (overriding-build-systems.html): uv doesn't lock
+      # build systems. Use `resolveBuildSystem` to inject build backend
+      # deps for any package being built from sdist. Without this, packages
+      # break with ModuleNotFoundError on hatchling/meson-py/setuptools.
+      # Pattern: mapAttrs to overrideAttrs, adding nativeBuildInputs.
+      # (https://pyproject-nix.github.io/uv2nix/patterns/overriding-build-systems.html)
+      buildSystemOverrides = final: prev: let
+        inherit (final) resolveBuildSystem;
+        inherit (builtins) mapAttrs;
+        # Per-package spec: { <build-backend> = [optional-extras] }
+        # Examples below cover common build backends seen in mcp_server's
+        # transitive deps; extend as uv.lock grows.
+        specs = {
+          attrs = { hatchling = [ ]; };
+          falkordb = { hatchling = [ ]; hatch-vcs = [ ]; };
+          graphiti-core = { hatchling = [ ]; hatch-fancy-pypi-readme = [ ]; };
+          markupsafe = { setuptools = [ ]; };
+          numpy = { meson-python = [ ]; ninja = [ ]; };
+          jinja2 = { setuptools = [ ]; };
+          pyyaml = { setuptools = [ ]; cython = [ ]; };
+          anyio = { hatchling = [ ]; hatch-vcs = [ ]; };
+          idna = { flit-core = [ ]; };
+          urllib3 = { hatchling = [ ]; hatch-vcs = [ ]; };
+          httpx = { hatchling = [ ]; hatch-vcs = [ ]; };
+          mcp = { hatchling = [ ]; };
+          pydantic = { hatchling = [ ]; };
+          pydantic-core = { hatchling = [ ]; };
+          typing-extensions = { hatchling = [ ]; };
+          distro = { hatchling = [ ]; };
+          pyjwt = { hatchling = [ ]; };
+          rich = { hatchling = [ ]; };
+          shellingham = { hatchling = [ ]; };
+          python-dateutil = { setuptools = [ ]; };
+          pyyaml = { setuptools = [ ]; };
+          pycparser = { setuptools = [ ]; };
+          cffi = { setuptools = [ ]; };
+          cryptography = { setuptools = [ ]; };
+          brotli = { setuptools = [ ]; };
+          pyasn1 = { setuptools = [ ]; };
+          rust-python = { setuptools = [ ]; };
+          certifi = { setuptools = [ ]; };
+          pydantic = { hatchling = [ ]; };
+          packaging = { flit-core = [ ]; };
+          python-dotenv = { hatchling = [ ]; };
+          charset-normalizer = { hatchling = [ ]; };
+        };
+      in mapAttrs (name: spec:
+        prev.${name}.overrideAttrs (old: {
+          nativeBuildInputs = (old.nativeBuildInputs or [ ])
+            ++ resolveBuildSystem spec;
+        })
+      ) specs;
+
+      # Apply PR #1500 patch to graphiti-core (sdist build).
       pyprojectOverrides = final: prev: {
         graphiti-core = prev.graphiti-core.overrideAttrs (old: {
           patches = (old.patches or [ ]) ++ [
@@ -63,6 +113,7 @@
           .overrideScope (lib.composeManyExtensions [
             pyproject-build-systems.overlays.default
             uvLockedOverlay
+            buildSystemOverrides
             pyprojectOverrides
           ])
       );

@@ -845,7 +845,9 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/af/5b/afc2c564f4bcc247720dad769096184e3c298429ea4302a6ae4635267efc/graphiti_core-0.29.3.tar.gz", hash = "sha256:c3650626c0eb61c1ba2765ce6f08900abe68ec7f984f2e098b4922ebf5e81298", size = 6978366, upload-time = "2026-08-06T00:00:00.000Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/61/e4/8273941a0e7a1a3ef4350ff810ed6ddd2d907ebdce95cbbcf2484b2c5de7/graphiti_core-0.29.3-py3-none-any.whl", hash = "sha256:0210510e8043b5b4fa57aa038934e849b2e61d31d298200b0074faf7ca793ed5", size = 361487, upload-time = "2026-08-06T00:00:00.000Z" },
-][[package]]
+]
+
+[[package]]
 
 [package.optional-dependencies]
 falkordb = [

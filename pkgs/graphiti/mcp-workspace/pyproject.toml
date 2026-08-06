@@ -23,10 +23,16 @@ build-backend = "hatchling.build"
 # See uv2nix issue #360 + PR #361.
 package = false
 
-# Force these packages to be built from sdist instead of wheels.
 # graphiti-core: PR #1500 patch only applies against the source tree
 # (wheel .whl archives aren't extracted by Nix's unpackPhase).
+# Force build from sdist.
 no-binary-package = ["graphiti-core"]
+
+# Packages with broken source builds — use wheels instead. Both packages
+# declare [build-system] requires that don't list their actual backend
+# (falkordb 1.6.2 needs hatchling, markupsafe needs setuptools). Wheels
+# are pre-built so the build-system mishap is skipped.
+no-build-package = ["falkordb", "markupsafe"]
 
 # graphiti-core's sdist uses hatchling but doesn't declare it in
 # pyproject.toml's [build-system].requires (upstream oversight).

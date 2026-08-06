@@ -847,8 +847,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/61/e4/8273941a0e7a1a3ef4350ff810ed6ddd2d907ebdce95cbbcf2484b2c5de7/graphiti_core-0.29.3-py3-none-any.whl", hash = "sha256:0210510e8043b5b4fa57aa038934e849b2e61d31d298200b0074faf7ca793ed5", size = 361487, upload-time = "2026-08-06T00:00:00.000Z" },
 ]
 
-[[package]]
-
 [package.optional-dependencies]
 falkordb = [
     { name = "falkordb" },

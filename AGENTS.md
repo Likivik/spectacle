@@ -9,20 +9,22 @@
 NixOS fleet config repo.
 Flake uses `github:denful/den`. Docs: https://den.denful.com/
 
-## After making changes
-```bash
-# only if inputs changed, binary cache was added or flake.nix needs to be rebuilt for some reason:
-nix run .#write-flake && nix flake update <input-name>
+## Verification (no deployment — agent can run)
 
-# After changing one host — dry-build it (catches eval + build errors)
+```bash
+# Single host — syntax/layout
+nix eval .#nixosConfigurations.<hostname>.config.networking.hostName  # --show-trace for full trace
+
+# Single host — dry build (catches eval + missing deps)
 nix build .#nixosConfigurations.<hostname>.config.system.build.toplevel --dry-run
 
-# After changing shared modules (aspects, inputs, defaults) — check all hosts
+# All hosts — when shared modules change
 nix flake check --no-build --keep-going
 ```
-**Gotcha**: New files must be `git add`ed *before* `nix flake check` — flake's git-aware fetcher only sees tracked files.
 
-**Gotcha**: `nixos = { ... }:` discards module args. Capture `pkgs` explicitly: `nixos = { pkgs, ... }:`. Errors surface at build—`--dry-run` catches them.
+**Gotchas:**
+- New files must be `git add`ed before `nix flake check` — flake's git-aware fetcher only sees tracked files.
+- `nixos = { ... }:` discards module args. Capture `pkgs` explicitly: `nixos = { pkgs, ... }:`. Errors surface at build — `--dry-run` catches them.
 
 ## Deployment — `nixos-rebuild switch`
 
@@ -59,25 +61,8 @@ Branch is `dev` unless told otherwise.
 - `--elevate=sudo` required for remote deploys when the remote `likivik` has NOPASSWD sudo — without it `nix-env --set` runs as the SSH user → `Permission denied` on the profile symlink.
 - `--flake .#<target-hostname>` selects which config to build; **activation always happens on the local machine**. Match `.#<target-hostname>` to the target, never the calling host.
 
-### Verification (no deployment — agent can run)
-```bash
-# Single host — syntax/layout
-nix eval .#nixosConfigurations.<hostname>.config.networking.hostName  # --show-trace for full trace
-
-# Single host — dry build (catches eval + missing deps)
-nix build .#nixosConfigurations.<hostname>.config.system.build.toplevel --dry-run
-
-# All hosts — when shared modules change
-nix flake check --no-build --keep-going
-```
-
 ### Shell aliases
 ```bash
-nix-eval-host() {
-    local host="${1:-$(hostname -s)}"
-    nix eval .#nixosConfigurations."$host".config.networking.hostName
-}
-
 nixos-switch-cn() {
     local host="${1:-$(hostname -s)}"
     NIX_CONFIG='substituters = https://mirrors.ustc.edu.cn/nix-channels/store https://mirrors.tuna.tsinghua.edu.cn/nix-channels/store https://mirror.sjtu.edu.cn/nix-channels/store https://cache.nixos.org' \
@@ -96,30 +81,7 @@ nixos-switch-cn() {
 - Inputs can be declared in any module that imports `flake-file`'s dendritic flakeModule (this repo uses `modules/defaults/inputs.nix` by convention).
 - After changing inputs: `nix run .#write-flake && nix flake update <input-name>`.
 
-## Commit = consider what to add, create a commit message and ask user to confirm it.
-- Commit Prefixes (new prefix = new line):
-  - feat:
-  - fix:
-  - chore: Routine tasks, maintenance
-  - docs: documentation, READMEs, comments, notes
-  - refactor: Rewriting or restructuring code without changing its external behavior (neither fixing a bug nor adding a feature).
-  - style: Formatting changes that don't affect logic (whitespace, indentation, Nix formatting).
-  - perf: improving performance.
-  - tests: Adding or updating tests
-  - ci: Changes to CI/CD configuration files and scripts
-  - revert:	Undoing a previous commit.
-  - bump: updating dependencies or flake locks.
-  - sync: pushing live-edited dotfiles
-  - WIP: — when need to push code to save it or move it to another machine, but it's broken or unfinished.
-  - init: — Used when establishing a brand new module, project, or aspect for the first time.
-- You can combine prefixes with scopes in parentheses to show exactly what part of your infrastructure the commit affects.
-  - For example: feat(spectacle): add stremio to auto-start or fix(noctalia): correct padding on status bar.
-- Commit example:
-  ```
-  fix: add nix-maid input to flake
-  fix: add tmpfs filesystem configs to empty hosts
-  chore(serenity): clean up serenity host (remove nvidia config, add portal, consolidate includes)
-  ```
+## Commits
 
-## Memory
+Follow [Conventional Commits](https://www.conventionalcommits.org/). This repo uses scopes — parenthesized after the type, naming the host or area affected (e.g. `fix(poweredge):`, `chore(serenity):`, `docs(spectacle):`). Scopes are optional in the spec but useful here when scanning history.
 

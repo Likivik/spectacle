@@ -42,6 +42,12 @@
         let
           pkgs = nixpkgs.legacyPackages.${system};
           python = pkgs.python3;
+          # Build our vendored derivations at evaluation time so
+          # callPackage gets concrete store paths, not relative paths.
+          falkordb-py = pkgs.python3Packages.callPackage ../falkordb-py.nix { };
+          graphiti-core = pkgs.python3Packages.callPackage ../core.nix {
+            inherit falkordb-py;
+          };
         in
         (pkgs.callPackage pyproject-nix.build.packages { inherit python; })
           .overrideScope (lib.composeManyExtensions [
@@ -49,10 +55,7 @@
             uvLockedOverlay
             (final: prev: {
               # Replace graphiti-core + falkordb-py with our vendored Nix builds.
-              graphiti-core = pkgs.python3Packages.callPackage ../core.nix {
-                falkordb-py = pkgs.python3Packages.callPackage ../falkordb-py.nix { };
-              };
-              falkordb-py = pkgs.python3Packages.callPackage ../falkordb-py.nix { };
+              inherit graphiti-core falkordb-py;
             })
           ])
       );

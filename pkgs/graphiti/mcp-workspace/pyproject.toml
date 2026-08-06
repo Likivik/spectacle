@@ -11,6 +11,8 @@ dependencies = [
     "pydantic-settings>=2.0.0",
     "pyyaml>=6.0.3",
     "typing-extensions>=4.0.0",
+    # falkordb 1.6.2 uses redis-py 5.1+ DriverInfo API
+    "redis>=5.0,<6",
 ]
 
 [build-system]

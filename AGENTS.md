@@ -26,55 +26,39 @@ nix flake check --no-build --keep-going
 
 ## Deployment — `nixos-rebuild switch`
 
-Always check host first: `hostname -s` (traversal = here, erebus = VPS). `nh` is broken — uses `ssh-ng://` protocol that mismatches with older nix-daemons; use `nixos-rebuild` with `--elevate=sudo` instead.
+The fleet uses **remote builds + remote activation** from erebus (the orchestrator).
 
-**Gotcha**: `.#erebus` on traversal without `--target-host` builds erebus config for traversal hardware — wrong machine.
-
-**Gotcha**: SSH key auth. `nixos-rebuild switch --target-host likivik@<host>` requires `likivik@<host>`'s `~/.ssh/authorized_keys` to contain a public key matching the SSH key on the **calling** host's `~/.ssh/id_*`. If the agent on host A is missing A's key in B's authorized_keys, deploys to B fail with `Permission denied (publickey,keyboard-interactive)`. **Workaround**: deploy via a third host C where (A→C, C→B) both work, OR add the missing key to `modules/hosts/B/B.nix` `users.users.likivik.openssh.authorizedKeys.keys` and deploy.
-
-**Gotcha**: The current hermes-agent SSH key is `/var/lib/hermes/.ssh/id_ed25519` (comment `hermes@erebus`, even when running from a different host — the comment is just a label). The same key works on every host because it's the one the agent uses everywhere. Each host's `authorizedKeys.keys` for `likivik` must list this key.
-
-**Gotcha**: Remote targets with NOPASSWD sudo need `--elevate=sudo`. Without it, `nix-env --set` on the remote runs as the SSH user (non-root) → `Permission denied` on the profile symlink.
-
-**Gotcha**: Remote deploys **MUST** pass `--build-host <user>@<host>` (matching `--target-host`). Building remotely on the target host keeps heavy compilation (rustc, LLVM, etc.) on the target's CPU/RAM and avoids transferring large closures across the network. Erebus is the orchestrator; poweredge is the build+target. Omitting `--build-host` makes nixos-rebuild build locally on erebus and copy the closure via `ssh://` — acceptable for tiny closures but slow for big ones.
-
-### Local (current machine)
+**Step 1 — check what host you are on:**
 ```bash
-sudo nixos-rebuild switch --flake .#
+hostname -s
 ```
 
-### Serenity & Traversal (build locally)
-```bash
-# SSH in first, then build locally
-ssh likivik@<serenity|traversal-tailscale-ip>
-cd /Storage/Git/spectacle
-sudo nixos-rebuild switch --flake .#
-```
-**Gotcha**: These hosts DON'T build from erebus. Clone the `dev` branch at `/Storage/Git/spectacle`.
+**Step 2 — does the host have a local clone of `spectacle`?**
 
-### Remote (deploy to ANOTHER host — must SSH from elsewhere)
-```bash
-# Build AND activate on the target host. --build-host required for big closures.
-nixos-rebuild switch --target-host <user>@<host> --build-host <user>@<host> --elevate=sudo --flake .#<hostname>
-```
+Check `ls /Storage/Git/spectacle` (or wherever the repo lives on the host).
+- **No** → stop. Ask the user. Don't improvise: cloning + branch choice + auth setup is a multi-decision setup, not a deploy step.
+- **Yes** → make sure the repo is synced with the remote and on the correct branch.
+  ```bash
+  cd /Storage/Git/spectacle
+  git fetch
+  git status -sb        # check: clean? ahead/behind? on the right branch?
+  git pull --rebase     # if behind
+  ```
+  Branch is `dev` unless told otherwise. **Gotcha**: never `git push` without explicit user approval.
 
-**Gotcha**: DO NOT use this pattern to deploy the host you're currently ON. From inside erebus running `nixos-rebuild switch --target-host likivik@erebus ...` SSHes to itself and fails (`Host key verification failed`, `--build-host likivik@erebus` triggers the same loopback). Use the **Local** pattern instead:
+**Step 3 — local or remote deploy?**
 
-### Self-deploy (you are already on the target host)
-```bash
-sudo nixos-rebuild switch --flake .#<hostname>
-```
+| Situation | Command |
+|---|---|
+| Local (you are ON the target host) | `sudo nixos-rebuild switch --flake .#<target-hostname>` |
+| Remote (deploy from a different host, e.g. erebus → poweredge) | `nixos-rebuild switch --target-host likivik@<target-hostname> --build-host likivik@<target-hostname> --elevate=sudo --flake .#<target-hostname>` |
 
-This builds locally, copies closure via the local Nix store, activates. No SSH involved. The hostname in `--flake .#<hostname>` tells the flake which config to use; you can switch any host's config from any other host (e.g. from serenity build serenity's config, or build poweredge's config locally on serenity if you really want to), but the activation happens on the local machine only.
+**Gotchas:**
+- `--target-host` and `--build-host` must match — the target's `/nix/store` already holds most of the closure, so building remotely avoids re-deriving it from scratch. **Future note**: a dedicated build host may become a separate 3rd box.
+- `--elevate=sudo` required for remote deploys when the remote `likivik` has NOPASSWD sudo — without it `nix-env --set` runs as the SSH user → `Permission denied` on the profile symlink.
+- `--flake .#<target-hostname>` selects which config to build; **activation always happens on the local machine**. Match `.#<target-hostname>` to the target, never the calling host.
 
-### Ghostty (agent spawns terminal — local or remote)
-```bash
-# Local (self-deploy on current host)
-ghostty -e bash -c 'sudo nixos-rebuild switch --flake .# 2>&1 | tee /tmp/traversal-deploy.log; read -p "Press enter"'
-
-# Remote (deploy to a DIFFERENT host from this one)
-ghostty -e bash -c 'nixos-rebuild switch --target-host likivik@<host> --build-host likivik@<host> --elevate=sudo --flake .#<hostname> 2>&1 | tee /tmp/<host>-deploy.log; read -p "Press enter"'
-```
+**First-deploy setup** (new host, no key wired yet): see `NOTES/first-deploy.md`.
 
 ### Verification (no deployment — agent can run)
 ```bash
@@ -138,17 +122,5 @@ nixos-switch-cn() {
   chore(serenity): clean up serenity host (remove nvidia config, add portal, consolidate includes)
   ```
 
-## Memory (Mnemosyne MCP)
+## Memory
 
-Canonical Mnemosyne reference (tools, triggers, importance, scope) in `~/.config/opencode/AGENTS.md`.
-
-### Scratchpad for complex Nix operations
-Before multi-step config changes:
-1. `mnemosyne_scratchpad_write(content="1. ... 2. ...")`
-2. Between steps: `mnemosyne_scratchpad_read` (check what was done/planned)
-3. Done: `mnemosyne_scratchpad_clear`
-
-### When to invalidate
-- A NixOS config decision was reversed or superseded
-- A user preference was misinterpreted — corrected understanding
-- A module/file moved or was renamed

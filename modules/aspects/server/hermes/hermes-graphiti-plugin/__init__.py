@@ -533,6 +533,10 @@ class GraphitiMemoryProvider(MemoryProvider):
         self._last_flush_time: float = time.monotonic()
         self._metrics = GraphitiMetrics()
         self._ensure_sync_worker()
+        # Bring up the Prometheus metrics server too — initialize() is the
+        # canonical entry point. _late_init() is idempotent and safe to call
+        # even if a lazy _ensure_client already ran (it no-ops then).
+        self._late_init()
 
     def system_prompt_block(self) -> str:
         return (

@@ -92,7 +92,11 @@
         system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
-          python = pkgs.python3;
+          # Pin Python 3.13 — uv.lock has wheels up to cp313 only. Using
+          # `python3` (3.14 on nixos-unstable as of Aug 2026) forces every
+          # package to fall back to sdist, which trips over missing build
+          # backend declarations in modern upstream sdists.
+          python = pkgs.python313;
         in
         (pkgs.callPackage pyproject-nix.build.packages { inherit python; })
           .overrideScope (lib.composeManyExtensions [

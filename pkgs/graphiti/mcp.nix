@@ -23,7 +23,7 @@ buildPythonPackage rec {
     owner = "getzep";
     repo = "graphiti";
     rev = "526dcad7a300f3c5c506ff96a68bcdc7ca9f97ed";
-    sha256 = "";   # TODO: fill via `lib.fakeHash` first run + read-back
+    sha256 = lib.fakeHash;   # fill via first build + read-back
     fetchSubmodules = false;
   };
 

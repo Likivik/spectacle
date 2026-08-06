@@ -18,7 +18,7 @@ buildPythonPackage rec {
 
   src = fetchPypi {
     inherit pname version;
-    sha256 = "c3650626c0eb61c1ba2765ce6f08900abe68ec7f984f2e098b4922ebf5e81298";
+    sha256 = "sha256-w2UGJsDrYcG6J2XObwiQCr5o7H+YTy4Ji0ki6/XoEpg=";
   };
 
   # Edge-search perf fix — upstream PR #1500. Replaces per-row
@@ -44,7 +44,7 @@ buildPythonPackage rec {
     numpy
     python-dotenv
     posthog
-    falkordb   # [falkordb] extra: required for our driver
+    falkordb-py   # [falkordb] extra: required for our driver
   ];
 
   meta = with lib; {

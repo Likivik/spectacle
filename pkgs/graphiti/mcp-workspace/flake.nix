@@ -122,11 +122,15 @@
             buildInputs = [ envs.${system}.runtime ];
 
             installPhase = ''
-              mkdir -p $out/bin
-              cp ${./main.py} $out/bin/main
-              chmod +x $out/bin/main
-              makeWrapper ${app}/bin/python $out/bin/graphiti-mcp-server \
-                --add-flags $out/bin/main
+              mkdir -p $out/bin $out/share/graphiti-mcp-server
+              # Source layout (uv.config-settings implicit)
+              cp -r ${./src} $out/share/graphiti-mcp-server/src
+              cp ${./main.py} $out/share/graphiti-mcp-server/main.py
+              chmod +x $out/share/graphiti-mcp-server/main.py
+              # Patched graphiti-core + falkordb-py come from the venv ($out/.../lib/python3.13/site-packages)
+              makeWrapper ${envs.${system}.runtime}/bin/python $out/bin/graphiti-mcp-server \
+                --add-flags $out/share/graphiti-mcp-server/main.py \
+                --set PYTHONPATH $out/share/graphiti-mcp-server/src
               ln -s $out/bin/graphiti-mcp-server $out/bin/mcp-server
             '';
           };

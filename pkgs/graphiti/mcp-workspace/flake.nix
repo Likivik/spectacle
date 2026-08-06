@@ -39,7 +39,7 @@
       pyprojectOverrides = final: prev: {
         graphiti-core = prev.graphiti-core.overrideAttrs (old: {
           patches = (old.patches or [ ]) ++ [
-            ../../patches/edge-search.patch
+            ../patches/edge-search.patch
           ];
         });
       };

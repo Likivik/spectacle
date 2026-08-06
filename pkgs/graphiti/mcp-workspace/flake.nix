@@ -34,10 +34,14 @@
 
       workspace = uv2nix.lib.workspace.loadWorkspace { workspaceRoot = ./.; };
 
-      # Inject PR #1500 patch into the uv-resolved graphiti-core sdist.
-      # Patch lives in the repo's pkgs/graphiti/patches/ directory.
-      # -p1: strip leading `a/` from `--- a/...` paths. Default is -p0 which
-      # fails on uv-sdist unpacked dirs (graphiti_core/ subdir needs strip).
+      uvLockedOverlay = workspace.mkPyprojectOverlay {
+        sourcePreference = "wheel";
+      };
+
+      # Force graphiti-core to be built from sdist (tar.gz, full source tree)
+      # so PR #1500's patch can apply. Other packages stay as wheels —
+      # no source builds, no hatchling setup needed for falkordb, etc.
+      # Configured via [tool.uv.no-binary-package] in pyproject.toml.
       pyprojectOverrides = final: prev: {
         graphiti-core = prev.graphiti-core.overrideAttrs (old: {
           patches = (old.patches or [ ]) ++ [
@@ -45,14 +49,6 @@
           ];
           patchFlags = (old.patchFlags or [ ]) ++ [ "-p1" ];
         });
-      };
-
-      uvLockedOverlay = workspace.mkPyprojectOverlay {
-        # sdist: tar.gz with full source tree (graphiti_core/driver/...)
-        # so our edge-search.patch (a/graphiti_core/... -p1) applies cleanly.
-        # wheel: zip with graphiti_core/__init__.py at root — Nix's
-        # unpackPhase doesn't extract it, patch then fails silently.
-        sourcePreference = "sdist";
       };
 
       projectName = "mcp-server";

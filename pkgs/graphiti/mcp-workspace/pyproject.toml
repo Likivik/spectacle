@@ -22,3 +22,8 @@ build-backend = "hatchling.build"
 # without trying to build mcp-server itself.
 # See uv2nix issue #360 + PR #361.
 package = false
+
+# Force these packages to be built from sdist instead of wheels.
+# graphiti-core: PR #1500 patch only applies against the source tree
+# (wheel .whl archives aren't extracted by Nix's unpackPhase).
+no-binary-package = ["graphiti-core"]

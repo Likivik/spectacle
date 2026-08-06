@@ -36,6 +36,10 @@
 
       uvLockedOverlay = workspace.mkPyprojectOverlay {
         sourcePreference = "wheel";
+        # Only build packages in the default dep spec (skip optionals/dev).
+        # mkPyprojectOverlay defaults to deps.all which forces every package
+        # in uv.lock to be evaluated and built (including nvidia-cuda-*).
+        dependencies = workspace.deps.default;
       };
 
       # Per uv2nix docs (overriding-build-systems.html): uv doesn't lock

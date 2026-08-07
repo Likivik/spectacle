@@ -13,7 +13,7 @@ in
     ------------------------------------------------------------------------- */
   den.default.nixos.system.stateVersion = "25.11"; # set Nixpkgs version you start with, never change for proper backward compatability
   den.default.networking.firewall.enable = true; # enable firewall everywhere
-  den.default.nixpkgs.overlays = [ graphitiMcpOverlay ];
+  den.default.os.nixpkgs.overlays = [ graphitiMcpOverlay ];
 	flake.den = den;
 
   /* ------------------------------------------------------------------------

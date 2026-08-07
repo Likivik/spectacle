@@ -54,7 +54,7 @@ Branch is `dev` unless told otherwise.
 | Situation | Command |
 |---|---|
 | Local (you are ON the target host) | `sudo nixos-rebuild switch --flake .#<target-hostname>` |
-| Remote (deploy from a different host, e.g. erebus → poweredge) | `nixos-rebuild switch --target-host likivik@<target-hostname> --build-host likivik@<target-hostname> --elevate=sudo --flake .#<target-hostname>` |
+| Remote (deploy from a different host, e.g. erebus → poweredge) | `nixos-rebuild switch --target-host likivik@<target-hostname> --build-host likivik@<target-hostname> --elevate=sudo --flake .#<target-hostname>` (no leading `sudo` — the remote handles elevation via `--elevate=sudo`) |
 
 **Gotchas:**
 - `--target-host` and `--build-host` must match — the target's `/nix/store` already holds most of the closure, so building remotely avoids re-deriving it from scratch. **Future note**: a dedicated build host may become a separate 3rd box.

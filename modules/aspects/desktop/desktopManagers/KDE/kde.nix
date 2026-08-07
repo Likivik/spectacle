@@ -7,7 +7,7 @@
       den.aspects.kde-env-dedup
     ];
     nixos =
-      { config, pkgs, ... }:
+      { config, pkgs, lib, ... }:
       {
         # Enable new kde login manager
         services.displayManager.plasma-login-manager.enable = true;
@@ -15,6 +15,12 @@
         services.desktopManager.plasma6 = {
           enable = true;
         };
+
+        # KDE hosts use NetworkManager (via desktop.common-core) for Wi-Fi/Ethernet
+        # management. Disable the systemd dhcpcd service to prevent a dual-DHCP
+        # race on managed interfaces that causes ~30s link drops. Both KDE hosts
+        # (afterglow-avia, serenity) include common-core which enables NM.
+        networking.dhcpcd.enable = lib.mkForce false;
 
         # KDE Software
         # Exclude optional

@@ -31,6 +31,12 @@
       networking.hostName = "afterglow-avia";
       networking.networkmanager.enable = true;
 
+      # ath9k (QCA9565/AR9565) on this host: disable Bluetooth coexistence.
+      # Combo chip's idle Bluetooth floods HCI Event 0x00 and starves Wi-Fi,
+      # causing link drops every ~30s. Disabling btcoex is the standard fix
+      # for ath9k Wi-Fi stability on Atheros combo cards.
+      boot.kernelParams = [ "ath9k.btcoex_enable=0" ];
+
       # kkmserver HTTP endpoint (default port 5893) — local-only by default;
       # remove the restriction if yclients runs on a separate browser client.
       networking.firewall.allowedTCPPorts = [ 5893 5894 ];

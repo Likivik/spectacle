@@ -1,11 +1,19 @@
 # This file: nixos default stuffs
 { inputs, den, lib, pkgs, ... }:
+let
+  # Register graphiti-mcp (built by uv2nix sub-flake from uv.lock) as
+  # `pkgs.graphiti-mcp` so every NixOS-aspect can reference it directly.
+  graphitiMcpOverlay = (final: prev: {
+    graphiti-mcp = inputs.graphiti-mcp-workspace.packages.x86_64-linux.graphiti-mcp;
+  });
+in
 {
   /* ------------------------------------------------------------------------
                                       NixOS
     ------------------------------------------------------------------------- */
   den.default.nixos.system.stateVersion = "25.11"; # set Nixpkgs version you start with, never change for proper backward compatability
   den.default.networking.firewall.enable = true; # enable firewall everywhere
+  den.default.nixpkgs.overlays = [ graphitiMcpOverlay ];
 	flake.den = den;
 
   /* ------------------------------------------------------------------------

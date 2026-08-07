@@ -1,4 +1,4 @@
-{ config, pkgs, lib, inputs, ... }:
+{ config, pkgs, lib, ... }:
 
 # graphiti-mcp-server, built as a proper Nix derivation via uv2nix.
 #
@@ -11,14 +11,7 @@
 #   1. Edit pkgs/graphiti/mcp-workspace/uv.lock (version + sha256)
 #   2. Commit
 #   3. Rebuild — service is automatically redeployed on next switch.
-let
-  graphitiMcp = inputs.graphiti-mcp-workspace.packages.x86_64-linux.graphiti-mcp;
-  graphitiMcpOverlay = (final: prev: {
-    inherit graphitiMcp;
-  });
-in
 {
-  nixpkgs.overlays = [ graphitiMcpOverlay ];
   # FalkorDB via NixOS-managed OCI container (pulls image at activation,
   # survives rebuild/prune — replaces the hand-rolled podman run user service
   # that died when the image left the local store).

@@ -191,9 +191,17 @@ in
       services.tailscale.authKeyFile =
         config.sops.secrets."tailscale/auth-key".path;
       services.tailscale.extraUpFlags = lib.mkAfter [
-        "--advertise-tags=tag:server,tag:exit-node"
+        "--advertise-tags=tag:server,tag:exit-node,tag:nix-binary-caches"
         "--advertise-exit-node"
+        "--advertise-connector"
       ];
+
+      # Tailscale app connector requires IP forwarding to route traffic
+      # for the configured domains (install.determinate.systems,
+      # cache.flakehub.com, nix-community.cachix.org, hyprland.cachix.org,
+      # cache.nixos.org) through this host to the public internet.
+      boot.kernel.sysctl."net.ipv4.ip_forward" = 1;
+      boot.kernel.sysctl."net.ipv6.conf.all.forwarding" = 1;
 
       systemd.services.fix-ts-gro = {
         description = "Fix UDP GRO forwarding for Tailscale exit node performance";

@@ -660,6 +660,31 @@
         "type": "github"
       }
     },
+    "graphiti-mcp-workspace": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ],
+        "pyproject-build-systems": [
+          "pyproject-build-systems"
+        ],
+        "pyproject-nix": [
+          "pyproject-nix"
+        ],
+        "uv2nix": [
+          "uv2nix"
+        ]
+      },
+      "locked": {
+        "path": "./pkgs/graphiti/mcp-workspace",
+        "type": "path"
+      },
+      "original": {
+        "path": "./pkgs/graphiti/mcp-workspace",
+        "type": "path"
+      },
+      "parent": []
+    },
     "hermes-agent": {
       "inputs": {
         "flake-parts": "flake-parts_3",
@@ -2566,6 +2591,32 @@
         "type": "github"
       }
     },
+    "pyproject-build-systems_2": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ],
+        "pyproject-nix": [
+          "pyproject-nix"
+        ],
+        "uv2nix": [
+          "uv2nix"
+        ]
+      },
+      "locked": {
+        "lastModified": 1785730568,
+        "narHash": "sha256-NjSPsgjJ7MSpBtTkUcmNhRe6AFZ96+zsca2M8YuQi8Y=",
+        "owner": "pyproject-nix",
+        "repo": "build-system-pkgs",
+        "rev": "90fde00db3687922d39d95fc591475fd0bbbcd72",
+        "type": "github"
+      },
+      "original": {
+        "owner": "pyproject-nix",
+        "repo": "build-system-pkgs",
+        "type": "github"
+      }
+    },
     "pyproject-nix": {
       "inputs": {
         "nixpkgs": [
@@ -2579,6 +2630,26 @@
         "owner": "pyproject-nix",
         "repo": "pyproject.nix",
         "rev": "e537db02e72d553cea470976b9733581bcf5b3ed",
+        "type": "github"
+      },
+      "original": {
+        "owner": "pyproject-nix",
+        "repo": "pyproject.nix",
+        "type": "github"
+      }
+    },
+    "pyproject-nix_2": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1786031528,
+        "narHash": "sha256-cROiHKO3UbIKqF5FG5NikvydzlfIj4EcR1Cty9qOVt4=",
+        "owner": "pyproject-nix",
+        "repo": "pyproject.nix",
+        "rev": "1b1485546d85f6f6c7aadb10c4923dbc09633263",
         "type": "github"
       },
       "original": {
@@ -2611,6 +2682,7 @@
         "dms-plugin-registry": "dms-plugin-registry",
         "flake-file": "flake-file",
         "flake-parts": "flake-parts_2",
+        "graphiti-mcp-workspace": "graphiti-mcp-workspace",
         "hermes-agent": "hermes-agent",
         "home-manager": "home-manager",
         "hy3": "hy3",
@@ -2627,9 +2699,12 @@
         "nixpkgs": "nixpkgs_11",
         "nixpkgs-master": "nixpkgs-master",
         "obsidian-live-share": "obsidian-live-share",
+        "pyproject-build-systems": "pyproject-build-systems_2",
+        "pyproject-nix": "pyproject-nix_2",
         "quadlet-nix": "quadlet-nix",
         "sops-nix": "sops-nix",
-        "torrserver": "torrserver"
+        "torrserver": "torrserver",
+        "uv2nix": "uv2nix_2"
       }
     },
     "sops-nix": {
@@ -2868,6 +2943,29 @@
         "owner": "pyproject-nix",
         "repo": "uv2nix",
         "rev": "b68be7cfeacbed9a3fa38a2b5adc0cfb81d9bb1f",
+        "type": "github"
+      },
+      "original": {
+        "owner": "pyproject-nix",
+        "repo": "uv2nix",
+        "type": "github"
+      }
+    },
+    "uv2nix_2": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ],
+        "pyproject-nix": [
+          "pyproject-nix"
+        ]
+      },
+      "locked": {
+        "lastModified": 1786026603,
+        "narHash": "sha256-payw8w/aqR/Vr7LvDp14jxa5egFrZN7g8INsPzn7rN0=",
+        "owner": "pyproject-nix",
+        "repo": "uv2nix",
+        "rev": "0dfa8388dc855b1774f509725d8ea6806291571d",
         "type": "github"
       },
       "original": {

@@ -170,19 +170,24 @@ def should_prefetch(query: str, min_length: int = 8) -> bool:
 
 # ── Scopes ─────────────────────────────────────────────────────────────
 
-def current_scope(agent_context: str = "", project: str = "", sub: str = "") -> str:
-    """Scope hierarchy: likivik → likivik_{project} → likivik_{project}_{sub}
-    Default: likivik (user-level, where existing data lives)."""
-    if project and sub:
-        return f"likivik_{project}_{sub}"
-    if project:
-        return f"likivik_{project}"
+def current_scope(agent_context: str = "") -> str:
+    """Group namespace for graphiti writes.
+
+    Single-tenant: always returns "likivik". Kept as a function for
+    future extensibility (e.g. a per-project group) without churn at
+    call sites.
+    """
     return "likivik"
 
 
-def cascading_scopes(scope: str) -> list[str]:
-    parts = scope.split("_")
-    return ["_".join(parts[:i]) for i in range(len(parts), 0, -1)]
+def cascading_scopes(_scope: str) -> list[str]:
+    """Read scope cascade. Single-tenant: just likivik.
+
+    The cascade is a no-op for the flat-namespace setup, but the
+    function is kept so future multi-tenant (project → user) reads
+    can change one site without touching callers.
+    """
+    return ["likivik"]
 
 
 # ── Observability ──────────────────────────────────────────────────────

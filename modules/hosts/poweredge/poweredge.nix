@@ -165,7 +165,7 @@
         wants = [ "network-online.target" ];
         wantedBy = [ "multi-user.target" ];
         serviceConfig = {
-          ExecStart = "${pkgs.bash}/bin/bash -c 'exec ${pkgs.cloudflared}/bin/cloudflared tunnel --no-autoupdate run --token \"$(<${config.sops.secrets."cloudflare/poweredge-tunnel-token".path})\"'";
+          ExecStart = "${pkgs.bash}/bin/bash -c 'exec ${pkgs.cloudflared}/bin/cloudflared tunnel --no-autoupdate --protocol http2 run --token \"$(<${config.sops.secrets."cloudflare/poweredge-tunnel-token".path})\"'";
           Restart = "on-failure";
           RestartSec = 5;
         };

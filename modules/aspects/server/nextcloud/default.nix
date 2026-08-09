@@ -11,7 +11,7 @@
 
       services.nextcloud = {
         enable = true;
-        hostName = lib.mkDefault "nextcloud.likivik.com";
+        hostName = lib.mkDefault "nextcloud.filepath.ru";
         home = "/var/lib/nextcloud";
         datadir = "/tank/nextcloud";
 
@@ -58,7 +58,7 @@
           mail_smtpauth = true;
           mail_smtpname = "resend";
           mail_from_address = "nextcloud";
-          mail_domain = "likivik.com";
+          mail_domain = "filepath.ru";
           server_id = "poweredge";
           trusted_domains = [
             "poweredge.oryx-galaxy.ts.net"
@@ -104,7 +104,7 @@
           extraOptions = [ "--cap-add=MKNOD" ];
           environment = {
             extra_params = "--o:ssl.enable=false --o:ssl.termination=true";
-            domain = "nextcloud\\.likivik\\.com";
+            domain = "nextcloud\\.filepath\\.ru";
             dictionaries = "ru en";
           };
         };

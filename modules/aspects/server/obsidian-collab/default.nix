@@ -151,8 +151,9 @@
         description = "Obsidian publish — LiveSync CLI mirror + render";
         serviceConfig = {
           Type = "oneshot";
-          User = "obsidian-publish";
-          Group = "obsidian-publish";
+          User = "root";
+          Group = "root";
+          ReadWritePaths = [ "/run/secrets/obsidian/couchdb" ];
         };
         path = [ pkgs.podman pkgs.pandoc ];
         environment = {

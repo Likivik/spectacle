@@ -117,7 +117,6 @@
         "--advertise-exit-node"
         "--advertise-routes=192.168.0.100/32"
         "--accept-routes"
-        "--exit-node=100.80.80.98"
       ];
 
       systemd.services.tailscale-serve = {

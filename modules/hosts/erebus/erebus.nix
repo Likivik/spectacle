@@ -279,7 +279,14 @@ TROJANEOF
         ${pkgs.coreutils}/bin/chmod 0600 /opt/trojan/config.json
       '';
 
-      environment.systemPackages = with pkgs; [ nodejs_22 uv xray git gh ];
+      environment.systemPackages = with pkgs; [
+        nodejs_22 uv xray git gh
+        # Office document skills (docx/xlsx/powerpoint): soffice + pandoc + poppler
+        # npm helpers `docx` and `pptxgenjs` are installed by the skill on first require
+        libreoffice
+        pandoc
+        poppler-utils
+      ];
 
     };
   };

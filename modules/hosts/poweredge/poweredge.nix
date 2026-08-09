@@ -117,6 +117,7 @@
         "--advertise-exit-node"
         "--advertise-routes=192.168.0.100/32"
         "--accept-routes"
+        "--exit-node=erebus"
       ];
 
       systemd.services.tailscale-serve = {

@@ -9,14 +9,32 @@ const HOST = '0.0.0.0';
 const PORT = 8099;
 const FISH_API = 'https://api.fish.audio';
 
+const formatMap = {
+  mp3: 'mp3',
+  mpeg: 'mp3',
+  pcm: 'pcm',
+  '16bit': 'pcm',
+  flac: 'flac',
+  opus: 'opus',
+  wav: 'wav',
+};
+
 const apiKey = process.env.FISH_API_KEY ||
-  (process.env.FISH_API_KEY_FILE && require('fs').readFileSync(process.env.FISH_API_KEY_FILE, 'utf8').trim()) ||
+  (process.env.FISH_API_KEY_FILE &&
+    require('fs').readFileSync(process.env.FISH_API_KEY_FILE, 'utf8').trim()) ||
   '';
 
 if (!apiKey) {
   console.error('[fishaudio-proxy] No API key. Set FISH_API_KEY or FISH_API_KEY_FILE');
   process.exit(1);
 }
+
+const sendJson = (res, code, obj) => {
+  if (!res.headersSent) {
+    res.writeHead(code, { 'Content-Type': 'application/json' });
+  }
+  res.end(JSON.stringify(obj));
+};
 
 const server = require('http').createServer(async (req, res) => {
   if (req.method === 'OPTIONS') {
@@ -30,20 +48,26 @@ const server = require('http').createServer(async (req, res) => {
   }
 
   if (req.method !== 'POST' || req.url !== '/v1/audio/speech') {
-    res.writeHead(404);
-    res.end('Not found');
+    sendJson(res, 404, { error: 'Not found' });
     return;
   }
 
   let body = '';
   req.on('data', c => body += c);
   req.on('end', async () => {
+    let d;
     try {
-      const d = JSON.parse(body);
-      const text = (d.input || '').slice(0, 2000);
-      const reference_id = d.voice || '';
-      const format = formatMap[d.response_format] || 'mp3';
+      d = JSON.parse(body);
+    } catch (e) {
+      sendJson(res, 400, { error: 'Invalid JSON: ' + e.message });
+      return;
+    }
 
+    const text = (d.input || '').slice(0, 2000);
+    const reference_id = d.voice || '';
+    const format = formatMap[d.response_format] || 'mp3';
+
+    try {
       const fr = await fetch(`${FISH_API}/v1/tts`, {
         method: 'POST',
         headers: {
@@ -56,20 +80,20 @@ const server = require('http').createServer(async (req, res) => {
 
       if (!fr.ok) {
         const err = await fr.text();
-        res.writeHead(fr.status, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: err }));
+        sendJson(res, fr.status, { error: err });
         return;
       }
 
-      res.writeHead(200, { 'Content-Type': 'audio/mpeg', 'Transfer-Encoding': 'chunked' });
-      fr.body.pipe(res);
+      res.writeHead(200, {
+        'Content-Type': 'audio/mpeg',
+        'Transfer-Encoding': 'chunked',
+      });
+      const { Readable } = require('stream');
+      Readable.fromWeb(fr.body).pipe(res);
     } catch (e) {
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: e.message }));
+      sendJson(res, 500, { error: e.message });
     }
   });
 });
-
-const formatMap = { mp3: 'mp3', mpeg: 'mp3', pcm: 'pcm', '16bit': 'pcm', flac: 'flac', opus: 'opus', wav: 'wav' };
 
 server.listen(PORT, HOST, () => console.log(`[fishaudio-proxy] ${HOST}:${PORT}`));

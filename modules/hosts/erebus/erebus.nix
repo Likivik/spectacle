@@ -10,6 +10,7 @@ in
       den.aspects.server.hermes-agent
       den.aspects.server.scaratec
       den.aspects.server.sillytavern
+      den.aspects.server.fishaudio-proxy
       den.aspects.tts
       den.aspects.server.sops
     ];

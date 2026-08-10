@@ -48,6 +48,8 @@
           trusted_proxies = [ "127.0.0.1" "::1" ];
           forwarded_for_headers = [ "HTTP_CF_CONNECTING_IP" "HTTP_X_FORWARDED_FOR" ];
           overwriteprotocol = "https";
+          overwritehost = "nextcloud.filepath.ru";
+          "overwrite.cli.url" = "https://nextcloud.filepath.ru";
           maintenance_window_start = 3;
           twofactor_enforced = "true";
           log_type = "file";

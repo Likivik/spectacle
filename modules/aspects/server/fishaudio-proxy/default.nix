@@ -2,8 +2,8 @@
 
 {
   sops.secrets = {
-    "fishaudio/api-key" = {
-      sopsFile = den.lib.sopsFileForHost "erebus";
+    "mitmproxy/fishaudio/api-key" = {
+      sopsFile = ../../../secrets/erebus/secrets.yaml;
       owner = "hermes";
       group = "hermes";
       mode = "0600";
@@ -21,7 +21,7 @@
       Group = "hermes";
       Restart = "always";
       RestartSec = "5s";
-      EnvironmentFile = "/run/secrets/fishaudio-api-key";
+      Environment = [ "FISH_API_KEY_FILE=/run/secrets/fishaudio-api-key" ];
       ExecStart = lib.getExe (pkgs.writeScript "fishaudio-proxy.js" ''
         #!${lib.getExe pkgs.nodejs}
         // Fish Audio proxy — translates SillyTavern OpenAI TTS → Fish native /v1/tts

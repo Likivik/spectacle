@@ -1,15 +1,5 @@
 { den, lib, inputs, pkgs, ... }:
 
-let
-  cfg = pkgs.writeShellScript "risuai-start" ''
-    exec ${lib.getExe pkgs.podman} run \
-      --name risuai \
-      --rm \
-      --publish 9099:6001 \
-      --volume /var/lib/risuai:/app/save \
-      ghcr.io/kwaroran/risuai:latest
-  '';
-in
 {
   den.aspects.server.risuai = {
     nixos = { config, lib, pkgs, ... }:
@@ -18,6 +8,14 @@ in
       dataDir = "/var/lib/risuai";
       image = "ghcr.io/kwaroran/risuai:latest";
       podman = lib.getExe pkgs.podman;
+      startScript = pkgs.writeShellScript "risuai-start" ''
+        exec ${podman} run \
+          --name risuai \
+          --rm \
+          --publish ${toString port}:6001 \
+          --volume ${dataDir}:/app/save \
+          ${image}
+      '';
     in {
       virtualisation.podman.enable = true;
 
@@ -43,15 +41,12 @@ in
         after = [ "network-online.target" "risuai-prepull.service" ];
         wants = [ "network-online.target" ];
 
-        script = ''
-          exec ${cfg}
-        '';
-
         serviceConfig = {
           Type = "simple";
           Restart = "always";
           RestartSec = "10s";
           TimeoutStartSec = "300s";
+          ExecStart = "${startScript}";
           ExecStop = "${podman} rm -f risuai 2>/dev/null || true";
         };
       };

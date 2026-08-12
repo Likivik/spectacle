@@ -6,6 +6,7 @@
       den.aspects.server.nextcloud
       den.aspects.server.immich
       den.aspects.server.obsidian-collab
+      den.aspects.server.trilium
       den.aspects.server.nc-rag
     ];
 

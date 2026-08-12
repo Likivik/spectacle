@@ -12,7 +12,7 @@
         exec ${podman} run \
           --name pocketrisu \
           --rm \
-          --publish ${toString port}:6001 \
+          --publish 127.0.0.1:${toString port}:6001 \
           --volume ${dataDir}:/app/save \
           ${image}
       '';
@@ -51,7 +51,6 @@
         };
       };
 
-      networking.firewall.interfaces.tailscale0.allowedTCPPorts = [ port ];
     };
   };
 }

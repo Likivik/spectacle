@@ -5,7 +5,7 @@ in {
   services.llama-cpp = {
     enable = true;
     settings = {
-      host = "127.0.0.1";
+      host = "0.0.0.0";
       port = 8081;
       model = model_path;
       embedding = true;
@@ -19,6 +19,9 @@ in {
     };
     openFirewall = false;
   };
+
+  # Allow PocketRisu container (podman0 bridge) to reach the embedder
+  networking.firewall.interfaces.podman0.allowedTCPPorts = [ 8081 ];
 
   system.activationScripts."hermes-llama-model" = lib.stringAfter (
     lib.optional (config.system.activationScripts ? setupSecrets) "setupSecrets"

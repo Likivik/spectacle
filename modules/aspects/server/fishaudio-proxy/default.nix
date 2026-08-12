@@ -42,6 +42,7 @@ in
 
       networking.firewall.interfaces.tailscale0.allowedTCPPorts = [ 8099 ];
       networking.firewall.interfaces.lo.allowedTCPPorts = [ 8099 ];
+      networking.firewall.interfaces.podman0.allowedTCPPorts = [ 8099 ];
     };
   };
 }

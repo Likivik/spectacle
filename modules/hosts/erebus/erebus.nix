@@ -293,3 +293,22 @@ TROJANEOF
     };
   };
 }
+      # Auto-pull spectacle repo every 5 min (read-only reference for Hermes)
+      systemd.services.spectacle-autopull = {
+        description = "Pull spectacle repo from origin";
+        after = [ "network-online.target" ];
+        wants = [ "network-online.target" ];
+        serviceConfig = {
+          Type = "oneshot";
+          User = "hermes";
+          ExecStart = "${pkgs.git}/bin/git -C /var/lib/hermes/spectacle pull --ff-only origin dev";
+        };
+      };
+
+      systemd.timers.spectacle-autopull = {
+        wantedBy = [ "timers.target" ];
+        timerConfig = {
+          OnBootSec = "2min";
+          OnUnitActiveSec = "5min";
+        };
+      };

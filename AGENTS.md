@@ -34,13 +34,13 @@ This repo uses **jj** (Jujutsu) on top of git. jj is the primary VCS.
    sudo nixos-rebuild switch --flake .#erebus
 
    # Serenity (remote)
-   nixos-rebuild switch --flake .#serenity --build-host likivik@serenity --target-host likivik@serenity --use-remote-sudo
+   nixos-rebuild switch --flake .#serenity --build-host likivik@serenity --target-host likivik@serenity --elevate=sudo
 
    # Traversal (remote)
-   nixos-rebuild switch --flake .#traversal --build-host likivik@traversal --target-host likivik@traversal --use-remote-sudo
+   nixos-rebuild switch --flake .#traversal --build-host likivik@traversal --target-host likivik@traversal --elevate=sudo
 
    # Poweredge (remote)
-   nixos-rebuild switch --flake .#poweredge --build-host likivik@poweredge --target-host likivik@poweredge --use-remote-sudo
+   nixos-rebuild switch --flake .#poweredge --build-host likivik@poweredge --target-host likivik@poweredge --elevate=sudo
    ```
 
 4. **Each host builds its own closure.** No central build host — `--build-host` and `--target-host` point to the same machine.

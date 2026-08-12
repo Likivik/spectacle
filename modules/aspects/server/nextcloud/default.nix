@@ -121,6 +121,41 @@
         "opcache.memory_consumption" = "256";
         "opcache.revalidate_freq" = "1";
         "opcache.fast_shutdown" = "1";
+        "opcache.jit" = "tracing";
+        "opcache.jit_buffer_size" = "128M";
+      };
+
+      # Ensure opcache + JIT enabled in FPM pool
+      services.phpfpm.pools.nextcloud.phpOptions = ''
+        opcache.enable=1
+        opcache.enable_cli=0
+        opcache.interned_strings_buffer=16
+        opcache.max_accelerated_files=10000
+        opcache.memory_consumption=256
+        opcache.revalidate_freq=1
+        opcache.fast_shutdown=1
+        opcache.jit=tracing
+        opcache.jit_buffer_size=128M
+      '';
+
+      # Nginx: brotli compression + HTTP/2
+      services.nginx = {
+        additionalModules = [ pkgs.nginxModules.brotli ];
+        appendHttpConfig = ''
+          brotli on;
+          brotli_comp_level 6;
+          brotli_types
+            text/plain
+            text/css
+            text/javascript
+            application/javascript
+            application/json
+            application/xml
+            application/xml+rss
+            image/svg+xml
+            font/woff
+            font/woff2;
+        '';
       };
 
       networking.firewall.interfaces.tailscale0.allowedTCPPorts = [ 80 443 ];

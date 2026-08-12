@@ -298,7 +298,7 @@ TROJANEOF
         serviceConfig = {
           Type = "oneshot";
           User = "hermes";
-          ExecStart = "${pkgs.git}/bin/git -C /var/lib/hermes/spectacle pull --ff-only origin dev";
+          ExecStart = "${pkgs.git}/bin/git -C /Storage/Git/spectacle pull --ff-only origin dev";
         };
       };
 

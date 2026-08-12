@@ -2,11 +2,9 @@
 
 ## Repo Location
 
-- **Erebus**: `/Storage/Git/spectacle` — primary workspace (jj repo, local edits)
-- **Serenity**: `/Storage/Git/spectacle` — build host (auto-pulls every 5 min)
+- **Erebus**: `/Storage/Git/spectacle` — primary workspace (jj repo, local edits, agents run here)
+- **Serenity**: `/Storage/Git/spectacle` — auto-pulls every 5 min
 - **Traversal**: `/Storage/Git/spectacle` — auto-pulls every 5 min
-
-Agents run on erebus. Edit locally, build on serenity.
 
 ## VCS: Jujutsu (jj)
 
@@ -27,21 +25,32 @@ This repo uses **jj** (Jujutsu) on top of git. jj is the primary VCS.
 
 2. **Never create git worktrees.** jj handles parallel work via `jj new` — multiple changes in one checkout.
 
-3. **Always push before deploying:**
+3. **Always push before deploying.** Each host builds its own config locally:
    ```bash
-   jj bookmark set dev -r @
-   jj git push --all
-   ssh serenity "cd /Storage/Git/spectacle && git pull --ff-only origin dev && nixos-rebuild switch --flake .#<host> --target-host likivik@<host> --use-remote-sudo"
+   # Push first
+   jj bookmark set dev -r @ && jj git push --all
+
+   # Erebus (local — agents run here)
+   sudo nixos-rebuild switch --flake .#erebus
+
+   # Serenity (remote)
+   nixos-rebuild switch --flake .#serenity --build-host likivik@serenity --target-host likivik@serenity --use-remote-sudo
+
+   # Traversal (remote)
+   nixos-rebuild switch --flake .#traversal --build-host likivik@traversal --target-host likivik@traversal --use-remote-sudo
+
+   # Poweredge (remote)
+   nixos-rebuild switch --flake .#poweredge --build-host likivik@poweredge --target-host likivik@poweredge --use-remote-sudo
    ```
 
-4. **Build only on serenity.** Deploy via `--target-host` to other hosts (poweredge, erebus, etc).
+4. **Each host builds its own closure.** No central build host — `--build-host` and `--target-host` point to the same machine.
 
 5. **Working with jj changes:**
    - Each task = one `jj new`
    - Edit files normally
    - jj auto-tracks all changes (no `git add` needed)
    - `jj log` to see all changes
-   - Before merging: `jj squash` + `jj describe` to clean up
+   - Before merging to main: `jj squash` + `jj describe` to clean up
    - Push: `jj bookmark set dev -r @ && jj git push --all`
 
 6. **Migrating existing git branches:**

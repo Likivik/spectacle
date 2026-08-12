@@ -1,5 +1,13 @@
 # Agent Instructions — Spectacle Repository
 
+## Repo Location
+
+- **Erebus**: `/Storage/Git/spectacle` — primary workspace (jj repo, local edits)
+- **Serenity**: `/Storage/Git/spectacle` — build host (auto-pulls every 5 min)
+- **Traversal**: `/Storage/Git/spectacle` — auto-pulls every 5 min
+
+Agents run on erebus. Edit locally, build on serenity.
+
 ## VCS: Jujutsu (jj)
 
 This repo uses **jj** (Jujutsu) on top of git. jj is the primary VCS.
@@ -10,6 +18,7 @@ This repo uses **jj** (Jujutsu) on top of git. jj is the primary VCS.
    - `jj new` — start a new change (equivalent of git checkout -b)
    - `jj describe -m "message"` — set commit message
    - `jj log` — view history
+   - `jj bookmark set dev -r @` — point dev bookmark at current change
    - `jj git push --all` — push to origin
    - `jj squash` — combine changes
    - `jj edit <id>` — switch to an existing change
@@ -20,8 +29,9 @@ This repo uses **jj** (Jujutsu) on top of git. jj is the primary VCS.
 
 3. **Always push before deploying:**
    ```bash
+   jj bookmark set dev -r @
    jj git push --all
-   nixos-rebuild switch --flake .#<host> --target-host likivik@<host> --use-remote-sudo
+   ssh serenity "cd /Storage/Git/spectacle && git pull --ff-only origin dev && nixos-rebuild switch --flake .#<host> --target-host likivik@<host> --use-remote-sudo"
    ```
 
 4. **Build only on serenity.** Deploy via `--target-host` to other hosts (poweredge, erebus, etc).
@@ -31,8 +41,8 @@ This repo uses **jj** (Jujutsu) on top of git. jj is the primary VCS.
    - Edit files normally
    - jj auto-tracks all changes (no `git add` needed)
    - `jj log` to see all changes
-   - Before merging to main: `jj squash` + `jj describe` to clean up
-   - Push: `jj git push --all`
+   - Before merging: `jj squash` + `jj describe` to clean up
+   - Push: `jj bookmark set dev -r @ && jj git push --all`
 
 6. **Migrating existing git branches:**
    - jj reads existing git history automatically

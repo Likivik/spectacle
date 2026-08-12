@@ -99,6 +99,26 @@
           Login.HandleLidSwitchExternalPower = "ignore";
         };
 
+        # Auto-pull spectacle repo every 5 min
+        systemd.services.spectacle-autopull = {
+          description = "Pull spectacle repo from origin";
+          after = [ "network-online.target" ];
+          wants = [ "network-online.target" ];
+          serviceConfig = {
+            Type = "oneshot";
+            User = "likivik";
+            ExecStart = "${pkgs.git}/bin/git -C /Storage/Git/spectacle pull --ff-only origin dev";
+          };
+        };
+
+        systemd.timers.spectacle-autopull = {
+          wantedBy = [ "timers.target" ];
+          timerConfig = {
+            OnBootSec = "2min";
+            OnUnitActiveSec = "5min";
+          };
+        };
+
         nixpkgs.hostPlatform = lib.mkDefault "x86_64-linux";
         hardware.cpu.amd.updateMicrocode = lib.mkDefault config.hardware.enableRedistributableFirmware;
 

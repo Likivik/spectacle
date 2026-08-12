@@ -144,6 +144,26 @@
           };
         };
 
+        # Auto-pull spectacle repo every 5 min
+        systemd.services.spectacle-autopull = {
+          description = "Pull spectacle repo from origin";
+          after = [ "network-online.target" ];
+          wants = [ "network-online.target" ];
+          serviceConfig = {
+            Type = "oneshot";
+            User = "likivik";
+            ExecStart = "${pkgs.git}/bin/git -C /Storage/Git/spectacle pull --ff-only origin dev";
+          };
+        };
+
+        systemd.timers.spectacle-autopull = {
+          wantedBy = [ "timers.target" ];
+          timerConfig = {
+            OnBootSec = "2min";
+            OnUnitActiveSec = "5min";
+          };
+        };
+
         # KRDP — KDE Remote Desktop (RDP server, Wayland-native)
         systemd.user.services.krdp = {
           description = "KDE Remote Desktop (RDP) Server";

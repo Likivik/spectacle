@@ -282,7 +282,7 @@ TROJANEOF
       '';
 
       environment.systemPackages = with pkgs; [
-        nodejs_22 uv xray git gh
+        nodejs_22 uv xray git gh pkgs.jujutsu
         # Office document skills (docx/xlsx/powerpoint): soffice + pandoc + poppler
         # npm helpers `docx` and `pptxgenjs` are installed by the skill on first require
         libreoffice

@@ -11,7 +11,7 @@ in
       den.aspects.server.scaratec
       den.aspects.server.sillytavern
       den.aspects.server.fishaudio-proxy
-      den.aspects.server.risuai
+      den.aspects.server.pocketrisu
       den.aspects.tts
       den.aspects.server.sops
     ];

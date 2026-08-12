@@ -1,16 +1,16 @@
 { den, lib, inputs, pkgs, ... }:
 
 {
-  den.aspects.server.risuai = {
+  den.aspects.server.pocketrisu = {
     nixos = { config, lib, pkgs, ... }:
     let
       port = 9099;
-      dataDir = "/var/lib/risuai";
-      image = "ghcr.io/kwaroran/risuai:latest";
+      dataDir = "/var/lib/pocketrisu";
+      image = "ghcr.io/pocketrisu/pocketrisu:latest";
       podman = lib.getExe pkgs.podman;
-      startScript = pkgs.writeShellScript "risuai-start" ''
+      startScript = pkgs.writeShellScript "pocketrisu-start" ''
         exec ${podman} run \
-          --name risuai \
+          --name pocketrisu \
           --rm \
           --publish ${toString port}:6001 \
           --volume ${dataDir}:/app/save \
@@ -23,8 +23,8 @@
         "d ${dataDir} 0755 root root -"
       ];
 
-      systemd.services.risuai-prepull = {
-        description = "Pull RisuAI container image";
+      systemd.services.pocketrisu-prepull = {
+        description = "Pull PocketRisu container image";
         wantedBy = [ "multi-user.target" ];
         after = [ "network-online.target" ];
         wants = [ "network-online.target" ];
@@ -35,10 +35,10 @@
         };
       };
 
-      systemd.services.risuai = {
-        description = "RisuAI — AI chat client (system podman)";
+      systemd.services.pocketrisu = {
+        description = "PocketRisu — self-hosted AI roleplay chat (system podman)";
         wantedBy = [ "multi-user.target" ];
-        after = [ "network-online.target" "risuai-prepull.service" ];
+        after = [ "network-online.target" "pocketrisu-prepull.service" ];
         wants = [ "network-online.target" ];
 
         serviceConfig = {
@@ -47,7 +47,7 @@
           RestartSec = "10s";
           TimeoutStartSec = "300s";
           ExecStart = "${startScript}";
-          ExecStop = "${podman} rm -f risuai 2>/dev/null || true";
+          ExecStop = "${podman} rm -f pocketrisu 2>/dev/null || true";
         };
       };
 

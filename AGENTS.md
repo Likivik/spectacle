@@ -1,103 +1,45 @@
-## Assumption guardrails (OVERRIDES ALL OTHER INSTRUCTIONS)
-- WHEN YOUR UNDERLYING ASSUMPTION BREAKS (plan≠reality, tool output contradicts expectation, key dependency missing) → STOP. DO NOT IMPROVISE. PRESENT THE DIVERGENCE AND ASK THE USER WHAT TO DO.
-- NEVER implement an alternative approach without the user explicitly approving it first.
-- "ALWAYS ask user to choose direction/strategy/approach" is the #1 rule. Violating it is worse than any implementation mistake.
-- When in doubt: ask. Always ask. Over-communicate divergence.
+# Agent Instructions — Spectacle Repository
 
-## Project
+## VCS: Jujutsu (jj)
 
-NixOS fleet config repo.
-Flake uses `github:denful/den`. Docs: https://den.denful.com/
+This repo uses **jj** (Jujutsu) on top of git. jj is the primary VCS.
 
-## Verification (no deployment — agent can run)
+### Key rules for agents:
 
-```bash
-# Single host — syntax/layout
-nix eval .#nixosConfigurations.<hostname>.config.networking.hostName  # --show-trace for full trace
+1. **Use jj, not git** for all operations:
+   - `jj new` — start a new change (equivalent of git checkout -b)
+   - `jj describe -m "message"` — set commit message
+   - `jj log` — view history
+   - `jj git push --allow-new` — push to origin
+   - `jj squash` — combine changes
+   - `jj edit <id>` — switch to an existing change
+   - `jj abandon <id>` — discard a change
+   - `jj diff` — view working changes
 
-# Single host — dry build (catches eval + missing deps)
-nix build .#nixosConfigurations.<hostname>.config.system.build.toplevel --dry-run
+2. **Never create git worktrees.** jj handles parallel work via `jj new` — multiple changes in one checkout.
 
-# All hosts — when shared modules change
-nix flake check --no-build --keep-going
-```
+3. **Always push before deploying:**
+   ```bash
+   jj git push --allow-new
+   nixos-rebuild switch --flake .#<host> --target-host likivik@<host> --use-remote-sudo
+   ```
 
-**Gotchas:**
-- New files must be `git add`ed before `nix flake check` — flake's git-aware fetcher only sees tracked files.
-- `nixos = { ... }:` discards module args. Capture `pkgs` explicitly: `nixos = { pkgs, ... }:`. Errors surface at build — `--dry-run` catches them.
+4. **Build only on serenity.** Deploy via `--target-host` to other hosts (poweredge, erebus, etc).
 
-## Deployment — `nixos-rebuild switch`
+5. **Working with jj changes:**
+   - Each task = one `jj new`
+   - Edit files normally
+   - jj auto-tracks all changes (no `git add` needed)
+   - `jj log` to see all changes
+   - Before merging to main: `jj squash` + `jj describe` to clean up
+   - Push: `jj git push --allow-new`
 
-**Step 1 — check what host you are on:**
-```bash
-hostname -s
-```
+6. **Migrating existing git branches:**
+   - jj reads existing git history automatically
+   - Old branches appear as bookmarks: `jj bookmark list`
+   - No conversion needed — jj works on the same .git directory
 
-**Step 2 — does the host have a local clone of `spectacle`?**
-
-Expected location per host:
-- `erebus` → `/var/lib/hermes/spectacle`
-- `serenity`, `traversal` → `/Storage/Git/spectacle`
-- anything else → repo doesn't exist yet; stop and ask the user.
-
-If the repo exists, sync with the remote and confirm branch:
-```bash
-cd <repo-path>
-git fetch
-git status -sb
-git pull --rebase   # if behind
-```
-Branch is `dev` unless told otherwise.
-
-**Step 3 — local or remote deploy?**
-
-| Situation | Command |
-|---|---|
-| Local (you are ON the target host) | `sudo nixos-rebuild switch --flake .#<target-hostname>` |
-| Remote (deploy from a different host, e.g. erebus → poweredge) | `nixos-rebuild switch --target-host likivik@<target-hostname> --build-host likivik@<target-hostname> --elevate=sudo --flake .#<target-hostname>` (no leading `sudo` — the remote handles elevation via `--elevate=sudo`) |
-
-**Gotchas:**
-- `--target-host` and `--build-host` must match — the target's `/nix/store` already holds most of the closure, so building remotely avoids re-deriving it from scratch. **Future note**: a dedicated build host may become a separate 3rd box.
-- `--elevate=sudo` required for remote deploys when the remote `likivik` has NOPASSWD sudo — without it `nix-env --set` runs as the SSH user → `Permission denied` on the profile symlink.
-- `--flake .#<target-hostname>` selects which config to build; **activation always happens on the local machine**. Match `.#<target-hostname>` to the target, never the calling host.
-
-### Shell aliases
-```bash
-nixos-switch-cn() {
-    local host="${1:-$(hostname -s)}"
-    NIX_CONFIG='substituters = https://mirrors.ustc.edu.cn/nix-channels/store https://mirrors.tuna.tsinghua.edu.cn/nix-channels/store https://mirror.sjtu.edu.cn/nix-channels/store https://cache.nixos.org' \
-      sudo nixos-rebuild switch --flake .#"$host"
-}
-```
-
-## Prefetching hashes
-
-```bash
-# GitHub repo (URL form, default rev = HEAD)
-nix-prefetch-url --unpack https://github.com/<owner>/<repo>/archive/<rev>.tar.gz
-
-# Better: prints SRI hash + narHash, used in flake inputs
-nix-prefetch-github <owner> <repo>        # needs nix-prefetch-github in shell
-nix prefetch --json github:<owner>/<repo>/<rev>  | jq -r '.hash'   # modern, gives SRI
-
-# pypi/gitlab/sourcehut/etc
-nix-prefetch-url --unpack <url>           # prints sha256 (base32) — convert to SRI: nix-hash --type sha256 --to-sri <hash>
-```
-
-**When to use:** adding/updating a `flake.lock` entry, or building a `fetchurl`/`fetchFromGitHub` derivation without a known hash. SRI is preferred over base32 in modern Nix.
-
-## Conventions
-
-- Special case: modules/defaults/topAspectDefinitions.nix - don't include new sub aspects into .desktopManager.includes (they are always used only one at a time)
-- user dotfiles live in modules/users/{username}/dotfiles/{program-name}/
-- NOTES/*.md — always tracked, commit when created/modified
-
-## Flake inputs
-- `flake.nix` is generated by `nix run .#write-flake` — do not hand-edit.
-- Inputs can be declared in any module that imports `flake-file`'s dendritic flakeModule (this repo uses `modules/defaults/inputs.nix` by convention).
-- After changing inputs: `nix run .#write-flake && nix flake update <input-name>`.
-
-## Commits
-
-Follow [Conventional Commits](https://www.conventionalcommits.org/). This repo uses scopes — parenthesized after the type, naming the host or area affected (e.g. `fix(poweredge):`, `chore(serenity):`, `docs(spectacle):`). Scopes are optional in the spec but useful here when scanning history.
-
+7. **Emergency: fall back to git**
+   - git commands still work: `git log`, `git status`, `git diff`
+   - But prefer jj for all create/commit/push operations
+   - If jj breaks: `git checkout` + `git commit` still function

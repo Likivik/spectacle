@@ -56,6 +56,7 @@
       den.aspects.android
       den.aspects.dev-fonts
       den.aspects.git
+      den.aspects.jujutsu
       den.aspects.direnv
       den.aspects.docker
       # den.aspects.hindsight

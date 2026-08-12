@@ -290,9 +290,6 @@ TROJANEOF
         poppler-utils
       ];
 
-    };
-  };
-}
       # Auto-pull spectacle repo every 5 min (read-only reference for Hermes)
       systemd.services.spectacle-autopull = {
         description = "Pull spectacle repo from origin";
@@ -312,3 +309,7 @@ TROJANEOF
           OnUnitActiveSec = "5min";
         };
       };
+
+    };
+  };
+}

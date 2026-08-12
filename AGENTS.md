@@ -10,7 +10,7 @@ This repo uses **jj** (Jujutsu) on top of git. jj is the primary VCS.
    - `jj new` — start a new change (equivalent of git checkout -b)
    - `jj describe -m "message"` — set commit message
    - `jj log` — view history
-   - `jj git push --allow-new` — push to origin
+   - `jj git push --all` — push to origin
    - `jj squash` — combine changes
    - `jj edit <id>` — switch to an existing change
    - `jj abandon <id>` — discard a change
@@ -20,7 +20,7 @@ This repo uses **jj** (Jujutsu) on top of git. jj is the primary VCS.
 
 3. **Always push before deploying:**
    ```bash
-   jj git push --allow-new
+   jj git push --all
    nixos-rebuild switch --flake .#<host> --target-host likivik@<host> --use-remote-sudo
    ```
 
@@ -32,7 +32,7 @@ This repo uses **jj** (Jujutsu) on top of git. jj is the primary VCS.
    - jj auto-tracks all changes (no `git add` needed)
    - `jj log` to see all changes
    - Before merging to main: `jj squash` + `jj describe` to clean up
-   - Push: `jj git push --allow-new`
+   - Push: `jj git push --all`
 
 6. **Migrating existing git branches:**
    - jj reads existing git history automatically

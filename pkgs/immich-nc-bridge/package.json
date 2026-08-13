@@ -1,0 +1,21 @@
+{
+  "name": "immich-nc-bridge",
+  "version": "0.1.0",
+  "description": "Immich Workflow plugin: classify new assets, route docs to Nextcloud",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@immich/plugin-sdk": "*",
+    "@immich/sdk": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0"
+  }
+}

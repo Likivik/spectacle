@@ -6,6 +6,7 @@
       den.aspects.server.nextcloud
       den.aspects.server.nc-ocr
       den.aspects.server.immich
+      den.aspects.server.immich-nc-bridge
       den.aspects.server.evc-team-relay
       den.aspects.server.obsidian-collab
       den.aspects.server.trilium

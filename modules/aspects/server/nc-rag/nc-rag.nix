@@ -83,23 +83,25 @@
             DynamicUser = true; StateDirectory = "llama-cpp-reranker";
           };
         };
-        # On-demand OCR — Restart=no so it unloads after a batch.
-        systemd.services.llama-gemma-vision = {
-          description = "llama.cpp gemma-3-4b-it vision (on-demand OCR)";
-          after = [ "network.target" ];
-          path = [ pkgs.curl ];
-          serviceConfig = gpuServiceCfg // {
-            Type = "exec";
-            ExecStart = ''
-              ${llama-server} --host 127.0.0.1 --port 8083 \
-                -m ${modelsDir}/gemma-3-4b-it-q2_k.gguf \
-                --mmproj ${modelsDir}/mmproj-gemma-3-4b-it-f16.gguf \
-                -ngl 99 --ctx-size 4096
-            '';
-            Restart = "no";
-            DynamicUser = true; StateDirectory = "llama-cpp-gemma";
-          };
-        };
+        # gemma-vision DISABLED — replaced by olmocr-vision (port 8083).
+        # Keep this stanza as a reference; new VLM lives in modules/aspects/server/olmocr-vision.
+        #
+        # systemd.services.llama-gemma-vision = {
+        #   description = "llama.cpp gemma-3-4b-it vision (on-demand OCR)";
+        #   after = [ "network.target" ];
+        #   path = [ pkgs.curl ];
+        #   serviceConfig = gpuServiceCfg // {
+        #     Type = "exec";
+        #     ExecStart = ''
+        #       ${llama-server} --host 127.0.0.1 --port 8083 \
+        #         -m ${modelsDir}/gemma-3-4b-it-q2_k.gguf \
+        #         --mmproj ${modelsDir}/mmproj-gemma-3-4b-it-f16.gguf \
+        #         -ngl 99 --ctx-size 4096
+        #     '';
+        #     Restart = "no";
+        #     DynamicUser = true; StateDirectory = "llama-cpp-gemma";
+        #   };
+        # };
         # Ollama-compat proxy: enables nc-mcp semantic search by translating
         # /api/{tags,embed,chat} → llama.cpp's OpenAI endpoints.
         # Bound 127.0.0.1:11434 only (Tailscale + poweredge reach it via serenity DNS).

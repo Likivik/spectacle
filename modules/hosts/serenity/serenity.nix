@@ -16,6 +16,7 @@
       den.aspects.firefox
 
       den.aspects.server.nc-rag
+      den.aspects.server.olmocr-vision
     ];
 
     maid = {

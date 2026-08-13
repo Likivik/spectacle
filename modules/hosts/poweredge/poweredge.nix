@@ -4,7 +4,9 @@
       den.aspects.server.core
       den.aspects.server.sops
       den.aspects.server.nextcloud
+      den.aspects.server.nc-ocr
       den.aspects.server.immich
+      den.aspects.server.evc-team-relay
       den.aspects.server.obsidian-collab
       den.aspects.server.trilium
       den.aspects.server.nc-rag

@@ -40,7 +40,10 @@
             ]));
     in {
       packages = forAllSystems (system: {
-        ${projectName} = pythonSets.${system}.${projectName};
+        # mkVirtualEnv bundles the project's deps into a single Python
+        # site-packages tree so the entry-point script can resolve
+        # `import pikepdf` etc. without callers needing to set PYTHONPATH.
+        ${projectName} = pythonSets.${system}.mkVirtualEnv projectName { ${projectName} = [ ]; };
       });
       apps = forAllSystems (system: {
         ${projectName} = {

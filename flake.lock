@@ -1992,6 +1992,31 @@
         "type": "github"
       }
     },
+    "nc-ocr-flow": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ],
+        "pyproject-build-systems": [
+          "pyproject-build-systems"
+        ],
+        "pyproject-nix": [
+          "pyproject-nix"
+        ],
+        "uv2nix": [
+          "uv2nix"
+        ]
+      },
+      "locked": {
+        "path": "./pkgs/nc-ocr-flow",
+        "type": "path"
+      },
+      "original": {
+        "path": "./pkgs/nc-ocr-flow",
+        "type": "path"
+      },
+      "parent": []
+    },
     "niri-float-sticky": {
       "inputs": {
         "flake-utils": "flake-utils",
@@ -2691,6 +2716,7 @@
         "hyprland-plugins": "hyprland-plugins",
         "import-tree": "import-tree",
         "llm-agents": "llm-agents",
+        "nc-ocr-flow": "nc-ocr-flow",
         "niri-float-sticky": "niri-float-sticky",
         "nirimod": "nirimod",
         "nix-maid": "nix-maid",

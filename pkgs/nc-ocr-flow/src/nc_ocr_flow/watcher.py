@@ -104,31 +104,49 @@ def _process_one(path_str: str) -> dict:
 
 
 def _watch_loop(queue: Queue) -> None:
-    import pyinotify
+    """Watch WATCH_DIRS for new files via inotify_simple (ctypes wrapper).
 
-    wm = pyinotify.WatchManager()
-    mask = pyinotify.IN_CLOSE_WRITE | pyinotify.IN_MOVED_TO
+    Recursively walks each WATCH_DIRS entry and adds a watch on every
+    subdirectory. Events only carry a basename; we maintain a wd → path
+    lookup so we can build the full path before enqueuing.
+    """
+    from inotify_simple import INotify, flags
 
-    class Handler(pyinotify.ProcessEvent):
-        def process_IN_CLOSE_WRITE(self, event):
-            if _should_process(Path(event.pathname)):
-                queue.put(event.pathname)
+    inotify = INotify()
+    mask = flags.CLOSE_WRITE | flags.MOVED_TO | flags.CREATE
+    wd_to_path: dict[int, str] = {}
 
-        def process_IN_MOVED_TO(self, event):
-            if _should_process(Path(event.pathname)):
-                queue.put(event.pathname)
+    def _add_watch_dir(path: str) -> None:
+        wd = inotify.add_watch(path, mask)
+        wd_to_path[wd] = path
+        for entry in Path(path).iterdir():
+            if entry.is_dir():
+                _add_watch_dir(str(entry))
 
-    notifier = pyinotify.Notifier(wm, Handler())
     for subdir in WATCH_DIRS:
         watch_path = Path(NC_DATA_DIR) / subdir.lstrip("/")
         if watch_path.exists():
-            wm.add_watch(str(watch_path), mask, recursive=True)
-            log.info("watching: %s", watch_path)
+            _add_watch_dir(str(watch_path))
+            log.info("watching %s (recursive)", watch_path)
         else:
             log.warning("watch dir does not exist: %s", watch_path)
 
+    while True:
+        for event in inotify.read(timeout=1000):
+            if event.mask & flags.ISDIR:
+                # New subdirectory appeared — watch it.
+                parent = wd_to_path.get(event.wd, "")
+                if parent and event.name:
+                    new_dir = str(Path(parent) / event.name)
+                    if Path(new_dir).is_dir():
+                        _add_watch_dir(new_dir)
+                continue
+            if event.mask & (flags.CLOSE_WRITE | flags.MOVED_TO):
+                parent = wd_to_path.get(event.wd, "")
+                full = str(Path(parent) / event.name) if parent and event.name else ""
+                if full and _should_process(Path(full)):
+                    queue.put(full)
     log.info("inotify loop started")
-    notifier.loop()
 
 
 def _worker_loop(queue: Queue) -> None:

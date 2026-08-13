@@ -31,13 +31,14 @@
       environment.etc."llm/olmocr-v2-Q4_K_M.gguf".source =
         pkgs.fetchurl {
           url = "https://huggingface.co/bartowski/allenai_olmOCR-2-7B-1025-GGUF/resolve/main/allenai_olmOCR-2-7B-1025-Q4_K_M.gguf";
-          sha256 = lib.fakeSha256;  # TODO: real hash on first build
+          sha256 = "sha256-NHk1/EwWgIz5fHrcVj2pLGetkO6wUEpGX/n6mNJ5Tz4=";
         };
 
       environment.etc."llm/olmocr-v2-mmproj.gguf".source =
         pkgs.fetchurl {
+          # mmproj (vision encoder) — verified hash 2026-08-13
           url = "https://huggingface.co/bartowski/allenai_olmOCR-2-7B-1025-GGUF/resolve/main/mmproj-allenai_olmOCR-2-7B-1025-f16.gguf";
-          sha256 = lib.fakeSha256;  # TODO: real hash on first build
+          sha256 = "sha256-eNFpCk2YBR9ScQTDN5a3n6oF8VjRRkXhnbkfrJm9GwQ=";
         };
 
       # Model storage dir (persistent across rebuilds)
@@ -60,10 +61,13 @@
           # Use llama-server with --hf flag for multimodal model auto-download.
           # Equivalent to: -m model.gguf --mmproj mmproj.gguf
           # See llama.cpp multimodal.md.
-          ExecStart = ''
-            ${lib.getExe' pkgs.llama-cpp-cuda "llama-server"} \
+          ExecStart = let
+            llamaCppCuda = pkgs.llama-cpp.override { cudaSupport = true; };
+          in ''
+            ${lib.getExe' llamaCppCuda "llama-server"} \
               --host 127.0.0.1 --port 8083 \
-              --hf bartowski/allenai_olmOCR-2-7B-1025-GGUF:Q4_K_M \
+              -m /etc/llm/olmocr-v2-Q4_K_M.gguf \
+              --mmproj /etc/llm/olmocr-v2-mmproj.gguf \
               -ngl 99 --ctx-size 8192 --threads 4 --batch-size 512 \
               --temp 0.0 --top-k 1 \
               --alias olmocr-v2

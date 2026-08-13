@@ -12,6 +12,7 @@ in
       den.aspects.server.sillytavern
       den.aspects.server.fishaudio-proxy
       den.aspects.server.pocketrisu
+      den.aspects.server.n8n
       den.aspects.tts
       den.aspects.server.sops
     ];
@@ -67,7 +68,7 @@ in
         interfaces.tailscale0.allowedUDPPorts = [ 41641 ];
       } // (if lockSshToTailscale then {
         allowedTCPPorts = lib.mkForce [ ];
-        interfaces.tailscale0.allowedTCPPorts = [ 22 9119 8642 3443 8001 8880 ];
+        interfaces.tailscale0.allowedTCPPorts = [ 22 9119 8642 3443 8001 8003 8880 ];
       } else {
         allowedTCPPorts = lib.mkForce [ 22 ];
       });

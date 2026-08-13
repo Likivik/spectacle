@@ -6,8 +6,9 @@
       den.aspects.server.nextcloud
       den.aspects.server.nc-ocr
       den.aspects.server.immich
-      den.aspects.server.immich-nc-bridge
-      den.aspects.server.evc-team-relay
+      # immich-nc-bridge disabled — requires Extism WASM rewrite + real npm deps hash.
+      # Re-enable once plugin SDK integration lands.
+      # den.aspects.server.immich-nc-bridge
       den.aspects.server.obsidian-collab
       den.aspects.server.trilium
       den.aspects.server.nc-rag

@@ -11,7 +11,12 @@ dependencies = [
   "pikepdf>=8.0",
   "img2pdf>=0.5",
   "watchdog>=4.0",
+  "numpy>=1.26",
+  "onnxruntime>=1.17",
 ]
+
+[dependency-groups]
+dev = ["pytest>=8.0", "pytest-cov>=4.0"]
 
 [build-system]
 requires = ["hatchling"]

@@ -18,12 +18,11 @@ log = logging.getLogger(__name__)
 
 NC_DATA_DIR = os.environ.get("NC_DATA_DIR", "/tank/nextcloud/data")
 WATCH_DIRS = os.environ.get("NC_WATCH_DIRS", "/Documents,/Inbox,/Scans").split(",")
-IGNORED_DIRS = {"/Photos", "/.trash", "/files_external"}
+IGNORED_DIRS = {"/photos", "/.trash", "/files_external"}  # NC default photo folder
 FAILED_DIR = os.environ.get("NC_OCR_FAILED_DIR", "/var/lib/nc-ocr/failed")
-SIDECAR_DIR = os.environ.get("NC_OCR_SIDECAR_DIR", "/var/lib/nc-ocr/sidecars")
 QUEUE_MAX = int(os.environ.get("NC_OCR_QUEUE_MAX", "1000"))
 WORKERS = int(os.environ.get("NC_OCR_WORKERS", "2"))
-POLL_INTERVAL = float(os.environ.get("NC_OCR_POLL_INTERVAL", "2.0"))
+DEBOUNCE_SEC = float(os.environ.get("NC_OCR_DEBOUNCE", "3.0"))
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".tiff", ".heic"}
 PDF_EXTS = {".pdf"}
@@ -39,6 +38,9 @@ def _should_process(path: Path) -> bool:
     for skip in IGNORED_DIRS:
         if skip.lower() in rel:
             return False
+    # Skip files already OCR'd
+    if ext in PDF_EXTS and path.with_suffix(".ocr.pdf").exists():
+        return False
     return True
 
 
@@ -50,46 +52,52 @@ def _image_to_pdf(image_path: Path) -> Path:
     return target
 
 
-def _write_sidecar_txt(pdf_path: Path, sidecar_dir: Path) -> Path:
-    sidecar_dir.mkdir(parents=True, exist_ok=True)
-    sidecar = sidecar_dir / f"{pdf_path.stem}.txt"
-    sidecar.write_text("")
-    return sidecar
+def _quarantine(path: Path, exc: Exception) -> None:
+    FAILED = Path(FAILED_DIR)
+    FAILED.mkdir(parents=True, exist_ok=True)
+    try:
+        shutil.copy2(path, FAILED / path.name)
+    except OSError as copy_exc:
+        log.warning("failed to quarantine %s: %s", path, copy_exc)
+    log.error("processing failed for %s: %s", path, exc)
 
 
 def _process_one(path_str: str) -> dict:
     path = Path(path_str)
     try:
         ext = path.suffix.lower()
+
         if ext in IMAGE_EXTS:
             log.info("classifying image: %s", path)
-            result = classify(str(path))
-            if not result.is_document:
-                log.info("skipping photo: %s (reason=%s)", path, result.reason)
-                return {"path": str(path), "skipped": True, "reason": result.reason}
-            log.info("converting to PDF: %s (reason=%s)", path, result.reason)
+            cls = classify(path)
+            log.info("classify result: is_document=%s reason=%s", cls.is_document, cls.reason)
+
+            if not cls.is_document:
+                log.info("skipping photo: %s (reason=%s)", path, cls.reason)
+                return {"path": str(path), "skipped": True, "reason": cls.reason}
+
+            # Convert to PDF and process via OCR pipeline
             pdf_path = _image_to_pdf(path)
-            path = pdf_path
-            ext = ".pdf"
+            result = process_pdf(pdf_path, pdf_path)
+            return {
+                "path": str(path),
+                "output_pdf": result.output_pdf,
+                "vlm_pages": result.vlm_pages,
+                "xmp_written": result.xmp_written,
+            }
 
         if ext in PDF_EXTS:
             log.info("OCR-ing PDF: %s", path)
-            result = process_pdf(str(path))
-            sidecar = _write_sidecar_txt(Path(result["output_pdf"]), Path(SIDECAR_DIR))
+            result = process_pdf(path)
             return {
                 "path": str(path),
-                "output_pdf": result["output_pdf"],
-                "sidecar": str(sidecar),
-                "vlm_pages": result["vlm_pages"],
+                "output_pdf": result.output_pdf,
+                "vlm_pages": result.vlm_pages,
+                "xmp_written": result.xmp_written,
             }
+
     except Exception as exc:
-        log.exception("processing failed for %s", path)
-        FAILED = Path(FAILED_DIR)
-        FAILED.mkdir(parents=True, exist_ok=True)
-        try:
-            shutil.copy2(path, FAILED / path.name)
-        except OSError:
-            pass
+        _quarantine(path, exc)
         return {"path": str(path), "error": str(exc)}
 
     return {"path": str(path), "skipped": True, "reason": "unknown_extension"}
@@ -116,6 +124,8 @@ def _watch_loop(queue: Queue) -> None:
         if watch_path.exists():
             wm.add_watch(str(watch_path), mask, recursive=True)
             log.info("watching: %s", watch_path)
+        else:
+            log.warning("watch dir does not exist: %s", watch_path)
 
     log.info("inotify loop started")
     notifier.loop()
@@ -124,7 +134,7 @@ def _watch_loop(queue: Queue) -> None:
 def _worker_loop(queue: Queue) -> None:
     while True:
         try:
-            path = queue.get(timeout=POLL_INTERVAL)
+            path = queue.get(timeout=5.0)
         except Empty:
             continue
         try:
@@ -136,7 +146,10 @@ def _worker_loop(queue: Queue) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Nextcloud OCR pipeline watcher")
-    parser.add_argument("--validate-only", action="store_true", help="exit after one pass")
+    parser.add_argument("--validate-only", action="store_true",
+                        help="exit after one pass (config check)")
+    parser.add_argument("--once", action="store_true",
+                        help="process existing files in watch dirs, then exit")
     args = parser.parse_args(argv)
 
     logging.basicConfig(
@@ -144,10 +157,23 @@ def main(argv: list[str] | None = None) -> int:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
 
-    queue: Queue = Queue(maxsize=QUEUE_MAX)
+    log.info("nc-ocr-flow config: data=%s watch=%s workers=%d",
+             NC_DATA_DIR, WATCH_DIRS, WORKERS)
 
     if args.validate_only:
-        log.info("validate-only mode: would watch %s/%s", NC_DATA_DIR, WATCH_DIRS)
+        log.info("validate-only: would watch %s", WATCH_DIRS)
+        return 0
+
+    queue: Queue = Queue(maxsize=QUEUE_MAX)
+
+    if args.once:
+        for subdir in WATCH_DIRS:
+            watch_path = Path(NC_DATA_DIR) / subdir.lstrip("/")
+            if watch_path.exists():
+                for p in watch_path.rglob("*"):
+                    if _should_process(p):
+                        result = _process_one(str(p))
+                        log.info("processed: %s", json.dumps(result))
         return 0
 
     workers = [

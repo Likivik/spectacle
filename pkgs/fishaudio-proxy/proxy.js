@@ -64,8 +64,14 @@ const server = require('http').createServer(async (req, res) => {
     }
 
     const text = (d.input || '').slice(0, 2000);
-    const reference_id = d.voice || '';
+    // Fish Audio: reference_id must be 1..=128 chars of [A-Za-z0-9_-] when present.
+    // If PocketRisu sends empty/invalid, OMIT the field so Fish uses its default voice.
+    const rawVoice = (d.voice || '').trim();
+    const reference_id = /^[A-Za-z0-9_-]{1,128}$/.test(rawVoice) ? rawVoice : '';
     const format = formatMap[d.response_format] || 'mp3';
+
+    const fishBody = { text, format };
+    if (reference_id) fishBody.reference_id = reference_id;
 
     try {
       const fr = await fetch(`${FISH_API}/v1/tts`, {
@@ -75,7 +81,7 @@ const server = require('http').createServer(async (req, res) => {
           'Content-Type': 'application/json',
           'model': 's2.1-pro-free',
         },
-        body: JSON.stringify({ text, reference_id, format }),
+        body: JSON.stringify(fishBody),
       });
 
       if (!fr.ok) {

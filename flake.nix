@@ -27,6 +27,15 @@
       inputs.uv2nix.follows = "uv2nix";
       inputs.pyproject-build-systems.follows = "pyproject-build-systems";
     };
+    nc-ocr-flow = {
+      url = "path:./pkgs/nc-ocr-flow";
+      inputs = {
+        nixpkgs.follows = "nixpkgs";
+        pyproject-nix.follows = "pyproject-nix";
+        uv2nix.follows = "uv2nix";
+        pyproject-build-systems.follows = "pyproject-build-systems";
+      };
+    };
     hermes-agent = {
       url = "github:NousResearch/hermes-agent";
       inputs.nixpkgs.follows = "nixpkgs";

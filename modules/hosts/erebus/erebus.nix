@@ -10,6 +10,7 @@ in
       den.aspects.server.hermes-agent
       den.aspects.server.scaratec
       den.aspects.server.sillytavern
+      den.aspects.server.sillybunny
       den.aspects.server.fishaudio-proxy
       den.aspects.server.pocketrisu
       den.aspects.server.n8n

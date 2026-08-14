@@ -4,7 +4,11 @@
       den.aspects.server.core
       den.aspects.server.sops
       den.aspects.server.nextcloud
-      den.aspects.server.nc-ocr
+      # nc-ocr disabled — superseded by workflow_ocr app (R0Wi-DEV) +
+      # ocrmypdf in systemPackages. Module kept on disk for history;
+      # can be deleted after workflow-ocr is verified.
+      # den.aspects.server.nc-ocr
+      den.aspects.server.workflow-ocr
       den.aspects.server.immich
       # immich-nc-bridge disabled — requires Extism WASM rewrite + real npm deps hash.
       # Re-enable once plugin SDK integration lands.

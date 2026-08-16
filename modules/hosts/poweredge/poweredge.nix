@@ -118,6 +118,10 @@
         sopsFile = ../../../secrets/poweredge/secrets.yaml;
         owner = "root"; group = "root"; mode = "0400";
       };
+      sops.secrets."nextcloud/ocr-webhook-secret" = {
+        sopsFile = ../../../secrets/poweredge/secrets.yaml;
+        owner = "nextcloud"; group = "nextcloud"; mode = "0400";
+      };
 
       services.tailscale.authKeyFile =
         config.sops.secrets."tailscale/auth-key".path;

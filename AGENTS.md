@@ -45,7 +45,23 @@ This repo uses **jj** (Jujutsu) on top of git. jj is the primary VCS.
 
 4. **Each host builds its own closure.** No central build host — `--build-host` and `--target-host` point to the same machine.
 
-5. **Working with jj changes:**
+5. **Pre-deploy checks — always run before deploying:**
+
+   ```bash
+   # 1. Dry-build: check if derivation evaluates and what will be built vs fetched
+   nix build .#nixosConfigurations.<host>.config.system.build.toplevel --dry-run
+
+   # 2. Check Hydra cache status for packages that might build from source.
+   #    The flake pins nixpkgs to a recent revision; Hydra may not have cached
+   #    those versions yet, causing 30-60min source builds.
+   nix run nixpkgs#hydra-check -- python312Packages.pymupdf python312Packages.onnxruntime
+
+   # 3. If Hydra shows ✔ for the exact version in the flake → binary cache hit expected.
+   #    If versions mismatch → expect source build. Consider pinning nixpkgs older
+   #    or waiting for the build.
+   ```
+
+6. **Working with jj changes:**
    - Each task = one `jj new`
    - Edit files normally
    - jj auto-tracks all changes (no `git add` needed)
@@ -53,12 +69,12 @@ This repo uses **jj** (Jujutsu) on top of git. jj is the primary VCS.
    - Before merging to main: `jj squash` + `jj describe` to clean up
    - Push: `jj bookmark set dev -r @ && jj git push --all`
 
-6. **Migrating existing git branches:**
+7. **Migrating existing git branches:**
    - jj reads existing git history automatically
    - Old branches appear as bookmarks: `jj bookmark list`
    - No conversion needed — jj works on the same .git directory
 
-7. **Emergency: fall back to git**
+8. **Emergency: fall back to git**
    - git commands still work: `git log`, `git status`, `git diff`
    - But prefer jj for all create/commit/push operations
    - If jj breaks: `git checkout` + `git commit` still function

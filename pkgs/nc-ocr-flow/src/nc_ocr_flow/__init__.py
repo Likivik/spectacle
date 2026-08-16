@@ -1,2 +1,4 @@
-"""nc-ocr-flow: Nextcloud OCR pipeline."""
-__version__ = "0.1.0"
+"""Nextcloud OCR pipeline: tesseract-first, Surya VLM fallback, sandwich PDF."""
+from __future__ import annotations
+
+__version__ = "0.2.0"

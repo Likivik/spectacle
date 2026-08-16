@@ -1,217 +1,120 @@
-"""Smoke tests for nc-ocr-flow.
+"""Tests for TSV parsing and VLM-fallback decision logic.
 
-Validates:
-  - classifier API shape (ClassifyResult, OcrResult)
-  - ocr API shape (ProcessResult, PageMeta)
-  - XMP round-trip via pikepdf (no real PDF needed — in-memory PDF)
-  - Constants are correct
+No GPU, no ocrmypdf needed — pure unit tests.
 """
 from __future__ import annotations
 
-import io
-import struct
-import zlib
 from pathlib import Path
 
 import pytest
 
-from nc_ocr_flow.classifier import (
-    ClassifyResult,
-    OcrResult,
-    DOC,
-    PHOTO,
-    _MOBILENET_SIZE,
-    _TESSERACT_DPI,
-    _PSM_DOC,
-    _PSM_PHOTO,
-)
 from nc_ocr_flow.ocr import (
-    ProcessResult,
-    PageMeta,
-    PER_PAGE_CONF_FLOOR,
-    PER_PAGE_MIN_CHARS,
-    XMP_KEYS,
-    _needs_vlm,
+    PageMeta, _parse_tsv, _needs_vlm,
+    PER_PAGE_CONF_FLOOR, PER_PAGE_MIN_CHARS,
 )
 
 
-# --- Constants tests --------------------------------------------------------
+# --- TSV parsing -------------------------------------------------------------
 
-def test_constants():
-    """Verify research-backed constants are in place."""
-    assert PER_PAGE_CONF_FLOOR == 70.0
-    assert PER_PAGE_MIN_CHARS == 40
-    assert _MOBILENET_SIZE == 224
-    assert _TESSERACT_DPI == "200"  # avoid 300-DPI Cyrillic regression
-    assert _PSM_DOC == "6"          # uniform text blocks
-    assert _PSM_PHOTO == "11"       # sparse text probe
+def test_parse_tsv_empty(tmp_path: Path):
+    """Missing TSV → empty dict."""
+    result = _parse_tsv(tmp_path / "nonexistent.tsv")
+    assert result == {}
 
 
-def test_classify_labels():
-    assert DOC == "document"
-    assert PHOTO == "photo"
+def test_parse_tsv_single_page(tmp_path: Path):
+    """Single page with known confidence values."""
+    tsv = tmp_path / "ocr.tsv"
+    lines = [
+        "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext",
+        "5\t1\t1\t1\t1\t1\t10\t10\t50\t20\t95.0\tHello",
+        "5\t1\t1\t1\t1\t2\t10\t10\t50\t20\t90.0\tWorld",
+        "5\t1\t1\t1\t1\t3\t10\t10\t50\t20\t88.0\tTest",
+    ]
+    tsv.write_text("\n".join(lines) + "\n")
+
+    result = _parse_tsv(tsv)
+    assert 1 in result
+    page = result[1]
+    assert isinstance(page, PageMeta)
+    assert page.page_idx == 0
+    assert page.confidence_p10 == 88.0  # lowest of 3 = 88.0
+    assert page.char_count == 14  # "HelloWorldTest"
 
 
-def test_xmp_keys_defined():
-    """All XMP keys must be present for nc-mcp to consume."""
-    expected = {"vlm_text", "vlm_pages", "vlm_timestamp", "confidence_floor"}
-    assert set(XMP_KEYS.keys()) == expected
+def test_parse_tsv_multi_page(tmp_path: Path):
+    """Multiple pages with different confidence levels."""
+    tsv = tmp_path / "ocr.tsv"
+    lines = [
+        "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext",
+        "5\t1\t1\t1\t1\t1\t10\t10\t50\t20\t95.0\tPage1",
+        "5\t2\t1\t1\t1\t1\t10\t10\t50\t20\t30.0\tlow",
+    ]
+    tsv.write_text("\n".join(lines) + "\n")
+
+    result = _parse_tsv(tsv)
+    assert len(result) == 2
+    assert result[1].confidence_p10 == 95.0
+    assert result[2].confidence_p10 == 30.0
+    assert result[1].page_idx == 0
+    assert result[2].page_idx == 1
 
 
-# --- API shape tests --------------------------------------------------------
+def test_parse_tsv_ignores_non_word_levels(tmp_path: Path):
+    """Only level=5 (word) entries should be counted."""
+    tsv = tmp_path / "ocr.tsv"
+    lines = [
+        "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext",
+        "1\t1\t1\t1\t1\t1\t0\t0\t0\t0\t-1\t",   # block level
+        "2\t1\t1\t1\t1\t1\t0\t0\t0\t0\t-1\t",   # para level
+        "5\t1\t1\t1\t1\t1\t10\t10\t50\t20\t95.0\tword",
+    ]
+    tsv.write_text("\n".join(lines) + "\n")
 
-def test_classify_result_shape():
-    """ClassifyResult is a frozen dataclass with is_document and reason."""
-    r = ClassifyResult(is_document=True, reason="mobilenet")
-    assert r.is_document is True
-    assert r.reason == "mobilenet"
-    with pytest.raises(Exception):  # FrozenInstanceError
-        r.is_document = False  # type: ignore
-
-
-def test_ocr_result_shape():
-    r = OcrResult(text="hello", confidence_p10=85.5, char_count=5)
-    assert r.text == "hello"
-    assert r.confidence_p10 == 85.5
-    assert r.char_count == 5
+    result = _parse_tsv(tsv)
+    assert len(result) == 1
+    assert result[1].char_count == 4  # "word"
 
 
-def test_process_result_shape():
-    r = ProcessResult(
-        output_pdf="/tmp/test.pdf",
-        tesseract_pages=[0, 1, 2],
-        vlm_pages=[1],
-        xmp_written=True,
-    )
-    assert r.output_pdf == "/tmp/test.pdf"
-    assert r.vlm_pages == [1]
-    assert r.xmp_written is True
+# --- VLM fallback decision ---------------------------------------------------
 
+def test_needs_vlm_confident_page():
+    """High-confidence page does not need VLM."""
+    p = PageMeta(page_idx=0, confidence_p10=90.0, char_count=500)
+    assert _needs_vlm(p) is False
 
-# --- _needs_vlm logic -------------------------------------------------------
 
 def test_needs_vlm_low_confidence():
-    p = PageMeta(page_idx=0, confidence_p10=50.0, char_count=200)
+    """Low confidence → VLM."""
+    p = PageMeta(page_idx=0, confidence_p10=50.0, char_count=500)
     assert _needs_vlm(p) is True
 
 
-def test_needs_vlm_low_chars():
+def test_needs_vlm_few_chars():
+    """High confidence but very few chars → VLM (likely garbage)."""
     p = PageMeta(page_idx=0, confidence_p10=95.0, char_count=10)
     assert _needs_vlm(p) is True
 
 
-def test_needs_vlm_good_page():
-    p = PageMeta(page_idx=0, confidence_p10=95.0, char_count=200)
+def test_needs_vlm_threshold_boundary():
+    """Page at exactly threshold → does NOT need VLM."""
+    p = PageMeta(page_idx=0, confidence_p10=PER_PAGE_CONF_FLOOR, char_count=PER_PAGE_MIN_CHARS)
     assert _needs_vlm(p) is False
 
 
-# --- XMP round-trip --------------------------------------------------------
-
-def _make_minimal_pdf(path: Path) -> None:
-    """Create a minimal valid 1-page PDF with empty XMP metadata slot."""
-    # Use pikepdf to create a blank PDF, save it
-    import pikepdf
-    pdf = pikepdf.new()
-    pdf.save(path)
-    pdf.close()
+def test_needs_vlm_below_threshold():
+    """Page just below threshold → needs VLM."""
+    p = PageMeta(page_idx=0, confidence_p10=PER_PAGE_CONF_FLOOR - 1, char_count=PER_PAGE_MIN_CHARS)
+    assert _needs_vlm(p) is True
 
 
-def test_xmp_roundtrip(tmp_path: Path):
-    """Verify we can write to XMP and read it back."""
-    import pikepdf
-
-    pdf_path = tmp_path / "test.pdf"
-    _make_minimal_pdf(pdf_path)
-
-    # Write a custom field via pikepdf's open_metadata
-    with pikepdf.open(pdf_path, allow_overwriting_input=True) as pdf:
-        with pdf.open_metadata(set_pikepdf_as_editor=True) as meta:
-            meta["dc:title"] = "test document"
-            meta[XMP_KEYS["vlm_text"]] = "Page 1: Hello world"
-            meta[XMP_KEYS["vlm_pages"]] = "[0]"
-            meta[XMP_KEYS["vlm_timestamp"]] = "2026-08-13T17:00:00Z"
-            meta[XMP_KEYS["confidence_floor"]] = "70.0"
-        pdf.save()
-
-    # Read it back
-    with pikepdf.open(pdf_path) as pdf:
-        with pdf.open_metadata() as meta:
-            assert meta.get("dc:title") == "test document"
-            assert meta.get(XMP_KEYS["vlm_text"]) == "Page 1: Hello world"
-            assert meta.get(XMP_KEYS["vlm_pages"]) == "[0]"
-            assert meta.get(XMP_KEYS["confidence_floor"]) == "70.0"
+def test_needs_vlm_min_chars_boundary():
+    """Page at exactly min_chars → does NOT need VLM."""
+    p = PageMeta(page_idx=0, confidence_p10=PER_PAGE_CONF_FLOOR, char_count=PER_PAGE_MIN_CHARS)
+    assert _needs_vlm(p) is False
 
 
-def test_xmp_survives_rename(tmp_path: Path):
-    """XMP must survive file rename — main reason we chose this approach."""
-    import pikepdf
-
-    pdf_path = tmp_path / "original.pdf"
-    renamed_path = tmp_path / "renamed.pdf"
-    _make_minimal_pdf(pdf_path)
-
-    with pikepdf.open(pdf_path, allow_overwriting_input=True) as pdf:
-        with pdf.open_metadata(set_pikepdf_as_editor=True) as meta:
-            meta[XMP_KEYS["vlm_text"]] = "Critical: this text must survive rename"
-        pdf.save()
-
-    # Rename
-    pdf_path.rename(renamed_path)
-
-    # Read after rename
-    with pikepdf.open(renamed_path) as pdf:
-        with pdf.open_metadata() as meta:
-            assert meta.get(XMP_KEYS["vlm_text"]) == "Critical: this text must survive rename"
-
-
-# --- Classifier: skip if model missing -------------------------------------
-
-def test_classify_handles_missing_model(tmp_path: Path, monkeypatch):
-    """If mobilenet model file is missing, classify must fail-safe to PHOTO."""
-    monkeypatch.setenv("NC_OCR_MOBILENET_MODEL", str(tmp_path / "nonexistent.onnx"))
-
-    # Create a tiny dummy image
-    img_path = tmp_path / "test.jpg"
-    from PIL import Image
-    img = Image.new("RGB", (100, 100), color="white")
-    img.save(img_path, "JPEG")
-
-    from nc_ocr_flow.classifier import classify
-    result = classify(img_path)
-    # Must default to photo (safe default — false negative worse than false positive)
-    assert result.is_document is False
-    assert "error" in result.reason.lower() or "missing" in result.reason.lower()
-
-
-# --- Watcher: should_process ----------------------------------------------
-
-def test_watcher_should_process_skips_photos():
-    from nc_ocr_flow.watcher import _should_process
-    assert _should_process(Path("/tank/nextcloud/data/Photos/cat.jpg")) is False
-
-
-def test_watcher_should_process_skips_trash():
-    from nc_ocr_flow.watcher import _should_process
-    assert _should_process(Path("/tank/nextcloud/data/foo/.trash/old.pdf")) is False
-
-
-def test_watcher_should_process_skips_unknown_ext():
-    from nc_ocr_flow.watcher import _should_process
-    assert _should_process(Path("/tank/nextcloud/data/Documents/notes.txt")) is False
-
-
-def test_watcher_should_process_accepts_pdf(tmp_path):
-    from nc_ocr_flow.watcher import _should_process
-    pdf = tmp_path / "Documents" / "scan.pdf"
-    pdf.parent.mkdir(parents=True, exist_ok=True)
-    pdf.write_bytes(b"%PDF-1.4\n%%EOF\n")
-    assert _should_process(pdf) is True
-
-
-def test_watcher_should_process_skips_already_ocrd(tmp_path):
-    from nc_ocr_flow.watcher import _should_process
-    pdf = tmp_path / "scan.pdf"
-    ocr_pdf = tmp_path / "scan.ocr.pdf"
-    pdf.write_bytes(b"%PDF-1.4\n%%EOF\n")
-    ocr_pdf.write_bytes(b"%PDF-1.4\n%%EOF\n")
-    assert _should_process(pdf) is False  # .ocr.pdf exists → skip
+def test_needs_vlm_both_bad():
+    """Both low conf and few chars → VLM."""
+    p = PageMeta(page_idx=0, confidence_p10=30.0, char_count=5)
+    assert _needs_vlm(p) is True

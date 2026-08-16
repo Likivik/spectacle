@@ -1,18 +1,23 @@
 [project]
 name = "nc-ocr-flow"
-version = "0.1.0"
-description = "Nextcloud OCR pipeline: inotify watcher → ocrmypdf → VLM fallback"
+version = "0.2.0"
+description = "Nextcloud OCR: tesseract-first hybrid with Surya VLM fallback, sandwich PDF"
 requires-python = ">=3.12,<4"
 dependencies = [
-  "pyinotify>=0.9.6",
+  "pymupdf>=1.24",
   "pillow>=10.0",
   "requests>=2.31",
-  "pytesseract>=0.3.10",
-  "pikepdf>=8.0",
   "img2pdf>=0.5",
-  "watchdog>=4.0",
   "numpy>=1.26",
   "onnxruntime>=1.17",
+  "fastapi>=0.100",
+  "uvicorn>=0.20",
+  "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+server = [
+  "surya-ocr>=0.13",
 ]
 
 [dependency-groups]

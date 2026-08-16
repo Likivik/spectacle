@@ -17,6 +17,7 @@
 
       den.aspects.server.nc-rag
       den.aspects.server.olmocr-vision
+      den.aspects.server.surya-server
     ];
 
     maid = {

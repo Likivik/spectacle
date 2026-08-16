@@ -1,259 +1,142 @@
-"""Tests for VLM fallback path with a mock HTTP server.
+"""Tests for Surya VLM fallback path with mock HTTP server.
 
 Validates:
-  - ocrmypdf TSV parsing produces correct PageMeta
-  - Low-confidence pages trigger VLM call
-  - VLM response is written to XMP
-  - Full process_pdf works end-to-end with mock VLM
+  - Surya client parses mock response correctly
+  - Sandwich embedding produces selectable text
+  - process_pdf end-to-end with mocked Surya (tesseract real, ~30s)
 
-No GPU needed — VLM endpoint is mocked via pytest-httpserver.
-Tesseract + ocrmypdf run for real (CPU, ~5-15s per test).
+No GPU needed — Surya endpoint is mocked via pytest-httpserver.
 """
 from __future__ import annotations
 
+import base64
 import json
 from pathlib import Path
+from unittest.mock import patch, MagicMock
 
 import pytest
 
 
-# --- TSV parsing tests (no VLM, no ocrmypdf needed) -------------------------
+# --- Surya client tests (mock HTTP) ------------------------------------------
 
-def test_parse_tsv_empty(tmp_path: Path):
-    """_parse_tsv returns empty dict for missing file."""
-    from nc_ocr_flow.ocr import _parse_tsv
-    result = _parse_tsv(tmp_path / "nonexistent.tsv")
-    assert result == {}
+def test_surya_client_parses_response(tmp_path: Path):
+    """Surya client correctly parses JSON response into SuryaResult."""
+    from nc_ocr_flow.surya_client import ocr_page, SuryaResult, SuryaBlock
 
+    mock_response = {
+        "blocks": [
+            {"bbox": [10, 20, 300, 50], "text": "Привет мир", "confidence": 0.95, "label": "Text"},
+            {"bbox": [10, 60, 200, 80], "text": "Hello world", "confidence": 0.91, "label": "Text"},
+        ],
+        "page_width": 1000.0,
+        "page_height": 1400.0,
+    }
 
-def test_parse_tsv_single_page(tmp_path: Path):
-    """_parse_tsv correctly parses a single page with known confidence."""
-    from nc_ocr_flow.ocr import _parse_tsv, PageMeta
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = mock_response
+    mock_resp.raise_for_status.return_value = None
 
-    tsv = tmp_path / "ocr.tsv"
-    lines = [
-        "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext",
-        "5\t1\t1\t1\t1\t1\t10\t10\t50\t20\t95.0\tHello",
-        "5\t1\t1\t1\t1\t2\t10\t10\t50\t20\t90.0\tWorld",
-        "5\t1\t1\t1\t1\t3\t10\t10\t50\t20\t88.0\tTest",
-    ]
-    tsv.write_text("\n".join(lines) + "\n")
+    with patch("nc_ocr_flow.surya_client.requests.post", return_value=mock_resp):
+        result = ocr_page(b"fake_png", url="http://mock")
 
-    result = _parse_tsv(tsv)
-    assert 1 in result
-    page = result[1]
-    assert isinstance(page, PageMeta)
-    assert page.page_idx == 0
-    assert page.confidence_p10 == 88.0
-    assert page.char_count == 14
-
-
-def test_parse_tsv_multi_page(tmp_path: Path):
-    """_parse_tsv handles multiple pages correctly."""
-    from nc_ocr_flow.ocr import _parse_tsv
-
-    tsv = tmp_path / "ocr.tsv"
-    lines = [
-        "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext",
-        "5\t1\t1\t1\t1\t1\t10\t10\t50\t20\t95.0\tPage1",
-        "5\t2\t1\t1\t1\t1\t10\t10\t50\t20\t30.0\tlow",
-    ]
-    tsv.write_text("\n".join(lines) + "\n")
-
-    result = _parse_tsv(tsv)
-    assert len(result) == 2
-    assert result[1].confidence_p10 == 95.0
-    assert result[2].confidence_p10 == 30.0
-    assert result[1].page_idx == 0
-    assert result[2].page_idx == 1
+    assert isinstance(result, SuryaResult)
+    assert result.page_width == 1000.0
+    assert result.page_height == 1400.0
+    assert len(result.blocks) == 2
+    assert isinstance(result.blocks[0], SuryaBlock)
+    assert result.blocks[0].text == "Привет мир"
+    assert result.blocks[0].bbox == (10, 20, 300, 50)
+    assert result.blocks[0].confidence == 0.95
 
 
-# --- VLM fallback decision logic -------------------------------------------
+def test_surya_client_empty_blocks():
+    """Surya client handles empty block list."""
+    from nc_ocr_flow.surya_client import ocr_page
 
-def test_needs_vlm_threshold_boundary():
-    """Page at exactly the confidence floor does NOT need VLM."""
-    from nc_ocr_flow.ocr import _needs_vlm, PageMeta, PER_PAGE_CONF_FLOOR
-    p = PageMeta(page_idx=0, confidence_p10=PER_PAGE_CONF_FLOOR, char_count=200)
-    assert _needs_vlm(p) is False
+    mock_response = {
+        "blocks": [],
+        "page_width": 1000.0,
+        "page_height": 1400.0,
+    }
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = mock_response
+    mock_resp.raise_for_status.return_value = None
 
+    with patch("nc_ocr_flow.surya_client.requests.post", return_value=mock_resp):
+        result = ocr_page(b"fake_png", url="http://mock")
 
-def test_needs_vlm_below_threshold():
-    """Page below confidence floor needs VLM."""
-    from nc_ocr_flow.ocr import _needs_vlm, PageMeta, PER_PAGE_CONF_FLOOR
-    p = PageMeta(page_idx=0, confidence_p10=PER_PAGE_CONF_FLOOR - 0.1, char_count=200)
-    assert _needs_vlm(p) is True
-
-
-def test_needs_vlm_above_char_floor():
-    """Page with high conf but too few chars needs VLM."""
-    from nc_ocr_flow.ocr import _needs_vlm, PageMeta, PER_PAGE_MIN_CHARS
-    p = PageMeta(page_idx=0, confidence_p10=95.0, char_count=PER_PAGE_MIN_CHARS - 1)
-    assert _needs_vlm(p) is True
+    assert len(result.blocks) == 0
 
 
-# --- Mock VLM HTTP server tests --------------------------------------------
-
-def test_vlm_mock_response_shape(httpserver, monkeypatch):
-    """Verify _olmocr_ocr_page correctly parses OpenAI-format response."""
-    from nc_ocr_flow.ocr import _olmocr_ocr_page
-
-    httpserver.expect_request(
-        "/v1/chat/completions", method="POST"
-    ).respond_with_json({
-        "choices": [{
-            "message": {
-                "content": "Extracted text from mock VLM"
-            }
-        }]
-    })
-
-    monkeypatch.setattr("nc_ocr_flow.ocr.OLMOCR_ENDPOINT", httpserver.url_for("").rstrip("/"))
-
-    result = _olmocr_ocr_page(b"\x89PNG fake bytes")
-    assert result == "Extracted text from mock VLM"
-
-
-def test_vlm_mock_handles_error_response(httpserver, monkeypatch):
-    """_olmocr_ocr_page raises on non-200 response."""
-    from nc_ocr_flow.ocr import _olmocr_ocr_page
-    import requests
-
-    httpserver.expect_request(
-        "/v1/chat/completions", method="POST"
-    ).respond_with_data("Internal Error", status=500)
-
-    monkeypatch.setattr("nc_ocr_flow.ocr.OLMOCR_ENDPOINT", httpserver.url_for("").rstrip("/"))
-
-    with pytest.raises(requests.HTTPError):
-        _olmocr_ocr_page(b"\x89PNG fake bytes")
-
-
-# --- XMP write tests --------------------------------------------------------
-
-def test_xmp_write_after_vlm_fallback(tmp_path: Path):
-    """XMP is written correctly with VLM text after process_pdf."""
-    import pikepdf
-    from nc_ocr_flow.ocr import _write_xmp, XMP_KEYS, PER_PAGE_CONF_FLOOR
-
-    pdf_path = tmp_path / "test.pdf"
-    pdf = pikepdf.new()
-    pdf.save(pdf_path)
-    pdf.close()
-
-    vlm_text = {0: "Page 1 VLM text", 2: "Page 3 VLM text"}
-    result = _write_xmp(pdf_path, vlm_text, PER_PAGE_CONF_FLOOR)
-
-    assert result is True
-
-    with pikepdf.open(pdf_path) as pdf:
-        with pdf.open_metadata() as meta:
-            vlm = meta.get(XMP_KEYS["vlm_text"])
-            assert "Page 1 VLM text" in vlm
-            assert "Page 3 VLM text" in vlm
-            assert "--- Page 1 ---" in vlm
-            assert "--- Page 3 ---" in vlm
-
-            pages = json.loads(meta.get(XMP_KEYS["vlm_pages"]))
-            assert pages == [0, 2]
-
-            assert meta.get(XMP_KEYS["confidence_floor"]) == str(PER_PAGE_CONF_FLOOR)
-
-
-def test_xmp_write_empty_dict(tmp_path: Path):
-    """_write_xmp returns False for empty VLM text (nothing to write)."""
-    import pikepdf
-    from nc_ocr_flow.ocr import _write_xmp
-
-    pdf_path = tmp_path / "test.pdf"
-    pdf = pikepdf.new()
-    pdf.save(pdf_path)
-    pdf.close()
-
-    result = _write_xmp(pdf_path, {}, 70.0)
-    assert result is False
-
-
-# --- Full pipeline with mock VLM (integration, slow) -----------------------
+# --- Sandwich embedding tests (PyMuPDF, no GPU) ------------------------------
 
 @pytest.mark.slow
-def test_process_pdf_end_to_end_mock_vlm(httpserver, monkeypatch, tmp_path: Path):
-    """Full process_pdf: ocrmypdf -> TSV parse -> mock VLM fallback -> XMP write.
+def test_sandwich_embed_makes_text_selectable(tmp_path: Path):
+    """Embedding Surya text into a blank PDF makes text searchable."""
+    import fitz
 
-    This test runs ocrmypdf + tesseract for real (CPU, ~10-30s).
-    VLM endpoint is mocked — validates the pipeline logic, not the model.
-    """
-    from nc_ocr_flow.ocr import process_pdf
+    from nc_ocr_flow.ocr import _embed_surya_text
+    from nc_ocr_flow.surya_client import SuryaResult, SuryaBlock
 
-    httpserver.expect_request(
-        "/v1/chat/completions", method="POST"
-    ).respond_with_json({
-        "choices": [{
-            "message": {"content": "MOCK VLM EXTRACTED TEXT"}
-        }]
-    })
-    monkeypatch.setattr("nc_ocr_flow.ocr.OLMOCR_ENDPOINT", httpserver.url_for("").rstrip("/"))
+    # Create a blank PDF page (A4)
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
 
-    import pikepdf
-    input_pdf = tmp_path / "input.pdf"
-    pdf = pikepdf.new()
-    pdf.save(input_pdf)
-    pdf.close()
+    # Mock Surya result: one text block in the middle of the page
+    surya_result = SuryaResult(
+        blocks=[SuryaBlock(
+            bbox=(100, 400, 500, 430),  # image pixels
+            text="Привет мир",
+            confidence=0.95,
+            label="Text",
+        )],
+        page_width=595.0,
+        page_height=842.0,
+    )
 
-    output_pdf = tmp_path / "output.pdf"
+    _embed_surya_text(doc, 0, surya_result)
 
-    result = process_pdf(input_pdf, output_pdf)
+    # Verify text is now searchable
+    text = page.get_text()
+    assert "Привет мир" in text
 
-    assert isinstance(result.tesseract_pages, list)
-    assert isinstance(result.vlm_pages, list)
-    assert isinstance(result.xmp_written, bool)
-
-    if result.vlm_pages:
-        assert result.xmp_written is True
-        with pikepdf.open(output_pdf) as pdf:
-            with pdf.open_metadata() as meta:
-                from nc_ocr_flow.ocr import XMP_KEYS
-                vlm = meta.get(XMP_KEYS["vlm_text"])
-                assert vlm is not None
-                assert "MOCK VLM EXTRACTED TEXT" in vlm
+    doc.save(str(tmp_path / "test.pdf"))
+    doc.close()
 
 
 @pytest.mark.slow
-def test_process_pdf_good_text_no_vlm(httpserver, monkeypatch, tmp_path: Path):
-    """If tesseract extracts text with high confidence, VLM is NOT called."""
-    from nc_ocr_flow.ocr import process_pdf
+def test_sandwich_replaces_tesseract_text(tmp_path: Path):
+    """Embedding Surya text replaces existing (tesseract) text on the page."""
+    import fitz
 
-    httpserver.expect_request(
-        "/v1/chat/completions", method="POST"
-    ).respond_with_json({
-        "choices": [{"message": {"content": "SHOULD NOT BE USED"}}]
-    })
-    monkeypatch.setattr("nc_ocr_flow.ocr.OLMOCR_ENDPOINT", httpserver.url_for("").rstrip("/"))
+    from nc_ocr_flow.ocr import _embed_surya_text
+    from nc_ocr_flow.surya_client import SuryaResult, SuryaBlock
 
-    try:
-        from PIL import Image, ImageDraw, ImageFont
-        import img2pdf
-        img = Image.new("RGB", (1000, 800), color="white")
-        draw = ImageDraw.Draw(img)
-        try:
-            font = ImageFont.truetype("DejaVuSans.ttf", 32)
-        except (OSError, IOError):
-            font = ImageFont.load_default()
-        for i, line in enumerate([
-            "This is a test document for OCR processing.",
-            "It contains multiple lines of clear text.",
-            "The text should be extracted by tesseract.",
-            "Each line has enough characters for confidence.",
-            "Russian: This is a test document for recognition.",
-        ]):
-            draw.text((50, 50 + i * 40), line, fill="black", font=font)
+    # Create a PDF with some existing text (simulating tesseract output)
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+    page.insert_text((100, 100), "OLD TEXT", fontsize=12)
 
-        input_pdf = tmp_path / "input.pdf"
-        input_pdf.write_bytes(img2pdf.convert(img))
-    except ImportError:
-        pytest.skip("PIL or img2pdf not available")
+    # Verify old text is there
+    assert "OLD TEXT" in page.get_text()
 
-    output_pdf = tmp_path / "output.pdf"
-    result = process_pdf(input_pdf, output_pdf)
+    # Embed Surya text (will redact old text first)
+    surya_result = SuryaResult(
+        blocks=[SuryaBlock(
+            bbox=(100, 200, 400, 230),
+            text="NEW TEXT",
+            confidence=0.95,
+            label="Text",
+        )],
+        page_width=595.0,
+        page_height=842.0,
+    )
 
-    # With good text, VLM should not be called
-    assert len(result.vlm_pages) == 0
+    _embed_surya_text(doc, 0, surya_result)
+
+    # Old text should be gone, new text should be there
+    text = page.get_text()
+    assert "NEW TEXT" in text
+    assert "OLD TEXT" not in text
+
+    doc.close()

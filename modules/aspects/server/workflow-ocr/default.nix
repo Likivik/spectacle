@@ -14,19 +14,41 @@
       };
 
       ncRoot = config.services.nextcloud.finalPackage;
-      # The NixOS nextcloud module builds an extended PHP (with redis, apcu, etc.)
-      # as a local let-binding and assigns it to the phpfpm pool. Access it there.
       ncPhp = config.services.phpfpm.pools.nextcloud.phpPackage;
-
-      # PHP script to create the flow rule — kept as a separate file to avoid
-      # Nix string escaping nightmares with single quotes and backslashes.
       setupFlowPhp = ./setup-flow.php;
+
+      # nc-ocr-flow source — Python deps installed via uv venv
+      ncOcrFlowSrc = ../../../../pkgs/nc-ocr-flow;
+      ocrVenv = "/var/lib/nc-ocr/venv";
+
+      # Start script: create venv with pip if missing, then run webhook server
+      webhookStartScript = pkgs.writeShellScript "nc-ocr-webhook-start" ''
+        set -eu
+        export NC_OCR_NC_PASSWORD_FILE="$CREDENTIALS_DIRECTORY/nc-ocr-password"
+        export NC_OCR_WEBHOOK_SECRET_FILE="$CREDENTIALS_DIRECTORY/nc-ocr-webhook-secret"
+        if [ ! -d "${ocrVenv}" ] || [ ! -f "${ocrVenv}/.installed" ]; then
+          echo "Creating OCR venv..."
+          rm -rf "${ocrVenv}"
+          ${pkgs.python312}/bin/python3.12 -m venv ${ocrVenv}
+          ${ocrVenv}/bin/pip install --no-cache-dir pymupdf pillow requests img2pdf numpy onnxruntime fastapi uvicorn pydantic
+          ${ocrVenv}/bin/pip install --no-cache-dir --no-deps ${ncOcrFlowSrc}
+          touch ${ocrVenv}/.installed
+        fi
+        export PYTHONPATH="${ncOcrFlowSrc}/src:''${PYTHONPATH:-}"
+        exec ${ocrVenv}/bin/python -m nc_ocr_flow.webhook_server
+      '';
+
+      # PHP script to register webhook listeners via NC internal API (idempotent)
+      registerWebhookPhp = ./register-webhook.php;
     in {
       environment.systemPackages = [
         pkgs.ocrmypdf
         pkgs.tesseract5
         pkgs.poppler-utils
       ];
+
+      # Tesseract language data
+      environment.etc."tessdata".source = "${pkgs.tesseract5}/share/tessdata";
 
       systemd.services.nextcloud-cron.path = lib.mkAfter [
         pkgs.ocrmypdf
@@ -42,6 +64,126 @@
       services.nextcloud.extraAppsEnable = true;
       services.nextcloud.appstoreEnable = lib.mkForce false;
 
+      # --- OCR webhook receiver service ---
+      systemd.services.nc-ocr-webhook = {
+        description = "Nextcloud OCR webhook receiver (tesseract + Surya fallback)";
+        after = [ "nextcloud-setup.service" "network.target" ];
+        wants = [ "nextcloud-setup.service" ];
+        wantedBy = [ "multi-user.target" ];
+
+        environment = {
+          NC_OCR_NC_URL = "http://localhost";
+          NC_OCR_NC_USER = "admin";
+          NC_OCR_SURYA_URL = "http://serenity:8084";
+          NC_OCR_LISTEN_HOST = "127.0.0.1";
+          NC_OCR_LISTEN_PORT = "8095";
+          NC_OCR_FONT_PATH = "${pkgs.dejavu_fonts}/lib/fonts/DejaVuSans.ttf";
+          TESSDATA_PREFIX = "${pkgs.tesseract5}/share/tessdata";
+        };
+
+        serviceConfig = {
+          Type = "simple";
+          User = "nextcloud";
+          Group = "nextcloud";
+          Restart = "on-failure";
+          RestartSec = "10s";
+          StateDirectory = "nc-ocr";
+          StateDirectoryMode = "0755";
+          TimeoutStartSec = "5min";  # first venv creation + pip install
+          LoadCredential = let
+            adminPass = config.sops.secrets."nextcloud/admin-password".path;
+            webhookSecret = config.sops.secrets."nextcloud/ocr-webhook-secret".path;
+          in [
+            "nc-ocr-password:${adminPass}"
+            "nc-ocr-webhook-secret:${webhookSecret}"
+          ];
+        };
+
+        path = [
+          pkgs.ocrmypdf
+          pkgs.tesseract5
+          pkgs.poppler-utils
+          pkgs.curl
+        ];
+
+        script = ''
+          exec ${webhookStartScript}
+        '';
+      };
+
+      # --- NC webhook background-job worker ---
+      # NC fires webhooks via background jobs; default cron is every 5 min.
+      # This worker polls for webhook dispatch jobs every 60s for faster OCR.
+      systemd.services.nc-webhook-worker = {
+        description = "Nextcloud webhook dispatch worker";
+        after = [ "nextcloud-setup.service" ];
+        wants = [ "nextcloud-setup.service" ];
+        wantedBy = [ "multi-user.target" ];
+
+        serviceConfig = {
+          Type = "simple";
+          User = "nextcloud";
+          Group = "nextcloud";
+          Restart = "always";
+          RestartSec = "30s";
+          LoadCredential = let
+            adminPass = config.sops.secrets."nextcloud/admin-password".path;
+            resendKey = config.sops.secrets."resend/api-key".path;
+          in [
+            "adminpass:${adminPass}"
+            "mail_smtppassword:${resendKey}"
+          ];
+        };
+
+        environment = {
+          NEXTCLOUD_CONFIG_DIR = "/tank/nextcloud/config";
+        };
+
+        path = [ ncPhp ];
+
+        script = ''
+          while true; do
+            ${ncPhp}/bin/php ${ncRoot}/occ background-job:worker -t 60 \
+              "OCA\WebhookListeners\BackgroundJobs\WebhookCall" 2>&1 || true
+            sleep 5
+          done
+        '';
+      };
+
+      # --- Register webhook listener (idempotent oneshot via PHP) ---
+      systemd.services.nc-ocr-register-webhook = {
+        description = "Register OCR webhook listener in Nextcloud";
+        after = [ "nextcloud-setup.service" "nc-ocr-webhook.service" ];
+        wants = [ "nextcloud-setup.service" "nc-ocr-webhook.service" ];
+        wantedBy = [ "multi-user.target" ];
+
+        serviceConfig = {
+          Type = "oneshot";
+          User = "nextcloud";
+          Group = "nextcloud";
+          RemainAfterExit = true;
+          LoadCredential = let
+            adminPass = config.sops.secrets."nextcloud/admin-password".path;
+            resendKey = config.sops.secrets."resend/api-key".path;
+            webhookSecret = config.sops.secrets."nextcloud/ocr-webhook-secret".path;
+          in [
+            "adminpass:${adminPass}"
+            "mail_smtppassword:${resendKey}"
+            "nc-ocr-webhook-secret:${webhookSecret}"
+          ];
+        };
+
+        environment = {
+          NEXTCLOUD_CONFIG_DIR = lib.mkForce "/tank/nextcloud/config";
+        };
+
+        path = [ ncPhp ];
+
+        script = ''
+          ${ncPhp}/bin/php ${registerWebhookPhp} ${ncRoot} "$CREDENTIALS_DIRECTORY/nc-ocr-webhook-secret"
+        '';
+      };
+
       # Declarative flow rule: idempotently insert OCR workflow rule after setup.
       systemd.services.nextcloud-ocr-flow = {
         description = "Create declarative OCR workflow rule";
@@ -54,9 +196,12 @@
           User = "nextcloud";
           Group = "nextcloud";
           RemainAfterExit = true;
-          LoadCredential = [
-            "adminpass:/run/secrets/nextcloud/admin-password"
-            "mail_smtppassword:/run/secrets/resend/api-key"
+          LoadCredential = let
+            adminPass = config.sops.secrets."nextcloud/admin-password".path;
+            resendKey = config.sops.secrets."resend/api-key".path;
+          in [
+            "adminpass:${adminPass}"
+            "mail_smtppassword:${resendKey}"
           ];
         };
 

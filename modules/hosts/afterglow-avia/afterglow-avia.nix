@@ -259,6 +259,7 @@
         atolPkg
         kkmPkg
         pkgs.chromium
+        pkgs.kcalc
         (pkgs.makeDesktopItem {
           name = "kkmserver-webui";
           exec = "${pkgs.firefox}/bin/firefox http://localhost:5893/";

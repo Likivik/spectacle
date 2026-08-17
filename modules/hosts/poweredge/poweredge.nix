@@ -122,6 +122,10 @@
         sopsFile = ../../../secrets/poweredge/secrets.yaml;
         owner = "nextcloud"; group = "nextcloud"; mode = "0400";
       };
+      sops.secrets."nextcloud/ocr-webdav-password" = {
+        sopsFile = ../../../secrets/poweredge/secrets.yaml;
+        owner = "nextcloud"; group = "nextcloud"; mode = "0400";
+      };
 
       services.tailscale.authKeyFile =
         config.sops.secrets."tailscale/auth-key".path;
@@ -272,7 +276,7 @@
             # Vector sync: needs bge-m3 + qdrant (on serenity + local).
             environmentFiles = [ "/run/nextcloud-mcp.env" ];
             environments = {
-              NEXTCLOUD_HOST = "https://poweredge.oryx-galaxy.ts.net";
+              NEXTCLOUD_HOST = "https://poweredge.oryx-galaxy.ts.net:80";
               NEXTCLOUD_USERNAME = "likivik";
               MCP_DEPLOYMENT_MODE = "single_user_basic";
               # Semantic search — ENABLE_SEMANTIC_SEARCH enables Qdrant-backed

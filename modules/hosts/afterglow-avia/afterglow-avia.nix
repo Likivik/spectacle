@@ -37,6 +37,12 @@
       # for ath9k Wi-Fi stability on Atheros combo cards.
       boot.kernelParams = [ "ath9k.btcoex_enable=0" ];
 
+      # QCA9565 combo chip's Bluetooth floods "unexpected HCI Event 0x00"
+      # on Linux (incomplete driver init vs Windows). Floods shared bus,
+      # starves Wi-Fi. Disable BT entirely — Wi-Fi is stable without it.
+      boot.blacklistedKernelModules = [ "btusb" ];
+      hardware.bluetooth.enable = lib.mkForce false;
+
       # kkmserver HTTP endpoint (default port 5893) — local-only by default;
       # remove the restriction if yclients runs on a separate browser client.
       networking.firewall.allowedTCPPorts = [ 5893 5894 ];
@@ -259,7 +265,7 @@
         atolPkg
         kkmPkg
         pkgs.chromium
-        pkgs.kcalc
+        pkgs.kdePackages.kcalc
         (pkgs.makeDesktopItem {
           name = "kkmserver-webui";
           exec = "${pkgs.firefox}/bin/firefox http://localhost:5893/";

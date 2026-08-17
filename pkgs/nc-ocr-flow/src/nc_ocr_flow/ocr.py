@@ -56,21 +56,61 @@ class ProcessResult:
 # --- ocrmypdf (tesseract pass) -----------------------------------------------
 
 def _run_ocrmypdf(input_pdf: Path, output_pdf: Path, tsv_path: Path) -> None:
-    """Run ocrmypdf with tesseract, produce sandwich PDF + TSV."""
+    """Run ocrmypdf with tesseract, produce sandwich PDF + sidecar text."""
     cmd = [
         "ocrmypdf",
         "--skip-text",       # skip pages with existing text (born-digital)
         "--rotate-pages",
         "--deskew",
         "--language", "rus+eng",
-        "--tsv", str(tsv_path),
         "--sidecar", str(tsv_path.with_suffix(".txt")),
         "--output-type", "pdf",
         str(input_pdf),
         str(output_pdf),
     ]
     log.info("ocrmypdf: %s", " ".join(cmd))
-    subprocess.run(cmd, check=True, capture_output=True, timeout=600)
+    result = subprocess.run(cmd, check=False, capture_output=True, timeout=600)
+    if result.returncode != 0:
+        log.error("ocrmypdf stderr: %s", result.stderr.decode(errors="replace"))
+        raise subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
+
+
+def _generate_tsv(pdf_path: Path, tsv_path: Path) -> None:
+    """Run tesseract directly on each page to get TSV confidence data.
+
+    ocrmypdf doesn't support --tsv, so we run tesseract separately
+    on rendered page images to extract per-word confidence scores.
+    """
+    import fitz
+    tsv_path.parent.mkdir(parents=True, exist_ok=True)
+    doc = fitz.open(str(pdf_path))
+    all_lines = ["level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext"]
+    for page_idx in range(len(doc)):
+        page = doc[page_idx]
+        pix = page.get_pixmap(dpi=200)
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+            tmp.write(pix.tobytes("png"))
+            tmp_png = Path(tmp.name)
+        try:
+            tsv_out = tmp_png.with_suffix(".tsv")
+            subprocess.run(
+                ["tesseract", str(tmp_png), str(tsv_out.with_suffix("")),
+                 "-l", "rus+eng", "tsv"],
+                check=False, capture_output=True, timeout=60,
+            )
+            if tsv_out.exists():
+                lines = tsv_out.read_text().splitlines()
+                # Skip header, adjust page numbers
+                for line in lines[1:]:
+                    parts = line.split("\t")
+                    if len(parts) >= 12 and parts[0] == "5":
+                        parts[1] = str(page_idx + 1)
+                        all_lines.append("\t".join(parts))
+                tsv_out.unlink(missing_ok=True)
+        finally:
+            tmp_png.unlink(missing_ok=True)
+    doc.close()
+    tsv_path.write_text("\n".join(all_lines) + "\n")
 
 
 def _parse_tsv(tsv_path: Path | str) -> dict[int, PageMeta]:
@@ -185,15 +225,18 @@ def _embed_surya_text(doc, page_idx: int, surya_result) -> None:
     page = doc[page_idx]
     font = _get_font()
 
-    # Step 1: Remove tesseract's text layer, keep images
-    text_dict = page.get_text("dict")
-    for block in text_dict.get("blocks", []):
-        if block.get("type") == 0:  # text block
-            rect = fitz.Rect(block["bbox"])
-            page.add_redact_annot(rect, fill=(1, 1, 1))  # white fill
+    # Step 1: Remove ALL tesseract text from page, keep images
+    page.add_redact_annot(page.rect)
     page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
 
-    # Step 2: Scale Surya bboxes (image pixels) to PDF coordinates (points)
+    # Step 2: Insert font into page (after redactions, which rebuild content)
+    if font.buffer:
+        page.insert_font(fontname="surya-font", fontbuffer=font.buffer)
+        fontname = "surya-font"
+    else:
+        fontname = "helv"
+
+    # Step 3: Scale Surya bboxes (image pixels) to PDF coordinates (points)
     page_w = page.rect.width
     page_h = page.rect.height
     scale_x = page_w / surya_result.page_width if surya_result.page_width > 0 else 1
@@ -232,7 +275,7 @@ def _embed_surya_text(doc, page_idx: int, surya_result) -> None:
             page.insert_text(
                 pos, text,
                 fontsize=fontsize,
-                font=font,
+                fontname=fontname,
                 render_mode=3,  # invisible
             )
         except Exception as exc:
@@ -272,13 +315,28 @@ def process_pdf(
 
         # Pass 1: tesseract
         _run_ocrmypdf(input_pdf, output_pdf, tsv_path)
+        _generate_tsv(output_pdf, tsv_path)
         page_meta = _parse_tsv(tsv_path)
 
-    # Identify pages needing VLM
+    # Detect pages that already had text (ocrmypdf --skip-text skipped them)
+    import fitz
+    pre_ocr_doc = fitz.open(str(input_pdf))
+    skipped_pages = set()
+    num_pages = len(pre_ocr_doc)
+    for page_idx in range(num_pages):
+        page_text = pre_ocr_doc[page_idx].get_text().strip()
+        if len(page_text) > 20:
+            skipped_pages.add(page_idx)
+    pre_ocr_doc.close()
+
+    # Identify pages needing VLM (skip pages ocrmypdf already skipped)
     vlm_pages = []
-    for meta in page_meta.values():
-        if _needs_vlm(meta):
-            vlm_pages.append(meta.page_idx)
+    for page_idx in range(num_pages):
+        if page_idx in skipped_pages:
+            continue
+        meta = page_meta.get(page_idx + 1)  # TSV uses 1-indexed pages
+        if meta is None or _needs_vlm(meta):
+            vlm_pages.append(page_idx)
 
     log.info("tesseract pages: %d, vlm pages: %d",
              len(page_meta), len(vlm_pages))

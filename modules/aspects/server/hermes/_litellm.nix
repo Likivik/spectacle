@@ -23,144 +23,65 @@
     environmentFile = "/var/lib/litellm/env";
 
     settings = {
+      # ── Model architecture ────────────────────────────────────────────
+      # Each provider gets a unique model_name so LiteLLM can chain fallbacks
+      # explicitly. The virtual name "graphiti-free" is NOT in model_list —
+      # it only exists as the fallback entry point. Graphiti calls
+      # "graphiti-free", LiteLLM routes to graphiti-primary, and on any
+      # retryable error (404, 429, 5xx, timeout) falls through the chain.
+      #
+      # To update a model name (e.g. Groq renames it again):
+      #   1. Edit the `model =` field below
+      #   2. jj bookmark set dev -r @ && jj git push --all
+      #   3. sudo nixos-rebuild switch --flake .#erebus
       model_list = [
-        # ── Strong models FIRST (simple-shuffle prefers low order) ──
-        # Groq — Llama 3.3 70B, reliable JSON extraction, permanent free tier.
+        # ── Primary (graphiti-free): Groq gpt-oss-120b ──
         {
           model_name = "graphiti-free";
           litellm_params = {
-            model = "openai/llama-3.3-70b-versatile";
-            api_base = "https://api.groq.com/openai/v1";
+            model = "groq/openai/gpt-oss-120b";
             api_key = "os.environ/GROQ_KEY";
             rpm = 30;
-            order = 1;
           };
         }
-        # Mistral — small-latest, decent JSON, free experimentation tier.
         {
-          model_name = "graphiti-free";
+          model_name = "mistral-small-latest";
           litellm_params = {
             model = "openai/mistral-small-latest";
             api_base = "https://api.mistral.ai/v1";
             api_key = "os.environ/MISTRAL_KEY";
             rpm = 20;
-            order = 2;
-          };
-        }
-        # OpenCode Go (subscription; open-source models, no free tier) — medium strength.
-        {
-          model_name = "graphiti-free";
-          litellm_params = {
-            model = "openai/deepseek-v4-flash";
-            api_base = "https://opencode.ai/zen/go/v1";
-            api_key = "os.environ/OPENCODE_KEY1";
-            rpm = 20;
-            order = 3;
           };
         }
         {
-          model_name = "graphiti-free";
-          litellm_params = {
-            model = "openai/deepseek-v4-flash";
-            api_base = "https://opencode.ai/zen/go/v1";
-            api_key = "os.environ/OPENCODE_KEY2";
-            rpm = 20;
-            order = 4;
-          };
-        }
-        {
-          model_name = "graphiti-free";
-          litellm_params = {
-            model = "openai/deepseek-v4-flash";
-            api_base = "https://opencode.ai/zen/go/v1";
-            api_key = "os.environ/OPENCODE_KEY3";
-            rpm = 20;
-            order = 5;
-          };
-        }
-        {
-          model_name = "graphiti-free";
-          litellm_params = {
-            model = "openai/deepseek-v4-flash";
-            api_base = "https://opencode.ai/zen/go/v1";
-            api_key = "os.environ/OPENCODE_KEY4";
-            rpm = 20;
-            order = 6;
-          };
-        }
-        # OpenCode Zen (pay-per-use; 7 free models e.g. deepseek-v4-flash-free). Weak but free.
-        {
-          model_name = "graphiti-free";
-          litellm_params = {
-            model = "openai/deepseek-v4-flash-free";
-            api_base = "https://opencode.ai/zen/v1";
-            api_key = "os.environ/OPENCODE_KEY1";
-            rpm = 20;
-            order = 7;
-          };
-        }
-        {
-          model_name = "graphiti-free";
-          litellm_params = {
-            model = "openai/deepseek-v4-flash-free";
-            api_base = "https://opencode.ai/zen/v1";
-            api_key = "os.environ/OPENCODE_KEY2";
-            rpm = 20;
-            order = 8;
-          };
-        }
-        {
-          model_name = "graphiti-free";
-          litellm_params = {
-            model = "openai/deepseek-v4-flash-free";
-            api_base = "https://opencode.ai/zen/v1";
-            api_key = "os.environ/OPENCODE_KEY3";
-            rpm = 20;
-            order = 9;
-          };
-        }
-        # Hugging Face — free tier, 20B model, weakest. Last free resort.
-        {
-          model_name = "graphiti-free";
+          model_name = "hf-gpt-oss-20b";
           litellm_params = {
             model = "openai/gpt-oss-20b:fastest";
             api_base = "https://router.huggingface.co/v1";
             api_key = "os.environ/HF_TOKEN";
             rpm = 20;
-            order = 10;
           };
         }
-        # OpenRouter free — meta-router to random free models, variable quality. Last.
         {
-          model_name = "graphiti-free";
+          model_name = "openrouter-free";
           litellm_params = {
             model = "openrouter/openrouter/free";
             api_key = "os.environ/OPENROUTER_KEY";
             rpm = 20;
-            order = 11;
           };
         }
-        # OpenCode Zen key4 — api-key4 NOT in runtime sops mount (only 1-3 are).
-        # Deployment disabled until key4 is mounted; avoids empty api_key at load.
-        # {
-        #   model_name = "graphiti-free";
-        #   litellm_params = {
-        #     model = "openai/deepseek-v4-flash-free";
-        #     api_base = "https://opencode.ai/zen/v1";
-        #     api_key = "os.environ/OPENCODE_KEY4";
-        #     rpm = 20;
-        #     order = 12;
-        #   };
-        # }
       ];
       router_settings = {
         routing_strategy = "simple-shuffle";
-        num_retries = 3;
+        num_retries = 0;
         timeout = 60;
-        # Fallback on API error/timeout → Groq 70B (strong, free, reliable).
-        # (Does NOT catch bad-JSON; reordering above handles that.)
+        allowed_fails = 1;
+        cooldown_time = 300;
+        # graphiti-free is the primary model_name (Groq).
+        # LiteLLM 1.89.0 doesn't support routing_groups as virtual models,
+        # so we use model_name + fallbacks instead.
         fallbacks = [
-          { "graphiti-free" = [ "openai/llama-3.3-70b-versatile" ]; }
+          { "graphiti-free" = [ "mistral-small-latest" "hf-gpt-oss-20b" "openrouter-free" ]; }
         ];
       };
       litellm_settings = {

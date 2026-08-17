@@ -26,7 +26,7 @@
         set -eu
         export NC_OCR_NC_PASSWORD_FILE="$CREDENTIALS_DIRECTORY/nc-ocr-password"
         export NC_OCR_WEBHOOK_SECRET_FILE="$CREDENTIALS_DIRECTORY/nc-ocr-webhook-secret"
-        if [ ! -d "${ocrVenv}" ] || [ ! -f "${ocrVenv}/.installed" ]; then
+        if [ ! -d "${ocrVenv}" ] || [ ! -f "${ocrVenv}/.installed" ] || [ "${ocrVenv}/.installed" -ot "${ncOcrFlowSrc}/src/nc_ocr_flow/webhook_server.py" ] || [ "${ocrVenv}/.installed" -ot "${ncOcrFlowSrc}/src/nc_ocr_flow/ocr.py" ]; then
           echo "Creating OCR venv..."
           rm -rf "${ocrVenv}"
           ${pkgs.python312}/bin/python3.12 -m venv ${ocrVenv}
@@ -77,8 +77,9 @@
           NC_OCR_SURYA_URL = "http://serenity:8084";
           NC_OCR_LISTEN_HOST = "127.0.0.1";
           NC_OCR_LISTEN_PORT = "8095";
-          NC_OCR_FONT_PATH = "${pkgs.dejavu_fonts}/lib/fonts/DejaVuSans.ttf";
+          NC_OCR_FONT_PATH = "${pkgs.dejavu_fonts}/share/fonts/truetype/DejaVuSans.ttf";
           TESSDATA_PREFIX = "${pkgs.tesseract5}/share/tessdata";
+          LD_LIBRARY_PATH = "${pkgs.stdenv.cc.cc.lib}/lib";
         };
 
         serviceConfig = {
@@ -91,10 +92,10 @@
           StateDirectoryMode = "0755";
           TimeoutStartSec = "5min";  # first venv creation + pip install
           LoadCredential = let
-            adminPass = config.sops.secrets."nextcloud/admin-password".path;
+            webdavPass = config.sops.secrets."nextcloud/ocr-webdav-password".path;
             webhookSecret = config.sops.secrets."nextcloud/ocr-webhook-secret".path;
           in [
-            "nc-ocr-password:${adminPass}"
+            "nc-ocr-password:${webdavPass}"
             "nc-ocr-webhook-secret:${webhookSecret}"
           ];
         };
@@ -104,6 +105,7 @@
           pkgs.tesseract5
           pkgs.poppler-utils
           pkgs.curl
+          pkgs.stdenv.cc.cc.lib
         ];
 
         script = ''

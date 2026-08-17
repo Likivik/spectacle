@@ -14,11 +14,30 @@ import logging
 import os
 import re
 
+from pydantic import BaseModel
+
 log = logging.getLogger(__name__)
+
+
+class OcrRequest(BaseModel):
+    image_b64: str
+
+
+class BlockOut(BaseModel):
+    bbox: list[float]
+    text: str
+    confidence: float
+    label: str
+
+
+class OcrResponse(BaseModel):
+    blocks: list[BlockOut]
+    page_width: float
+    page_height: float
+
 
 def _create_app():
     from fastapi import FastAPI
-    from pydantic import BaseModel
     from PIL import Image
 
     app = FastAPI(title="Surya OCR Server")
@@ -32,20 +51,6 @@ def _create_app():
             manager = SuryaInferenceManager()
             _predictor = RecognitionPredictor(manager)
         return _predictor
-
-    class OcrRequest(BaseModel):
-        image_b64: str
-
-    class BlockOut(BaseModel):
-        bbox: list[float]
-        text: str
-        confidence: float
-        label: str
-
-    class OcrResponse(BaseModel):
-        blocks: list[BlockOut]
-        page_width: float
-        page_height: float
 
     @app.post("/ocr", response_model=OcrResponse)
     def ocr(req: OcrRequest):

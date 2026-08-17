@@ -80,8 +80,23 @@ def _mark_processed(node_id: int) -> None:
 # --- WebDAV client ---
 
 def _webdav_url(nc_path: str) -> str:
-    """Build WebDAV URL for a NC-internal path (e.g. /likivik/files/Documents/foo.pdf)."""
-    return f"{NC_URL}/remote.php/dav/files/{nc_path.lstrip('/')}"
+    """Build WebDAV URL from a NC-internal path.
+
+    NC webhook delivers node.path as '/<user>/files/<relative_path>'
+    e.g. /admin/files/Documents/foo.pdf
+    WebDAV URL: /remote.php/dav/files/<user>/<relative_path>
+    """
+    # Strip leading slash, then remove '<user>/files/' prefix to get relative path
+    rel = nc_path.lstrip('/')
+    parts = rel.split('/', 2)
+    if len(parts) >= 3 and parts[1] == 'files':
+        user = parts[0]
+        file_path = parts[2]
+    else:
+        # Fallback: assume nc_path is already relative
+        user = NC_USER
+        file_path = rel
+    return f"{NC_URL}/remote.php/dav/files/{user}/{file_path}"
 
 
 def _webdav_download(nc_path: str, dest: Path) -> None:

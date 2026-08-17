@@ -89,9 +89,11 @@ foreach ($listeners as $listener) {
             'uri' => $qb->createNamedParameter($webhookUri),
             'event' => $qb->createNamedParameter($listener['event']),
             'event_filter' => $qb->createNamedParameter($eventFilter),
+            'user_id_filter' => $qb->createNamedParameter(''),
             'headers' => $qb->createNamedParameter($headers),
             'auth_method' => $qb->createNamedParameter('none'),
             'auth_data' => $qb->createNamedParameter(''),
+            'token_needed' => $qb->createNamedParameter('[]'),
         ]);
     $qb->executeStatement();
 

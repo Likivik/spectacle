@@ -71,6 +71,7 @@
           logfile = "/tank/nextcloud/data/nextcloud.log";
           logfilemode = "0640";
           logtimezone = "Europe/Moscow";
+          allow_local_remote_servers = true;
           enable_previews = true;
           enabledPreviewProviders = [
             "OC\\Preview\\PNG"

@@ -40,7 +40,12 @@ def ocr_page(png_bytes: bytes, url: str | None = None) -> SuryaResult:
     resp.raise_for_status()
     data = resp.json()
     return SuryaResult(
-        blocks=[SuryaBlock(**b) for b in data["blocks"]],
+        blocks=[SuryaBlock(
+            bbox=tuple(b["bbox"]),
+            text=b["text"],
+            confidence=b["confidence"],
+            label=b["label"],
+        ) for b in data["blocks"]],
         page_width=data["page_width"],
         page_height=data["page_height"],
     )

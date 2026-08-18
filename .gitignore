@@ -23,3 +23,6 @@ worktrees/
 # Python bytecode
 __pycache__/
 *.pyc
+
+# Venice AI API key
+.env

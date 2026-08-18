@@ -106,8 +106,14 @@
           ports = [ "127.0.0.1:9980:9980" ];
           extraOptions = [ "--cap-add=MKNOD" ];
           environment = {
-            extra_params = "--o:ssl.enable=false --o:ssl.termination=true";
-            domain = "nextcloud\\.filepath\\.ru";
+            # ssl.termination=true: Tailscale-serve terminates TLS, Collabora
+            # receives plaintext HTTP from Nextcloud php-fpm over loopback.
+            # alias_groups.mode=groups: allow both filepath.ru (public) and
+            # the tailnet host (poweredge.oryx-galaxy.ts.net) to open docs.
+            # 'domain' sets the WOPI host allowlist regex; pipe-separates
+            # multiple hosts per Collabora docs.
+            extra_params = "--o:ssl.enable=false --o:ssl.termination=true --o:alias_groups.mode=groups";
+            domain = "nextcloud\\.filepath\\.ru|poweredge\\.oryx\\-galaxy\\.ts\\.net";
             dictionaries = "ru en";
           };
         };
@@ -183,6 +189,30 @@
         serviceConfig.RemainAfterExit = true;
         script = ''
           ${config.services.nextcloud.occ}/bin/nextcloud-occ app:disable app_api 2>&1
+        '';
+      };
+
+      # Configure Nextcloud Office (richdocuments) WOPI bridge to local
+      # Collabora container. Idempotent — occ config:app:set overwrites
+      # the same key on every deploy. Runs after install so app:enable
+      # for richdocuments has already happened via extraApps.
+      systemd.services.nextcloud-configure-richdocuments = {
+        description = "Configure richdocuments WOPI bridge to Collabora";
+        after = [ "nextcloud-setup.service" "podman-collabora-code.service" ];
+        wants = [ "nextcloud-setup.service" "podman-collabora-code.service" ];
+        wantedBy = [ "multi-user.target" ];
+        serviceConfig.Type = "oneshot";
+        serviceConfig.RemainAfterExit = true;
+        script = ''
+          ${config.services.nextcloud.occ}/bin/nextcloud-occ \
+            config:app:set richdocuments wopi_url \
+            --value="http://127.0.0.1:9980"
+          ${config.services.nextcloud.occ}/bin/nextcloud-occ \
+            config:app:set richdocuments wopi_allow_list \
+            --value="127.0.0.1"
+          ${config.services.nextcloud.occ}/bin/nextcloud-occ \
+            config:app:set richdocuments public_wopi_url \
+            --value="https://poweredge.oryx-galaxy.ts.net"
         '';
       };
 

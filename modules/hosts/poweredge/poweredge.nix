@@ -276,7 +276,10 @@
             # Vector sync: needs bge-m3 + qdrant (on serenity + local).
             environmentFiles = [ "/run/nextcloud-mcp.env" ];
             environments = {
-              NEXTCLOUD_HOST = "https://poweredge.oryx-galaxy.ts.net:80";
+              # Container uses Network=host, so localhost reaches nginx directly.
+              # Tailscale-serve terminates TLS on the tailnet IP, not localhost —
+              # using https:// from inside the container breaks (SSL wrong version).
+              NEXTCLOUD_HOST = "http://127.0.0.1:80";
               NEXTCLOUD_USERNAME = "likivik";
               MCP_DEPLOYMENT_MODE = "single_user_basic";
               # Semantic search — ENABLE_SEMANTIC_SEARCH enables Qdrant-backed

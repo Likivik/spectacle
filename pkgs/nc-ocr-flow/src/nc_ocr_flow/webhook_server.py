@@ -86,6 +86,7 @@ def _webdav_url(nc_path: str) -> str:
     e.g. /admin/files/Documents/foo.pdf
     WebDAV URL: /remote.php/dav/files/<user>/<relative_path>
     """
+    from urllib.parse import quote
     # Strip leading slash, then remove '<user>/files/' prefix to get relative path
     rel = nc_path.lstrip('/')
     parts = rel.split('/', 2)
@@ -96,7 +97,10 @@ def _webdav_url(nc_path: str) -> str:
         # Fallback: assume nc_path is already relative
         user = NC_USER
         file_path = rel
-    return f"{NC_URL}/remote.php/dav/files/{user}/{file_path}"
+    # URL-encode each path segment individually, preserving '/' separators.
+    # Without this, Cyrillic/space chars in paths cause WebDAV 404s.
+    encoded_path = '/'.join(quote(p, safe='') for p in file_path.split('/'))
+    return f"{NC_URL}/remote.php/dav/files/{user}/{encoded_path}"
 
 
 def _webdav_download(nc_path: str, dest: Path) -> None:

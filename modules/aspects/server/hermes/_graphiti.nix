@@ -48,8 +48,6 @@
         # /var/lib/litellm/master-key.txt), not from this env var.
         "OPENAI_API_KEY=«redacted:sk-…»"
         "OPENAI_BASE_URL=http://127.0.0.1:4000/v1"
-        "HTTPS_PROXY=http://127.0.0.1:7899"
-        "SSL_CERT_FILE=/etc/ssl/certs/hermes-with-proxy-ca.crt"
         "NO_PROXY=127.0.0.1,localhost,127.0.0.1:4000"
       ];
       ExecStart = "${pkgs.graphiti-mcp}/bin/graphiti-mcp-server --config /var/lib/hermes/.config/graphiti-mcp/config.yaml --transport http --host 127.0.0.1 --port 8000";
@@ -87,7 +85,7 @@ embedder:
   providers:
     openai:
       api_url: "http://127.0.0.1:8081/v1"
-      api_key: "hermes-proxy://llama"
+      api_key: "$(cat /var/lib/litellm/master-key.txt 2>/dev/null || echo sk-missing)"
 CONFIGEOF
     chown -R hermes:hermes /var/lib/hermes/.config/graphiti-mcp
   '';

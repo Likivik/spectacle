@@ -15,6 +15,7 @@ in
       den.aspects.server.n8n
       den.aspects.tts
       den.aspects.server.sops
+      den.aspects.sops-cli
     ];
 
     nixos = { config, pkgs, lib, ... }: {
@@ -90,73 +91,110 @@ in
           group = "hermes";
           mode = "0600";
         };
-        "hermes-mitmproxy/mitmproxy-ca" = {
+        "hermes/langfuse-public-key" = {
           sopsFile = ../../../secrets/erebus/secrets.yaml;
-          owner = "hermes-mitmproxy";
-          group = "hermes-mitmproxy";
+          owner = "hermes";
+          group = "hermes";
+          mode = "0600";
+        };
+        "hermes/langfuse-secret-key" = {
+          sopsFile = ../../../secrets/erebus/secrets.yaml;
+          owner = "hermes";
+          group = "hermes";
+          mode = "0600";
+        };
+        "hermes/telegram-bot-token" = {
+          sopsFile = ../../../secrets/erebus/secrets.yaml;
+          owner = "hermes";
+          group = "hermes";
+          mode = "0600";
+        };
+        "hermes/exa-api-key" = {
+          sopsFile = ../../../secrets/erebus/secrets.yaml;
+          owner = "hermes";
+          group = "hermes";
+          mode = "0600";
+        };
+        "hermes/mcp-obsidian-api-key" = {
+          sopsFile = ../../../secrets/erebus/secrets.yaml;
+          owner = "hermes";
+          group = "hermes";
+          mode = "0600";
+        };
+        "hermes/minimax-api-key" = {
+          sopsFile = ../../../secrets/erebus/secrets.yaml;
+          owner = "hermes";
+          group = "hermes";
+          mode = "0600";
+        };
+        "hermes/synthetic-api-key" = {
+          sopsFile = ../../../secrets/erebus/secrets.yaml;
+          owner = "hermes";
+          group = "hermes";
+          mode = "0600";
+        };
+        "hermes/api-server-key" = {
+          sopsFile = ../../../secrets/erebus/secrets.yaml;
+          owner = "hermes";
+          group = "hermes";
+          mode = "0600";
+        };
+        # New langfuse-hermes keys (separate project from mitmproxy)
+        "hermes/langfuse-hermes/public-key" = {
+          sopsFile = ../../../secrets/erebus/secrets.yaml;
+          owner = "hermes";
+          group = "hermes";
+          mode = "0600";
+        };
+        "hermes/langfuse-hermes/secret-key" = {
+          sopsFile = ../../../secrets/erebus/secrets.yaml;
+          owner = "hermes";
+          group = "hermes";
           mode = "0600";
         };
         "hermes-mitmproxy/github/pat-hermes-full" = {
           sopsFile = ../../../secrets/erebus/secrets.yaml;
-          owner = "hermes-mitmproxy";
-          group = "hermes-mitmproxy";
+          owner = "hermes";
+          group = "hermes";
           mode = "0600";
         };
         "hermes-mitmproxy/llm-providers/openrouter/api-key" = {
           sopsFile = ../../../secrets/erebus/secrets.yaml;
-          owner = "hermes-mitmproxy";
-          group = "hermes-mitmproxy";
-          mode = "0600";
-        };
-        "hermes-mitmproxy/llm-providers/opencode/api-key1" = {
-          sopsFile = ../../../secrets/erebus/secrets.yaml;
-          owner = "hermes-mitmproxy";
-          group = "hermes-mitmproxy";
-          mode = "0600";
-        };
-        "hermes-mitmproxy/llm-providers/opencode/api-key2" = {
-          sopsFile = ../../../secrets/erebus/secrets.yaml;
-          owner = "hermes-mitmproxy";
-          group = "hermes-mitmproxy";
-          mode = "0600";
-        };
-        "hermes-mitmproxy/llm-providers/opencode/api-key3" = {
-          sopsFile = ../../../secrets/erebus/secrets.yaml;
-          owner = "hermes-mitmproxy";
-          group = "hermes-mitmproxy";
+          owner = "hermes";
+          group = "hermes";
           mode = "0600";
         };
         # Added so LiteLLM (graphiti-free pool) can read them at runtime.
         # Keys already present in secrets/erebus/secrets.yaml (encrypted).
         "hermes-mitmproxy/llm-providers/groq/api-key" = {
           sopsFile = ../../../secrets/erebus/secrets.yaml;
-          owner = "hermes-mitmproxy";
-          group = "hermes-mitmproxy";
+          owner = "hermes";
+          group = "hermes";
           mode = "0600";
         };
         "hermes-mitmproxy/llm-providers/huggingface/api-key" = {
           sopsFile = ../../../secrets/erebus/secrets.yaml;
-          owner = "hermes-mitmproxy";
-          group = "hermes-mitmproxy";
+          owner = "hermes";
+          group = "hermes";
           mode = "0600";
         };
         "hermes-mitmproxy/llm-providers/mistral/api-key" = {
           sopsFile = ../../../secrets/erebus/secrets.yaml;
-          owner = "hermes-mitmproxy";
-          group = "hermes-mitmproxy";
+          owner = "hermes";
+          group = "hermes";
           mode = "0600";
         };
         # Langfuse Cloud (spend/observability dashboard) — keys already in secrets.yaml.
         "hermes-mitmproxy/langfuse/public-key" = {
           sopsFile = ../../../secrets/erebus/secrets.yaml;
-          owner = "hermes-mitmproxy";
-          group = "hermes-mitmproxy";
+          owner = "hermes";
+          group = "hermes";
           mode = "0600";
         };
         "hermes-mitmproxy/langfuse/secret-key" = {
           sopsFile = ../../../secrets/erebus/secrets.yaml;
-          owner = "hermes-mitmproxy";
-          group = "hermes-mitmproxy";
+          owner = "hermes";
+          group = "hermes";
           mode = "0600";
         };
         "email/gmail/account1/adress" = {

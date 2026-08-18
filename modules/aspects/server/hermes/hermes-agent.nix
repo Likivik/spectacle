@@ -11,32 +11,9 @@
     nixos = { config, pkgs, lib, ... }: let
       hermes-pkg = inputs.hermes-agent.packages.${pkgs.system}.messaging;
       anthropic-py = pkgs.python312.withPackages (ps: [ ps.pip ]);
+      # Extra Python packages for Hermes plugins (langfuse SDK for observability).
+      hermes-plugin-py = pkgs.python312.withPackages (ps: [ ps.langfuse ]);
 
-      # nixpkgs drift fix: mitmproxy 12.2.3 requires msgpack <= 1.1.2,
-      # but nixos-unstable bumped msgpack to 1.2.1 (breaks pythonRuntimeDepsCheck).
-      # Pin msgpack back to the known-good 1.1.2 for this aspect's python scope.
-      msgpackOverlay = (final: prev: {
-        python3Packages = prev.python3Packages.overrideScope (pythonFinal: pythonPrev: {
-          msgpack = pythonPrev.msgpack.overridePythonAttrs (old: {
-            version = "1.1.2";
-            # Use GitHub source (like the original pkg) — the PyPI sdist has no
-            # Makefile, but the pkg's preBuild runs `make cython` (needs it).
-            src = pkgs.fetchFromGitHub {
-              owner = "msgpack";
-              repo = "msgpack-python";
-              tag = "v1.1.2";
-              sha256 = "9iFTQPAM6AAogcRUoCw5/bECNiGUwmAarEiwMJ+rqbk=";
-            };
-          });
-          # urwid 3.0.5's TornadoEventLoopTest is flaky on python 3.14
-          # (environmental test failure, lib itself is fine). Skip tests.
-          urwid = pythonPrev.urwid.overridePythonAttrs (old: {
-            doCheck = false;
-          });
-        });
-      });
-
-      mitmproxyConfig = import ./_mitmproxy.nix { inherit config pkgs lib; };
       graphitiConfig = import ./_graphiti.nix { inherit config pkgs lib; };
       llamaConfig = import ./_llama.nix { inherit config pkgs lib; };
       graphitiMemoryConfig = import ./_hermes-graphiti.nix { inherit config pkgs lib; };
@@ -44,8 +21,6 @@
       playwrightConfig = import ./_playwright.nix { inherit config pkgs lib; };
       litellmConfig = import ./_litellm.nix { inherit config pkgs lib; };
     in lib.mkMerge [
-      { nixpkgs.overlays = [ msgpackOverlay ]; }
-      mitmproxyConfig
       graphitiConfig
       llamaConfig
       graphitiMemoryConfig
@@ -80,7 +55,6 @@
             Environment = [
               "HERMES_HOME=/var/lib/hermes/.hermes"
               "_HERMES_GATEWAY=0"
-              "HTTPS_PROXY=http://127.0.0.1:7899"
               "NO_PROXY=127.0.0.1,localhost"
             ];
             ExecStart = "${hermes-pkg}/bin/hermes dashboard --host 0.0.0.0 --port 9119 --no-open";
@@ -88,8 +62,42 @@
           };
         };
 
-        system.activationScripts."hermes-gateway-install" = lib.stringAfter (
+        system.activationScripts."hermes-secrets-env" = lib.stringAfter (
           lib.optional (config.system.activationScripts ? setupSecrets) "setupSecrets"
+        ) ''
+          # Generate env file from individual sops secrets — same pattern as LiteLLM.
+          # This file is NixOS-managed; hermes never touches it.
+          SEED_DIR=/var/lib/hermes/.hermes
+          ENV_FILE="$SEED_DIR/sops-env"
+          {
+            TG=$(cat /run/secrets/hermes/telegram-bot-token 2>/dev/null || true)
+            EXA=$(cat /run/secrets/hermes/exa-api-key 2>/dev/null || true)
+            OBS=$(cat /run/secrets/hermes/mcp-obsidian-api-key 2>/dev/null || true)
+            MM=$(cat /run/secrets/hermes/minimax-api-key 2>/dev/null || true)
+            SYN=$(cat /run/secrets/hermes/synthetic-api-key 2>/dev/null || true)
+            APIK=$(cat /run/secrets/hermes/api-server-key 2>/dev/null || true)
+            LFPK=$(cat /run/secrets/hermes/langfuse-public-key 2>/dev/null || true)
+            LFSK=$(cat /run/secrets/hermes/langfuse-secret-key 2>/dev/null || true)
+            ORK=$(cat /run/secrets/hermes-mitmproxy/llm-providers/openrouter/api-key 2>/dev/null || true)
+            GH=$(cat /run/secrets/hermes-mitmproxy/github/pat-hermes-full 2>/dev/null || true)
+            echo "TELEGRAM_BOT_TOKEN=$TG"
+            echo "EXA_API_KEY=$EXA"
+            echo "MCP_OBSIDIAN_API_KEY=$OBS"
+            echo "MINIMAX_API_KEY=$MM"
+            echo "SYNTHETIC_API_KEY=$SYN"
+            echo "API_SERVER_KEY=$APIK"
+            echo "HERMES_LANGFUSE_PUBLIC_KEY=$LFPK"
+            echo "HERMES_LANGFUSE_SECRET_KEY=$LFSK"
+            echo "HERMES_LANGFUSE_BASE_URL=https://cloud.langfuse.com"
+            echo "OPENROUTER_API_KEY=$ORK"
+            echo "GITHUB_TOKEN=$GH"
+          } > "$ENV_FILE"
+          chown hermes:hermes "$ENV_FILE"
+          chmod 0600 "$ENV_FILE"
+        '';
+
+        system.activationScripts."hermes-gateway-install" = lib.stringAfter (
+          [ "hermes-secrets-env" ] ++ lib.optional (config.system.activationScripts ? setupSecrets) "setupSecrets"
         ) ''
           # Remove any dangling symlinks from previous deploys
           rm -f /var/lib/hermes/.config/systemd/user/hermes-gateway.service
@@ -111,18 +119,12 @@
           mkdir -p /var/lib/hermes/.config/systemd/user/hermes-gateway.service.d
           cat > /var/lib/hermes/.config/systemd/user/hermes-gateway.service.d/override.conf << 'DROPEOF'
 [Service]
-Environment=OPENROUTER_API_KEY=hermes-proxy://openrouter
-Environment=GITHUB_TOKEN=hermes-proxy://github
-Environment=OPENCODE_GO_API_KEY=hermes-proxy://opencode
-Environment=OPENCODE_ZEN_API_KEY=hermes-proxy://opencode
-Environment=HTTPS_PROXY=http://127.0.0.1:7899
-Environment=SSL_CERT_FILE=/etc/ssl/certs/hermes-with-proxy-ca.crt
-Environment=REQUESTS_CA_BUNDLE=/etc/ssl/certs/hermes-with-proxy-ca.crt
 Environment=NO_PROXY=127.0.0.1,localhost
 Environment=WHATSAPP_ENABLED=false
 Environment=WHATSAPP_MODE=self-chat
 EnvironmentFile=/run/secrets/hermes/env
-Environment=PYTHONPATH=${anthropic-py}/${anthropic-py.sitePackages}
+EnvironmentFile=/var/lib/hermes/.hermes/sops-env
+Environment=PYTHONPATH=${anthropic-py}/${anthropic-py.sitePackages}:${hermes-plugin-py}/${hermes-plugin-py.sitePackages}
 Environment=HERMES_BUNDLED_SKILLS=${hermes-pkg}/share/hermes-agent/skills
 Environment=HERMES_BUNDLED_PLUGINS=${hermes-pkg}/share/hermes-agent/plugins
 Environment=HERMES_BUNDLED_LOCALES=${hermes-pkg}/share/hermes-agent/locales
@@ -165,15 +167,9 @@ GITEOF
           touch "$PROFILE"
           chown hermes:hermes "$PROFILE"
           chmod 0600 "$PROFILE"
-          if ! ${pkgs.gnugrep}/bin/grep -q "hermes-mitmproxy" "$PROFILE"; then
-            cat >> "$PROFILE" << 'PROFILEEOF'
-
-# hermes-mitmproxy (gh/git via credential proxy) — NixOS-managed
-export HTTPS_PROXY=http://127.0.0.1:7899
-export NO_PROXY=127.0.0.1,localhost
-export SSL_CERT_FILE=/etc/ssl/certs/hermes-with-proxy-ca.crt
-export REQUESTS_CA_BUNDLE=/etc/ssl/certs/hermes-with-proxy-ca.crt
-PROFILEEOF
+          if ${pkgs.gnugrep}/bin/grep -q "hermes-mitmproxy" "$PROFILE"; then
+            # Strip the (now-removed) mitmproxy proxy exports from a previous deploy
+            ${pkgs.gnused}/bin/sed -i '/hermes-mitmproxy/d; /HTTPS_PROXY/d; /SSL_CERT_FILE/d; /REQUESTS_CA_BUNDLE/d' "$PROFILE"
             chown hermes:hermes "$PROFILE"
           fi
         '';

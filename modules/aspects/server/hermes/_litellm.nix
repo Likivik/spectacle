@@ -25,23 +25,45 @@
     settings = {
       # ── Model architecture ────────────────────────────────────────────
       # Each provider gets a unique model_name so LiteLLM can chain fallbacks
-      # explicitly. The virtual name "graphiti-free" is NOT in model_list —
-      # it only exists as the fallback entry point. Graphiti calls
-      # "graphiti-free", LiteLLM routes to graphiti-primary, and on any
-      # retryable error (404, 429, 5xx, timeout) falls through the chain.
+      # explicitly. Graphiti calls "graphiti-primary" (MiniMax-M3); on any
+      # retryable error (404, 429, 5xx, timeout) LiteLLM falls through the
+      # fallback chain to the free providers.
       #
       # To update a model name (e.g. Groq renames it again):
       #   1. Edit the `model =` field below
       #   2. jj bookmark set dev -r @ && jj git push --all
       #   3. sudo nixos-rebuild switch --flake .#erebus
       model_list = [
-        # ── Primary (graphiti-free): Groq gpt-oss-120b ──
+        # ── Primary (graphiti-primary): MiniMax-M3 (Token Plan, ~$0) ──
+        {
+          model_name = "graphiti-primary";
+          litellm_params = {
+            model = "openai/MiniMax-M3";
+            api_base = "https://api.minimax.io/v1";
+            api_key = "os.environ/MINIMAX_KEY";
+            # C-plan: throttle locally so bursts queue instead of 429 upstream.
+            rpm = 200;      # under MiniMax's 200 RPM
+            tpm = 8000000;  # under MiniMax's 10M TPM
+            allowed_fails = 4;
+            cooldown_time = 30;
+          };
+        }
+        # ── Fallback 1: Groq gpt-oss-120b (free, RPD-limited) ──
         {
           model_name = "graphiti-free";
           litellm_params = {
             model = "groq/openai/gpt-oss-120b";
             api_key = "os.environ/GROQ_KEY";
-            rpm = 30;
+            # Free Groq: 30 RPM / 8K TPM / 1000 RPD — cap below each.
+            # Per-deployment cooldown tuning: a single 429 must NOT bench the
+            # deployment for 5 minutes while fallbacks are also rate-limited —
+            # that combo produced RouterRateLimitError storms (Aug 15-22) and
+            # silently dropped graphiti episodes.
+            rpm = 28;
+            tpm = 7000;
+            rpd = 900;
+            allowed_fails = 4;
+            cooldown_time = 30;
           };
         }
         {
@@ -50,7 +72,8 @@
             model = "openai/mistral-small-latest";
             api_base = "https://api.mistral.ai/v1";
             api_key = "os.environ/MISTRAL_KEY";
-            rpm = 20;
+            rpm = 50;
+            tpm = 200000;
           };
         }
         {
@@ -60,6 +83,7 @@
             api_base = "https://router.huggingface.co/v1";
             api_key = "os.environ/HF_TOKEN";
             rpm = 20;
+            rpd = 200;
           };
         }
         {
@@ -67,21 +91,24 @@
           litellm_params = {
             model = "openrouter/openrouter/free";
             api_key = "os.environ/OPENROUTER_KEY";
-            rpm = 20;
+            rpm = 2;
+            rpd = 40;
           };
         }
       ];
       router_settings = {
         routing_strategy = "simple-shuffle";
-        num_retries = 0;
+        # Retry once per request before falling through to the next model.
+        num_retries = 1;
         timeout = 60;
-        allowed_fails = 1;
-        cooldown_time = 300;
-        # graphiti-free is the primary model_name (Groq).
+        allowed_fails = 4;
+        cooldown_time = 30;
+        # graphiti-primary is the primary model_name (MiniMax-M3), with
+        # free providers chained as fallbacks.
         # LiteLLM 1.89.0 doesn't support routing_groups as virtual models,
         # so we use model_name + fallbacks instead.
         fallbacks = [
-          { "graphiti-free" = [ "mistral-small-latest" "hf-gpt-oss-20b" "openrouter-free" ]; }
+          { "graphiti-primary" = [ "graphiti-free" "mistral-small-latest" "hf-gpt-oss-20b" "openrouter-free" ]; }
         ];
       };
       litellm_settings = {
@@ -138,6 +165,7 @@
       echo "GROQ_KEY=$([ -f "$SECRETS/groq/api-key" ] && cat "$SECRETS/groq/api-key" || echo "")"
       echo "HF_TOKEN=$([ -f "$SECRETS/huggingface/api-key" ] && cat "$SECRETS/huggingface/api-key" || echo "")"
       echo "MISTRAL_KEY=$([ -f "$SECRETS/mistral/api-key" ] && cat "$SECRETS/mistral/api-key" || echo "")"
+      echo "MINIMAX_KEY=$(cat /run/secrets/hermes/minimax-api-key 2>/dev/null || echo \"\")"
       LF=/run/secrets/hermes-mitmproxy/langfuse
       echo "LANGFUSE_PUBLIC_KEY=$([ -f "$LF/public-key" ] && cat "$LF/public-key" || echo "")"
       echo "LANGFUSE_SECRET_KEY=$([ -f "$LF/secret-key" ] && cat "$LF/secret-key" || echo "")"

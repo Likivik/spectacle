@@ -72,7 +72,7 @@
     cat > /var/lib/hermes/.config/graphiti-mcp/config.yaml << CONFIGEOF
 llm:
   provider: "openai"
-  model: "graphiti-free"
+  model: "graphiti-primary"
   providers:
     openai:
       api_url: "http://127.0.0.1:4000/v1"

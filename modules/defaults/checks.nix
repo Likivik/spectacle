@@ -16,14 +16,14 @@
 
         # Hermetic hermes-tests (gateway proxy-removal guard + graphiti wiring).
         # Reads the repo's .nix source via conftest, so copy the tree in.
-        hermes-tests = pkgs.runCommand "hermes-tests"
-          {
-            buildInputs = [ (pkgs.python3.withPackages (p: [ p.pytest ])) ];
-          }
-          ''
+        hermes-tests =
+          let
+            py = pkgs.python3.withPackages (p: [ p.pytest ]);
+          in
+          pkgs.runCommand "hermes-tests" { buildInputs = [ py ]; } ''
             cp -r ${../..} repo
             cd repo/pkgs/hermes-tests
-            HOME=$(mktemp -d) ${pkgs.python3}/bin/python -m pytest -m "not live" -q
+            HOME=$(mktemp -d) ${py}/bin/python -m pytest -m "not live" -q
             touch "$out"
           '';
       };

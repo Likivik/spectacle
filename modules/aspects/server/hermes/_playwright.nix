@@ -15,18 +15,8 @@
     '
   '';
 
-  # Configure Hermes to use Playwright browser
-  system.activationScripts."hermes-browser-config" = lib.stringAfter (
-    lib.optional (config.system.activationScripts ? setupSecrets) "setupSecrets"
-  ) ''
-    if ! ${pkgs.gnugrep}/bin/grep -q "browser.cdp_url" /var/lib/hermes/.hermes/config.yaml 2>/dev/null; then
-      ${pkgs.sudo}/bin/sudo -u hermes ${pkgs.bash}/bin/bash -c '
-        export HOME=/var/lib/hermes
-        export HERMES_HOME=/var/lib/hermes/.hermes
-        export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$(id -u)/bus"
-        export PATH=/run/current-system/sw/bin:/etc/profiles/per-user/hermes/bin
-        /run/current-system/sw/bin/hermes config set browser.cdp_url "http://127.0.0.1:9222" 2>&1 || true
-      '
-    fi
-  '';
+  # NOTE: the old `hermes-browser-config` activation snippet was removed.
+  # browser.cdp_url is persisted in hermes' config.yaml, and its flat-string
+  # guard never matched the multiline YAML, so it re-ran `hermes config set`
+  # on every boot — which fails during boot-time activation (no PAM yet).
 }

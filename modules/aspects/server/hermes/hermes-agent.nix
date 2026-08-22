@@ -96,54 +96,60 @@
           chmod 0600 "$ENV_FILE"
         '';
 
-        system.activationScripts."hermes-gateway-install" = lib.stringAfter (
-          [ "hermes-secrets-env" ] ++ lib.optional (config.system.activationScripts ? setupSecrets) "setupSecrets"
+        # Gateway as a real NixOS-managed user unit — same pattern as
+        # hermes-dashboard above. Replaces the old imperative
+        # `hermes gateway install` dance, which silently broke on every boot:
+        # boot-time activation runs before PAM/sudo-as-user works, so the
+        # sudo -u hermes calls failed, but the preceding rm -f still deleted
+        # the only copy of the unit file → not-found after every reboot.
+        systemd.user.services.hermes-gateway = {
+          description = "Hermes Agent Gateway - Messaging Platform Integration";
+          after = [ "network-online.target" ];
+          wants = [ "network-online.target" ];
+          wantedBy = [ "default.target" ];
+
+          unitConfig.ConditionUser = "hermes";
+
+          serviceConfig = {
+            Restart = "always";
+            RestartSec = 5;
+            Environment = [
+              "HERMES_HOME=/var/lib/hermes/.hermes"
+              "NO_PROXY=127.0.0.1,localhost"
+              "WHATSAPP_ENABLED=false"
+              "WHATSAPP_MODE=self-chat"
+              "PYTHONPATH=${anthropic-py}/${anthropic-py.sitePackages}:${hermes-plugin-py}/${hermes-plugin-py.sitePackages}"
+              "HERMES_BUNDLED_SKILLS=${hermes-pkg}/share/hermes-agent/skills"
+              "HERMES_BUNDLED_PLUGINS=${hermes-pkg}/share/hermes-agent/plugins"
+              "HERMES_BUNDLED_LOCALES=${hermes-pkg}/share/hermes-agent/locales"
+              "HERMES_OPTIONAL_MCPS=${hermes-pkg}/share/hermes-agent/optional-mcps"
+              "HERMES_LAZY_INSTALL_TARGET=/var/lib/hermes/.hermes/lazy-packages"
+            ];
+            ExecStart = "${hermes-pkg}/bin/hermes gateway run";
+            EnvironmentFile = [
+              "/run/secrets/hermes/env"
+              "/var/lib/hermes/.hermes/sops-env"
+            ];
+          };
+        };
+
+        # Boot-safe one-time migration cleanup: purge remnants of the
+        # hermes-CLI-managed gateway unit so they can't shadow or dangle
+        # alongside the NixOS-managed one above. Pure filesystem ops (root),
+        # no sudo/PAM — safe during boot-time activation.
+        system.activationScripts."hermes-unit-cleanup" = lib.stringAfter (
+          lib.optional (config.system.activationScripts ? setupSecrets) "setupSecrets"
         ) ''
-          # Remove any dangling symlinks from previous deploys
-          rm -f /var/lib/hermes/.config/systemd/user/hermes-gateway.service
+          rm -f /var/lib/hermes/.config/systemd/user/default.target.wants/hermes-gateway.service
+          rm -f /var/lib/hermes/.config/systemd/user/hermes-agent.service
           rm -f /var/lib/hermes/.config/systemd/user/hermes-dashboard.service
-
-          # Remove .managed marker so hermes gateway install + config writes work
+          rm -rf /var/lib/hermes/.config/systemd/user/hermes-gateway.service.d
+          rm -f /var/lib/hermes/.config/systemd/user/hermes-gateway.service
           rm -f /var/lib/hermes/.hermes/.managed
-
-          # Install gateway unit file — hermes creates a real file, owns it, can update it
-          ${pkgs.sudo}/bin/sudo -u hermes \
-            XDG_RUNTIME_DIR=/run/user/$(id -u hermes) \
-            DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u hermes)/bus \
-            HERMES_HOME=/var/lib/hermes/.hermes \
-            HOME=/var/lib/hermes \
-            PATH=${hermes-pkg}/bin:${pkgs.systemd}/bin:/run/wrappers/bin:/nix/var/nix/profiles/default/bin \
-            ${hermes-pkg}/bin/hermes gateway install --force --start-now || true
-
-          # Drop-in override for env vars — NixOS-managed, hermes never touches this
-          mkdir -p /var/lib/hermes/.config/systemd/user/hermes-gateway.service.d
-          cat > /var/lib/hermes/.config/systemd/user/hermes-gateway.service.d/override.conf << 'DROPEOF'
-[Service]
-Environment=NO_PROXY=127.0.0.1,localhost
-Environment=WHATSAPP_ENABLED=false
-Environment=WHATSAPP_MODE=self-chat
-EnvironmentFile=/run/secrets/hermes/env
-EnvironmentFile=/var/lib/hermes/.hermes/sops-env
-Environment=PYTHONPATH=${anthropic-py}/${anthropic-py.sitePackages}:${hermes-plugin-py}/${hermes-plugin-py.sitePackages}
-Environment=HERMES_BUNDLED_SKILLS=${hermes-pkg}/share/hermes-agent/skills
-Environment=HERMES_BUNDLED_PLUGINS=${hermes-pkg}/share/hermes-agent/plugins
-Environment=HERMES_BUNDLED_LOCALES=${hermes-pkg}/share/hermes-agent/locales
-Environment=HERMES_OPTIONAL_MCPS=${hermes-pkg}/share/hermes-agent/optional-mcps
-Environment=HERMES_LAZY_INSTALL_TARGET=/var/lib/hermes/.hermes/lazy-packages
-DROPEOF
-          chown -R hermes:hermes /var/lib/hermes/.config/systemd/user/hermes-gateway.service.d
-          chmod 644 /var/lib/hermes/.config/systemd/user/hermes-gateway.service.d/override.conf
-
-          # Reload, enable, and start
-          ${pkgs.sudo}/bin/sudo -u hermes \
-            XDG_RUNTIME_DIR=/run/user/$(id -u hermes) \
-            ${pkgs.systemd}/bin/systemctl --user daemon-reload
-          ${pkgs.sudo}/bin/sudo -u hermes \
-            XDG_RUNTIME_DIR=/run/user/$(id -u hermes) \
-            ${pkgs.systemd}/bin/systemctl --user enable hermes-gateway.service
+          chown -R hermes:hermes /var/lib/hermes/.config/systemd
         '';
 
-        system.activationScripts."hermes-seed" = lib.stringAfter [ "hermes-gateway-install" ] ''
+        system.activationScripts."hermes-seed" = lib.stringAfter [ "hermes-unit-cleanup" ] ''
           mkdir -p /var/lib/hermes/{.hermes,workspace}
           chown hermes:hermes /var/lib/hermes /var/lib/hermes/.hermes /var/lib/hermes/workspace
           chmod 2770 /var/lib/hermes /var/lib/hermes/.hermes /var/lib/hermes/workspace

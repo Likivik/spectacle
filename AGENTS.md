@@ -28,27 +28,32 @@ This repo uses **jj** (Jujutsu) on top of git. jj is the primary VCS.
 3. **Deploy flow — pre-deploy checks always before building/pushing:**
 
    ```bash
-   # 0. Pre-deploy check FIRST: dry-build.
-   #    Never skip this before deploying. (Hydra cache check is §6 — only
+   # 0. Check which host you're actually on (same repo path exists on
+   #    Erebus, Serenity, Traversal — don't assume).
+   hostname -s
+
+   # 1. Pre-deploy check FIRST: dry-build.
+   #    Never skip this before deploying. (Hydra cache check is §7 — only
    #    needed when bumping packages that might build from source.)
    nix build .#nixosConfigurations.<host>.config.system.build.toplevel --dry-run
 
-   # 1. Push only AFTER dry-build passes
+   # 2. Push only AFTER dry-build passes
    jj bookmark set dev -r @ && jj git push --all
 
-   # 2. Deploy. Each host builds its own config locally:
+   # 3. Deploy — LOCAL if you're on the target host, REMOTE otherwise:
    # Erebus (local — agents run here)
    sudo nixos-rebuild switch --flake .#erebus
 
-   # Serenity (remote)
+   # Serenity / Traversal / Poweredge (remote)
    nixos-rebuild switch --flake .#serenity --build-host likivik@serenity --target-host likivik@serenity --elevate=sudo
-
-   # Traversal (remote)
    nixos-rebuild switch --flake .#traversal --build-host likivik@traversal --target-host likivik@traversal --elevate=sudo
-
-   # Poweredge (remote)
    nixos-rebuild switch --flake .#poweredge --build-host likivik@poweredge --target-host likivik@poweredge --elevate=sudo
    ```
+
+   Gotchas:
+   - Local = `sudo nixos-rebuild ...` with no `--host`. Remote = `--build-host` + `--target-host` + `--elevate=sudo`.
+   - `--elevate=sudo` is required for remote deploys (NOPASSWD sudo on `likivik`); old form `--use-remote-sudo` is obsolete.
+   - `--flake .#<hostname>` must match the *target*, never the calling host.
 
 4. **Each host builds its own closure.** No central build host — `--build-host` and `--target-host` point to the same machine.
 
@@ -71,7 +76,14 @@ This repo uses **jj** (Jujutsu) on top of git. jj is the primary VCS.
    # or waiting for the build.
    ```
 
-7. **Working with jj changes:**
+7. **CN cache fallback — for when VPN breaks / official cache unreachable from a host.** Rare; use only if `cache.nixos.org` is slow or blocked. Prefix any `nixos-rebuild`/`nix build` with these substituters (USTC, TUNA, SJTU):
+
+   ```bash
+   NIX_CONFIG='substituters = https://mirrors.ustc.edu.cn/nix-channels/store https://mirrors.tuna.tsinghua.edu.cn/nix-channels/store https://mirror.sjtu.edu.cn/nix-channels/store https://cache.nixos.org' \
+     nixos-rebuild switch --flake .#<host> ...
+   ```
+
+8. **Working with jj changes:**
    - Each task = one `jj new`
    - Edit files normally
    - jj auto-tracks all changes (no `git add` needed)
@@ -79,12 +91,12 @@ This repo uses **jj** (Jujutsu) on top of git. jj is the primary VCS.
    - Before merging to main: `jj squash` + `jj describe` to clean up
    - Push: `jj bookmark set dev -r @ && jj git push --all`
 
-8. **Migrating existing git branches:**
+9. **Migrating existing git branches:**
    - jj reads existing git history automatically
    - Old branches appear as bookmarks: `jj bookmark list`
    - No conversion needed — jj works on the same .git directory
 
-9. **Emergency: fall back to git**
+10. **Emergency: fall back to git**
    - git commands still work: `git log`, `git status`, `git diff`
    - But prefer jj for all create/commit/push operations
    - If jj breaks: `git checkout` + `git commit` still function

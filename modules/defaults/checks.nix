@@ -1,10 +1,4 @@
-# flake-parts `checks` — CI-able guards for the Hermes deployment.
-#
-# NOTE on the boot nixosTest: den only re-exports `nixosConfigurations.erebus`
-# (evaluated), not importable per-host modules (`nixosModules` is empty), so a
-# clean `pkgs.nixosTest` that re-imports the host isn't wired yet. The
-# `erebus-build` check below covers the "config still compiles" half; the full
-# boot+assert remains the manual `nix run .#erebus` VM procedure for now.
+# flake-parts `checks` + `apps` — CI guards + VM test for the Hermes deployment.
 { inputs, ... }:
 {
   perSystem =
@@ -27,5 +21,18 @@
             touch "$out"
           '';
       };
+
+      # Boot the erebus host headless and assert Telegram TLS connectivity.
+      # `nix run .#erebus-telegram` — reads serial for TELEGRAM_TLS_OK.
+      apps.erebus-telegram =
+        let
+          vm = inputs.self.nixosConfigurations.erebus.extendModules {
+            modules = [ (import ../tests/erebus-telegram.nix) ];
+          };
+        in
+        {
+          type = "app";
+          program = "${vm.config.system.build.vm}/bin/run-erebus-vm -nographic";
+        };
     };
 }

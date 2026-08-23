@@ -27,7 +27,7 @@
       apps.erebus-telegram =
         let
           vm = inputs.self.nixosConfigurations.erebus.extendModules {
-            modules = [ (import ../tests/erebus-telegram.nix) ];
+            modules = [ (import ../../tests/erebus-telegram.nix) ];
           };
         in
         {

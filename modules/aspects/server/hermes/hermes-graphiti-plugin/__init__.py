@@ -339,16 +339,26 @@ class GraphitiClient:
             self._session_id = None
             raise
 
-    def _run(self, coro):
+    def _run(self, func, *args):
+        """Run an anyio-based MCP call from sync context.
+
+        mcp 2.0.0's ``streamable_http_client`` spawns anyio task groups
+        internally, which don't survive ``asyncio.run()`` when the plugin runs
+        inside the long-lived agent (an already-running loop + anyio state in
+        the host thread). ``anyio.run()`` wires its own isolated loop/backend,
+        so each call is robust regardless of the host loop. ``func`` must be an
+        async callable; ``*args`` are passed through.
+        """
+        import anyio
         try:
-            return asyncio.run(coro)
+            return anyio.run(func, *args)
         except BaseException as e:
             # repr(e) unwraps ExceptionGroup sub-exceptions (str(e) hides them)
             log_event("run_error", exc=repr(e))
             if "Session not found" in str(e) or "404" in str(e):
                 log_event("session_expired_reinit")
                 self._session_id = None
-                return asyncio.run(coro)
+                return anyio.run(func, *args)
             raise
 
     @staticmethod
@@ -381,7 +391,7 @@ class GraphitiClient:
         }
         if reference_time:
             args["reference_time"] = reference_time
-        return self._run(self._call_tool("add_memory", args)).model_dump()
+        return self._run(self._call_tool, "add_memory", args).model_dump()
 
     def search_nodes(
         self, query: str, group_ids: list[str] | None = None, max_nodes: int = 10,
@@ -389,7 +399,7 @@ class GraphitiClient:
         args: dict[str, object] = {"query": query, "max_nodes": max_nodes}
         if group_ids:
             args["group_ids"] = group_ids
-        result = self._run(self._call_tool("search_nodes", args))
+        result = self._run(self._call_tool, "search_nodes", args)
         return self._parse_payload(result)
 
     def search_memory_facts(
@@ -398,7 +408,7 @@ class GraphitiClient:
         args: dict[str, object] = {"query": query, "max_facts": max_facts}
         if group_ids:
             args["group_ids"] = group_ids
-        result = self._run(self._call_tool("search_memory_facts", args))
+        result = self._run(self._call_tool, "search_memory_facts", args)
         return self._parse_payload(result)
 
     def get_episodes(
@@ -407,11 +417,11 @@ class GraphitiClient:
         args: dict[str, object] = {"limit": limit}
         if group_ids:
             args["group_ids"] = group_ids
-        result = self._run(self._call_tool("get_episodes", args))
+        result = self._run(self._call_tool, "get_episodes", args)
         return self._parse_payload(result)
 
     def delete_episode(self, uuid: str) -> dict:
-        result = self._run(self._call_tool("delete_episode", {"uuid": uuid}))
+        result = self._run(self._call_tool, "delete_episode", {"uuid": uuid})
         return self._parse_payload(result)
 
     def close(self) -> None:

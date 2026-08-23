@@ -313,48 +313,28 @@ class GraphitiClient:
     """
 
     BASE_URL = "http://127.0.0.1:8000/mcp"
-    TIMEOUT_S = 30.0
 
     def __init__(self) -> None:
         self._session_id: str | None = None
 
-    async def _connect(self):
-        from mcp.client.session import ClientSession
-        from mcp.client.streamable_http import streamablehttp_client
-        # NOTE: we deliberately use streamablehttp_client as a real async context
-        # manager and NEST ClientSession inside it — this keeps all anyio task
-        # groups and cancel scopes in the SAME task, which is required by anyio.
-        # Calling `.__aenter__()` directly on the outer CM then `await
-        # session.__aexit__()` in a finally works too, but only when both halves
-        # happen in the same coroutine (which they do here since _connect/_call_tool
-        # are awaited together).
-        cm = streamablehttp_client(self.BASE_URL, timeout=self.TIMEOUT_S)
-        read, write, get_session = await cm.__aenter__()
-        self._transport_cm = cm
-        session = ClientSession(read, write)
-        await session.__aenter__()
-        self._mcp_session = session
-        await session.initialize()
-        sid = get_session()
-        if sid:
-            self._session_id = sid
-        return session
-
     async def _call_tool(self, name: str, arguments: dict) -> "CallToolResult":
         """Connect → initialize → call tool → disconnect. Each call is a fresh
-        session. Cheap (HTTP), eliminates stale-session error handling."""
+        session. mcp ≥2.0 `streamable_http_client` is an async generator yielding
+        `(read, write)`; we nest `async with` (the old manual `__aenter__` +
+        3-tuple `get_session` API is gone). Default client timeouts: 30s
+        connect/write, 300s read (SSE-friendly, graphiti extraction can be slow)."""
+        from mcp.client.session import ClientSession
+        from mcp.client.streamable_http import streamable_http_client
         try:
-            session = await self._connect()
-            try:
-                result = await session.call_tool(name, arguments)
-                if result.isError:
-                    raise RuntimeError(
-                        f"graphiti-mcp tool error: {result.content}"
-                    )
-                return result
-            finally:
-                await session.__aexit__(None, None, None)
-                await self._transport_cm.__aexit__(None, None, None)
+            async with streamable_http_client(self.BASE_URL) as (read, write):
+                async with ClientSession(read, write) as session:
+                    await session.initialize()
+                    result = await session.call_tool(name, arguments)
+                    if result.is_error:
+                        raise RuntimeError(
+                            f"graphiti-mcp tool error: {result.content}"
+                        )
+                    return result
         except Exception:
             self._session_id = None
             raise

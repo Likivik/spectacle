@@ -29,10 +29,14 @@
           vm = inputs.self.nixosConfigurations.erebus.extendModules {
             modules = [ (import ../../tests/erebus-telegram.nix) ];
           };
+          run-vm = "${vm.config.system.build.vm}/bin/run-erebus-vm";
         in
         {
           type = "app";
-          program = "${vm.config.system.build.vm}/bin/run-erebus-vm -nographic";
+          program =
+            pkgs.writeShellScript "erebus-telegram" ''
+              exec ${run-vm} -nographic "$@"
+            '';
         };
     };
 }

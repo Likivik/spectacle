@@ -35,3 +35,18 @@ def test_cooldown_tuning_not_reverted(litellm_nix):
 def test_graphiti_mcp_model_is_graphiti_primary(graphiti_nix):
     assert 'model: "graphiti-primary"' in graphiti_nix
     assert 'model: "graphiti-free"' not in graphiti_nix
+
+
+def test_falkordb_database_is_likivik(graphiti_nix):
+    # The count:0 regression: graphiti-mcp connected to FalkorDB `default_db`
+    # (empty) while episodes live in the `likivik` graph. Read tools queried
+    # the empty base and returned nothing. Pinned so a revert re-fails CI.
+    assert 'database: "likivik"' in graphiti_nix
+    assert 'group_id: "likivik"' in graphiti_nix
+
+
+def test_plugin_passes_max_episodes(hermes_dir):
+    # get_episodes server tool takes `max_episodes`; the plugin client sent
+    # `limit`, which the server silently ignored (always returned 10).
+    plugin = (hermes_dir / "hermes-graphiti-plugin" / "__init__.py").read_text()
+    assert '"max_episodes": limit' in plugin, "plugin must send max_episodes (not limit)"

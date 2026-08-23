@@ -2,17 +2,18 @@
 {
   flake-file.inputs = {
     hermes-agent = {
-      url = "github:NousResearch/hermes-agent";
+      url = "github:Likivik/hermes-agent";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
 
   den.aspects.server.hermes-agent = {
     nixos = { config, pkgs, lib, ... }: let
-      hermes-pkg = inputs.hermes-agent.packages.${pkgs.system}.messaging;
-      anthropic-py = pkgs.python312.withPackages (ps: [ ps.pip ]);
-      # Extra Python packages for Hermes plugins (langfuse SDK for observability).
-      hermes-plugin-py = pkgs.python312.withPackages (ps: [ ps.langfuse ]);
+      # fork pins otel 1.43.0 (mcp 2.0.0 needs TraceFlags.RANDOM_TRACE_ID, added 1.42)
+      # and ships langfuse via the `observability` extra (no PYTHONPATH layering).
+      hermes-pkg = (inputs.hermes-agent.packages.${pkgs.system}.minimal).override {
+        extraDependencyGroups = [ "messaging" "observability" ];
+      };
 
       graphitiConfig = import ./_graphiti.nix { inherit config pkgs lib; };
       llamaConfig = import ./_llama.nix { inherit config pkgs lib; };
@@ -118,7 +119,6 @@
               "NO_PROXY=127.0.0.1,localhost"
               "WHATSAPP_ENABLED=false"
               "WHATSAPP_MODE=self-chat"
-              "PYTHONPATH=${anthropic-py}/${anthropic-py.sitePackages}:${hermes-plugin-py}/${hermes-plugin-py.sitePackages}"
               "HERMES_BUNDLED_SKILLS=${hermes-pkg}/share/hermes-agent/skills"
               "HERMES_BUNDLED_PLUGINS=${hermes-pkg}/share/hermes-agent/plugins"
               "HERMES_BUNDLED_LOCALES=${hermes-pkg}/share/hermes-agent/locales"

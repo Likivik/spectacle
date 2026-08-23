@@ -135,5 +135,8 @@
             '';
           };
         });
+      # Expose the uv2nix virtualenvs (graphiti-core + falkordb + mcp, python 3.13)
+      # so the driver-level roundtrip check can run against them without rebuilding.
+      envs = envs;
     };
 }

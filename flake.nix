@@ -28,7 +28,7 @@
       inputs.pyproject-build-systems.follows = "pyproject-build-systems";
     };
     hermes-agent = {
-      url = "github:NousResearch/hermes-agent";
+      url = "github:Likivik/hermes-agent";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     home-manager = {

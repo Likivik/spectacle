@@ -90,6 +90,11 @@ embedder:
 
 graphiti:
   group_id: "likivik"
+
+database:
+  providers:
+    falkordb:
+      database: "likivik"
 CONFIGEOF
     chown -R hermes:hermes /var/lib/hermes/.config/graphiti-mcp
   '';

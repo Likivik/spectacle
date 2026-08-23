@@ -33,10 +33,11 @@
         in
         {
           type = "app";
+          # `program` must be a string path to the executable, not a derivation.
           program =
-            pkgs.writeShellScript "erebus-telegram" ''
+            "${pkgs.writeShellScript "erebus-telegram" ''
               exec ${run-vm} -nographic "$@"
-            '';
+            ''}/bin/erebus-telegram";
         };
     };
 }

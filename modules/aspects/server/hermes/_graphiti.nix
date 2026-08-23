@@ -73,6 +73,7 @@
 llm:
   provider: "openai"
   model: "graphiti-primary"
+  structured_output_mode: "json_object"
   providers:
     openai:
       api_url: "http://127.0.0.1:4000/v1"

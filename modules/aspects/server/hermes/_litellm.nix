@@ -46,6 +46,15 @@
             tpm = 8000000;  # under MiniMax's 10M TPM
             allowed_fails = 4;
             cooldown_time = 30;
+            # MiniMax-M3 is a reasoning model: on the OpenAI-compat endpoint it
+            # defaults thinking ON and prepends " thinking…response" to content.
+            # Disable so graphiti's json_object extraction only has to strip the
+            # ```json fence (which graphiti does automatically).
+            extra_body = {
+              thinking = {
+                type = "disabled";
+              };
+            };
           };
         }
         # ── Fallback 1: Groq gpt-oss-120b (free, RPD-limited) ──

@@ -33,11 +33,11 @@
         in
         {
           type = "app";
-          # `program` must be a string path to the executable, not a derivation.
+          # `program` must be a string; writeShellScript emits a single file at $out.
           program =
             "${pkgs.writeShellScript "erebus-telegram" ''
               exec ${run-vm} -nographic "$@"
-            ''}/bin/erebus-telegram";
+            ''}";
         };
     };
 }

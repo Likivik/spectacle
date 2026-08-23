@@ -49,9 +49,12 @@ This repo uses **jj** (Jujutsu) on top of git. jj is the primary VCS.
    # the same cgroup) leaves a root-owned process the user manager can't
    # kill → "Operation not permitted" → the gateway wedges half-stopped and
    # never comes back until a reboot. Detach into a SYSTEM-scope transient
-   # unit so the switch survives its own gateway restart:
+   # unit so the switch survives its own gateway restart. NOTE the flake path
+   # must be ABSOLUTE and `path:`-prefixed — systemd-run's cwd is `/` (a
+   # relative `.` finds no flake.nix) and root fails libgit2's safe.directory
+   # check on the git+file:// repo (owned by hermes).
    sudo systemd-run --collect --unit=nixos-rebuild-erebus \
-     nixos-rebuild switch --flake .#erebus
+     nixos-rebuild switch --flake path:/Storage/Git/spectacle#erebus
 
    # (A human on a real root shell may use the plain `sudo nixos-rebuild
    #  switch --flake .#erebus` — the cgroup hazard is agent-specific.)

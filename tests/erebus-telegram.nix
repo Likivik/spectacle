@@ -66,6 +66,23 @@
       echo "--- proxy env must be clean ---"
       env | grep -iE 'proxy|SSL_CERT|REQUESTS_CA' || echo "PROXY_ENV_CLEAN"
 
+      echo "--- hermes agent binary ---"
+      H=$(find /nix/store -maxdepth 1 -name "hermes-agent-env" -type d 2>/dev/null | head -1)
+      if [ -n "$H" ] && [ -x "$H/bin/hermes" ]; then
+        echo "HERMES_BINARY_OK"
+      else
+        echo "HERMES_BINARY_MISSING"
+      fi
+
+      echo "--- hermes-gateway user unit ---"
+      U=$(find /nix/store -maxdepth 1 -name "*-user-units" -type d 2>/dev/null | head -1)
+      if [ -n "$U" ] && [ -f "$U/hermes-gateway.service" ]; then
+        grep -E "ConditionUser=hermes|EnvironmentFile=/run/secrets/hermes/env|ExecStart=.*gateway run" "$U/hermes-gateway.service" | head -3
+        echo "GATEWAY_UNIT_OK"
+      else
+        echo "GATEWAY_UNIT_NOT_FOUND"
+      fi
+
       echo "=== TELEGRAM VMCHECK END ==="
     '';
   };

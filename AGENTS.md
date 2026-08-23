@@ -41,8 +41,20 @@ This repo uses **jj** (Jujutsu) on top of git. jj is the primary VCS.
    jj bookmark set dev -r @ && jj git push --all
 
    # 3. Deploy — LOCAL if you're on the target host, REMOTE otherwise:
-   # Erebus (local — agents run here)
-   sudo nixos-rebuild switch --flake .#erebus
+   # Erebus (local — agents run here).
+   #
+   # ⚠ Agents: do NOT run a bare `sudo nixos-rebuild switch` from your own
+   # shell. You run inside the hermes-gateway.service cgroup, and when the
+   # activation restarts that unit, the switch (sudo'd to root but still in
+   # the same cgroup) leaves a root-owned process the user manager can't
+   # kill → "Operation not permitted" → the gateway wedges half-stopped and
+   # never comes back until a reboot. Detach into a SYSTEM-scope transient
+   # unit so the switch survives its own gateway restart:
+   sudo systemd-run --collect --unit=nixos-rebuild-erebus \
+     nixos-rebuild switch --flake .#erebus
+
+   # (A human on a real root shell may use the plain `sudo nixos-rebuild
+   #  switch --flake .#erebus` — the cgroup hazard is agent-specific.)
 
    # Serenity / Traversal / Poweredge (remote)
    nixos-rebuild switch --flake .#serenity --build-host likivik@serenity --target-host likivik@serenity --elevate=sudo

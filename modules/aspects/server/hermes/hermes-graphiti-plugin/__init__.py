@@ -342,7 +342,9 @@ class GraphitiClient:
     def _run(self, coro):
         try:
             return asyncio.run(coro)
-        except RuntimeError as e:
+        except BaseException as e:
+            # repr(e) unwraps ExceptionGroup sub-exceptions (str(e) hides them)
+            log_event("run_error", exc=repr(e))
             if "Session not found" in str(e) or "404" in str(e):
                 log_event("session_expired_reinit")
                 self._session_id = None

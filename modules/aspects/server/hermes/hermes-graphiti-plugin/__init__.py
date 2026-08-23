@@ -422,9 +422,8 @@ SEARCH_SCHEMA = {
     "name": "graphiti_search",
     "description": (
         "Search the temporal knowledge graph for facts and entities related to a query. "
-        "By default searches the user's cascading scope (likivik → likivik_<project> → likivik_<project>_<sub>). "
-        "Pass `group_ids` to scope to a specific subset (e.g. [\"likivik\"] for user-level only, "
-        "or [\"likivik_nc-rag\"] for a single project)."
+        "Single-tenant: searches group 'likivik' by default. "
+        "Pass `group_ids` to override."
     ),
     "parameters": {
         "type": "object",
@@ -442,8 +441,8 @@ SEARCH_SCHEMA = {
                 "type": "array",
                 "items": {"type": "string"},
                 "description": (
-                    "Optional scope override. Defaults to cascading scopes for current "
-                    "agent context. Pass an explicit list to restrict or expand."
+                    "Optional scope override. Defaults to ['likivik']. "
+                    "Pass an explicit list to restrict or expand."
                 ),
             },
         },
@@ -468,9 +467,7 @@ REMEMBER_SCHEMA = {
             "group_id": {
                 "type": "string",
                 "description": (
-                    "Optional scope override. Defaults to current agent scope. "
-                    "Use 'likivik_<project>' or 'likivik_<project>_<sub>' "
-                    "to write to a specific subgraph."
+                    "Optional scope override. Defaults to 'likivik' (single-tenant)."
                 ),
             },
         },

@@ -73,7 +73,7 @@
 llm:
   provider: "openai"
   model: "graphiti-primary"
-  structured_output_mode: "json_object"
+  structured_output_mode: "tool_calling"
   providers:
     openai:
       api_url: "http://127.0.0.1:4000/v1"
@@ -87,6 +87,9 @@ embedder:
     openai:
       api_url: "http://127.0.0.1:8081/v1"
       api_key: "$(cat /var/lib/litellm/master-key.txt 2>/dev/null || echo sk-missing)"
+
+graphiti:
+  group_id: "likivik"
 CONFIGEOF
     chown -R hermes:hermes /var/lib/hermes/.config/graphiti-mcp
   '';

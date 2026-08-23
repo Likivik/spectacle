@@ -152,12 +152,15 @@ class LLMConfig(BaseModel):
         default=None, description='Temperature (optional, defaults to None for reasoning models)'
     )
     max_tokens: int = Field(default=4096, description='Max tokens')
-    structured_output_mode: Literal['json_schema', 'json_object'] = Field(
+    structured_output_mode: Literal['json_schema', 'json_object', 'tool_calling'] = Field(
         default='json_schema',
         description=(
             'Structured output mode for OpenAIGenericClient: json_schema requests native '
             'schema enforcement; json_object injects the schema into the prompt for '
-            'OpenAI-compatible providers that do not reliably honor json_schema.'
+            'OpenAI-compatible providers that do not reliably honor json_schema; '
+            'tool_calling uses function-calling (tools + tool_choice) and parses '
+            'tool_calls[].function.arguments — required for MiniMax-M3 and other models '
+            'that honor neither response_format nor prompt-injected schemas.'
         ),
     )
     providers: LLMProvidersConfig = Field(default_factory=LLMProvidersConfig)

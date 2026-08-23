@@ -7,6 +7,7 @@ from graphiti_core.llm_client.config import LLMConfig as GraphitiLLMConfig
 from graphiti_core.llm_client.openai_generic_client import OpenAIGenericClient
 
 from config.schema import DatabaseConfig, EmbedderConfig, LLMConfig
+from services.minimax_client import MiniMaxToolCallClient
 
 # Try to import FalkorDriver if available
 try:
@@ -162,6 +163,15 @@ class LLMClientFactory:
                 use_generic_client = is_non_openai_provider(config.providers.openai.api_url)
 
                 if use_generic_client:
+                    # Tool-calling mode: required for MiniMax-M3 and other models that
+                    # honor neither response_format nor prompt-injected schemas. Emits
+                    # tools + tool_choice and parses tool_calls[].function.arguments.
+                    if config.structured_output_mode == 'tool_calling':
+                        return MiniMaxToolCallClient(
+                            config=llm_config,
+                            max_tokens=config.max_tokens,
+                            structured_output_mode=config.structured_output_mode,
+                        )
                     # Use OpenAIGenericClient for Ollama and other OpenAI-compatible providers
                     # This uses the standard Chat Completions API instead of Responses API
                     return OpenAIGenericClient(

@@ -15,12 +15,84 @@
         extraDependencyGroups = [ "messaging" "observability" ];
       };
 
+      # Extra (non-default) Hermes profiles. `default` stays hardcoded below for
+      # zero churn; these get parameterized gateway units + graphiti wiring.
+      extraHermesProfiles = [
+        {
+          name = "salem";
+          home = "/var/lib/hermes/.hermes/profiles/salem";
+          botTokenSecret = "hermes/salem-bot-token";
+        }
+      ];
+
       graphitiConfig = import ./_graphiti.nix { inherit config pkgs lib; };
       llamaConfig = import ./_llama.nix { inherit config pkgs lib; };
-      graphitiMemoryConfig = import ./_hermes-graphiti.nix { inherit config pkgs lib; };
+      graphitiMemoryConfig = import ./_hermes-graphiti.nix { inherit config pkgs lib; extraProfiles = extraHermesProfiles; };
       searxngConfig = import ./_searxng.nix { inherit config pkgs lib; };
       playwrightConfig = import ./_playwright.nix { inherit config pkgs lib; };
       litellmConfig = import ./_litellm.nix { inherit config pkgs lib; };
+
+      # ── Extra-profile wiring (parameterized; default stays hardcoded) ──
+      mkSopsEnv = { home, botTokenSecret, ... }:
+        ''
+          mkdir -p "${home}"
+          {
+            TG=$(cat /run/secrets/${botTokenSecret} 2>/dev/null || true)
+            EXA=$(cat /run/secrets/hermes/exa-api-key 2>/dev/null || true)
+            OBS=$(cat /run/secrets/hermes/mcp-obsidian-api-key 2>/dev/null || true)
+            MM=$(cat /run/secrets/hermes/minimax-api-key 2>/dev/null || true)
+            SYN=$(cat /run/secrets/hermes/synthetic-api-key 2>/dev/null || true)
+            LFPK=$(cat /run/secrets/hermes/langfuse-public-key 2>/dev/null || true)
+            LFSK=$(cat /run/secrets/hermes/langfuse-secret-key 2>/dev/null || true)
+            ORK=$(cat /run/secrets/hermes-mitmproxy/llm-providers/openrouter/api-key 2>/dev/null || true)
+            GH=$(cat /run/secrets/hermes-mitmproxy/github/pat-hermes-full 2>/dev/null || true)
+            echo "TELEGRAM_BOT_TOKEN=$TG"
+            echo "EXA_API_KEY=$EXA"
+            echo "MCP_OBSIDIAN_API_KEY=$OBS"
+            echo "MINIMAX_API_KEY=$MM"
+            echo "SYNTHETIC_API_KEY=$SYN"
+            echo "HERMES_LANGFUSE_PUBLIC_KEY=$LFPK"
+            echo "HERMES_LANGFUSE_SECRET_KEY=$LFSK"
+            echo "HERMES_LANGFUSE_BASE_URL=https://cloud.langfuse.com"
+            echo "OPENROUTER_API_KEY=$ORK"
+            echo "GITHUB_TOKEN=$GH"
+          } > "${home}/sops-env"
+          chown hermes:hermes "${home}/sops-env"
+          chmod 0600 "${home}/sops-env"
+        '';
+
+      extraSopsEnv = lib.concatMapStringsSep "\n\n" (p: mkSopsEnv p) extraHermesProfiles;
+
+      extraGatewayUnits = lib.listToAttrs (map (p:
+        lib.nameValuePair "hermes-gateway-${p.name}" {
+          description = "Hermes Agent Gateway (${p.name})";
+          after = [ "network-online.target" ];
+          wants = [ "network-online.target" ];
+          wantedBy = [ "default.target" ];
+          unitConfig.ConditionUser = "hermes";
+          serviceConfig = {
+            Restart = "always";
+            RestartSec = 5;
+            Environment = [
+              "HERMES_HOME=${p.home}"
+              "HERMES_PROFILE=${p.name}"
+              "NO_PROXY=127.0.0.1,localhost"
+              "WHATSAPP_ENABLED=false"
+              "WHATSAPP_MODE=self-chat"
+              "HERMES_BUNDLED_SKILLS=${hermes-pkg}/share/hermes-agent/skills"
+              "HERMES_BUNDLED_PLUGINS=${hermes-pkg}/share/hermes-agent/plugins"
+              "HERMES_BUNDLED_LOCALES=${hermes-pkg}/share/hermes-agent/locales"
+              "HERMES_OPTIONAL_MCPS=${hermes-pkg}/share/hermes-agent/optional-mcps"
+              "HERMES_LAZY_INSTALL_TARGET=${p.home}/lazy-packages"
+            ];
+            ExecStart = "${hermes-pkg}/bin/hermes gateway run";
+            EnvironmentFile = [
+              "/run/secrets/hermes/env"
+              "${p.home}/sops-env"
+            ];
+          };
+        }
+      ) extraHermesProfiles);
     in lib.mkMerge [
       graphitiConfig
       llamaConfig
@@ -28,6 +100,11 @@
       searxngConfig
       playwrightConfig
       litellmConfig
+      (lib.mkIf (extraHermesProfiles != []) {
+        systemd.user.services = extraGatewayUnits;
+        system.activationScripts."hermes-secrets-env-extras" =
+          lib.stringAfter [ "hermes-seed" ] extraSopsEnv;
+      })
       {
         users.groups.hermes = { };
         users.users.hermes = {
@@ -178,6 +255,13 @@ GITEOF
             ${pkgs.gnused}/bin/sed -i '/hermes-mitmproxy/d; /HTTPS_PROXY/d; /SSL_CERT_FILE/d; /REQUESTS_CA_BUNDLE/d' "$PROFILE"
             chown hermes:hermes "$PROFILE"
           fi
+        '';
+
+        system.activationScripts."hermes-langfuse-alert" = lib.stringAfter [ "hermes-seed" ] ''
+          mkdir -p /var/lib/hermes/.hermes/scripts
+          cp ${./scripts/langfuse-error-alert.py} /var/lib/hermes/.hermes/scripts/langfuse-error-alert.py
+          chmod 0700 /var/lib/hermes/.hermes/scripts/langfuse-error-alert.py
+          chown hermes:hermes /var/lib/hermes/.hermes/scripts/langfuse-error-alert.py
         '';
 
         systemd.tmpfiles.rules = [

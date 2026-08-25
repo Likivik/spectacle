@@ -170,24 +170,34 @@ def should_prefetch(query: str, min_length: int = 8) -> bool:
 
 # ── Scopes ─────────────────────────────────────────────────────────────
 
-def current_scope(agent_context: str = "") -> str:
-    """Group namespace for graphiti writes.
+def resolve_scope(hermes_home: str = "", profile: str = "") -> str | None:
+    """Tenant key (group_id) for this profile, or None to defer.
 
-    Single-tenant: always returns "likivik". Kept as a function for
-    future extensibility (e.g. a per-project group) without churn at
-    call sites.
+    Named profile (``HERMES_PROFILE`` set, or ``hermes_home`` under
+    ``profiles/<name>/``) -> returns ``<name>``. Default profile
+    (``~/.hermes``, no name) -> returns None, so callers omit the
+    group_id and the MCP server falls back to its configured default
+    (``config.graphiti.group_id``). No profile name is hardcoded here —
+    the server config is the single source of truth for the default.
     """
-    return "likivik"
+    if profile.strip():
+        return profile.strip()
+    parts = Path(hermes_home).parts if hermes_home else ()
+    if "profiles" in parts:
+        i = parts.index("profiles")
+        if i + 1 < len(parts):
+            return parts[i + 1]
+    return None
 
 
-def cascading_scopes(_scope: str) -> list[str]:
-    """Read scope cascade. Single-tenant: just likivik.
+def current_scope(hermes_home: str = "", profile: str = "") -> str | None:
+    """Group namespace for graphiti writes (None = defer to server)."""
+    return resolve_scope(hermes_home, profile)
 
-    The cascade is a no-op for the flat-namespace setup, but the
-    function is kept so future multi-tenant (project → user) reads
-    can change one site without touching callers.
-    """
-    return ["likivik"]
+
+def cascading_scopes(scope: str | None) -> list[str]:
+    """Read scope cascade. Named profile -> [name]; default -> [] (defer)."""
+    return [scope] if scope else []
 
 
 # ── Observability ──────────────────────────────────────────────────────
@@ -371,14 +381,16 @@ class GraphitiClient:
             return {"raw": text}
 
     def add_memory(
-        self, name: str, body: str, group_id: str,
+        self, name: str, body: str, group_id: str | None = None,
         source: str = "text", source_description: str = "",
         reference_time: str | None = None,
     ) -> dict:
         args: dict[str, object] = {
-            "name": name, "episode_body": body, "group_id": group_id,
+            "name": name, "episode_body": body,
             "source": source, "source_description": source_description,
         }
+        if group_id:
+            args["group_id"] = group_id
         if reference_time:
             args["reference_time"] = reference_time
         return self._run(self._call_tool("add_memory", args)).model_dump()
@@ -424,7 +436,8 @@ SEARCH_SCHEMA = {
     "name": "graphiti_search",
     "description": (
         "Search the temporal knowledge graph for facts and entities related to a query. "
-        "Single-tenant: searches group 'likivik' by default. "
+        "Searches this profile's memory scope by default (the server's configured "
+        "default group when running under the default profile). "
         "Pass `group_ids` to override."
     ),
     "parameters": {
@@ -443,8 +456,8 @@ SEARCH_SCHEMA = {
                 "type": "array",
                 "items": {"type": "string"},
                 "description": (
-                    "Optional scope override. Defaults to ['likivik']. "
-                    "Pass an explicit list to restrict or expand."
+                    "Optional scope override (list of group_ids). "
+                    "Omit to search this profile's scope."
                 ),
             },
         },
@@ -469,7 +482,7 @@ REMEMBER_SCHEMA = {
             "group_id": {
                 "type": "string",
                 "description": (
-                    "Optional scope override. Defaults to 'likivik' (single-tenant)."
+                    "Optional scope override. Omit to write to this profile's scope."
                 ),
             },
         },
@@ -575,7 +588,9 @@ class GraphitiMemoryProvider(MemoryProvider):
         try:
             if getattr(self, "_client", None) is None:
                 self._agent_context = getattr(self, "_agent_context", "primary")
-                self._scope = current_scope(self._agent_context)
+                self._hermes_home = getattr(self, "_hermes_home", "")
+                self._profile = getattr(self, "_profile", "")
+                self._scope = current_scope(self._hermes_home, self._profile)
                 self._cache = TTLCache()
                 self._prefetch_result = {}
                 self._prefetch_lock = threading.Lock()
@@ -602,7 +617,9 @@ class GraphitiMemoryProvider(MemoryProvider):
     def initialize(self, session_id: str, **kwargs) -> None:
         self._session_id = session_id
         self._agent_context = kwargs.get("agent_context", "primary")
-        self._scope = current_scope(self._agent_context)
+        self._hermes_home = str(kwargs.get("hermes_home", "") or "")
+        self._profile = os.environ.get("HERMES_PROFILE", "") or ""
+        self._scope = current_scope(self._hermes_home, self._profile)
         self._cache = TTLCache()
         self._prefetch_result: dict[str, str] = {}
         self._prefetch_lock = threading.Lock()

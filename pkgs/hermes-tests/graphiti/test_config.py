@@ -50,3 +50,22 @@ def test_plugin_passes_max_episodes(hermes_dir):
     # `limit`, which the server silently ignored (always returned 10).
     plugin = (hermes_dir / "hermes-graphiti-plugin" / "__init__.py").read_text()
     assert '"max_episodes": limit' in plugin, "plugin must send max_episodes (not limit)"
+
+
+def test_no_hardcoded_tenant_name(hermes_dir):
+    # group_id must resolve from the profile identity + defer to the MCP
+    # server's config default. A hardcoded "likivik" in the plugin would pin
+    # every profile to one tenant and silently cross-read memory.
+    plugin = (hermes_dir / "hermes-graphiti-plugin" / "__init__.py").read_text()
+    assert "likivik" not in plugin, "tenant name must come from config, not the plugin"
+
+
+def test_scope_defers_for_default_profile(hermes_dir):
+    # Named profile -> pass <name>; default profile -> None -> server default.
+    plugin = (hermes_dir / "hermes-graphiti-plugin" / "__init__.py").read_text()
+    assert "def resolve_scope(" in plugin
+    assert "HERMES_PROFILE" in plugin, "must read HERMES_PROFILE env"
+    assert "return None" in plugin, "default profile must defer (return None)"
+    assert "group_id: str | None = None" in plugin, "add_memory must accept deferral"
+    assert "if group_id:" in plugin, "write must omit group_id when scope is None"
+

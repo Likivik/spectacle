@@ -70,6 +70,120 @@
               machine.succeed("${rt-py}/bin/python3 ${rt-script} 127.0.0.1 6379 likivik")
             '';
           };
+
+        # Full-stack MCP roundtrip: boot the real graphiti-mcp-server against a
+        # fresh FalkorDB, seed an episode (direct write, no model), then read it
+        # back over streamable-HTTP (init + list_tools + get_episodes). Regresses
+        # the mcp 1.x->2.0 transport break + config/FalkorDB/tenant wiring in one.
+        mcp-roundtrip =
+          let
+            rt-py = inputs.graphiti-mcp-workspace.envs.${pkgs.system}.runtime;
+            gmc = inputs.graphiti-mcp-workspace.packages.${pkgs.system}.graphiti-mcp;
+            driver = ../../pkgs/hermes-tests/graphiti/mcp_roundtrip_driver.py;
+            gmcp-config = pkgs.writeText "graphiti-mcp-config.yaml" ''
+              llm:
+                provider: "openai"
+                model: "graphiti-primary"
+                structured_output_mode: "tool_calling"
+                providers:
+                  openai:
+                    api_url: "http://127.0.0.1:4000/v1"
+                    api_key: "sk-dummy"
+
+              embedder:
+                provider: "openai"
+                model: "bge-m3"
+                dimensions: 1024
+                providers:
+                  openai:
+                    api_url: "http://127.0.0.1:4000/v1"
+                    api_key: "sk-dummy"
+
+              graphiti:
+                group_id: "likivik"
+
+              database:
+                providers:
+                  falkordb:
+                    database: "likivik"
+            '';
+            falkordb-image = pkgs.dockerTools.pullImage {
+              imageName = "falkordb/falkordb-server";
+              imageDigest = "sha256:e8bb6653262d9b58c99988de5ba6e4c8dc0f00a8c6056d3b111e35ee2253355d";
+              sha256 = "sha256-/lRZHeUwjIUn3w4CoREyNgyXHwYCmKt+B6v7iCPehjA=";
+              finalImageName = "falkordb/falkordb-server";
+              finalImageTag = "edge-alpine";
+            };
+          in
+          pkgs.testers.nixosTest {
+            name = "mcp-roundtrip";
+            nodes.machine = { ... }: {
+              virtualisation.oci-containers = {
+                backend = "podman";
+                containers.falkordb = {
+                  image = "falkordb/falkordb-server:edge-alpine";
+                  imageFile = falkordb-image;
+                  autoStart = true;
+                  ports = [ "127.0.0.1:6379:6379" ];
+                };
+              };
+              systemd.services.graphiti-mcp = {
+                wantedBy = [ "multi-user.target" ];
+                after = [ "podman-falkordb.service" ];
+                environment = {
+                  OPENAI_API_KEY = "sk-dummy";
+                  OPENAI_BASE_URL = "http://127.0.0.1:4000/v1";
+                  NO_PROXY = "127.0.0.1,localhost";
+                };
+                serviceConfig = {
+                  ExecStart = "${gmc}/bin/graphiti-mcp-server --config ${gmcp-config} --transport http --host 127.0.0.1 --port 8000";
+                  Restart = "on-failure";
+                  RestartSec = "2";
+                };
+              };
+            };
+            testScript = ''
+              start_all()
+              machine.wait_for_unit("podman-falkordb.service")
+              machine.wait_for_open_port(6379)
+              machine.wait_for_unit("graphiti-mcp.service")
+              machine.wait_for_open_port(8000)
+              machine.succeed(
+                "${rt-py}/bin/python3 ${driver} 127.0.0.1 6379 likivik http://127.0.0.1:8000/mcp"
+              )
+            '';
+          };
+
+        # MiniMax tool-calling schema fidelity — hermetic unit on the real
+        # _coerce_for_schema ({item:"0"} collapse + str->number repair) under
+        # the graphiti runtime venv (needs graphiti_core/openai/pydantic).
+        minimax-coerce =
+          let
+            rt-py = inputs.graphiti-mcp-workspace.envs.${pkgs.system}.runtime;
+          in
+          pkgs.runCommand "minimax-coerce" { } ''
+            ${rt-py}/bin/python3 ${../../pkgs/hermes-tests/graphiti/minimax_coerce.py} \
+              ${../../pkgs/graphiti/mcp-workspace/src/services/minimax_client.py}
+            touch "$out"
+          '';
+
+        # Every litellm model must resolve cost (exact price-map key OR explicit
+        # per-token cost) — otherwise gen_ai.usage.cost never fires and Langfuse
+        # records totalCost=0. Regresses the openai/MiniMax-M3 -> None-cost bug.
+        litellm-cost-map = pkgs.runCommand "litellm-cost-map" { } ''
+          ${pkgs.python3}/bin/python3 ${../../pkgs/hermes-tests/graphiti/litellm_cost_map.py} \
+            ${../../modules/aspects/server/hermes/_litellm.nix} ${pkgs.litellm}
+          touch "$out"
+        '';
+
+        # litellm's langfuse_otel path must emit OpenInference span attributes
+        # llm.cost.total + llm.model_name (fed by response_cost + model) — else
+        # Langfuse v4 drops cost (totalCost=0) and model (modelId=null).
+        langfuse-otel-attrs = pkgs.runCommand "langfuse-otel-attrs" { } ''
+          ${pkgs.python3}/bin/python3 ${../../pkgs/hermes-tests/graphiti/langfuse_otel_attrs.py} \
+            ${pkgs.litellm}
+          touch "$out"
+        '';
       };
 
       # Boot the erebus host headless and assert Telegram TLS connectivity.

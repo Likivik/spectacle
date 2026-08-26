@@ -41,6 +41,12 @@
             model = "openai/MiniMax-M3";
             api_base = "https://api.minimax.io/v1";
             api_key = "os.environ/MINIMAX_KEY";
+            # Explicit zero-cost pricing (MiniMax Token Plan ~$0 marginal): the
+            # custom-api_base route "openai/MiniMax-M3" has no litellm price-map
+            # entry, so without this response_cost -> None and Langfuse shows
+            # totalCost=0. Zero is the honest token-plan signal.
+            input_cost_per_token = 0;
+            output_cost_per_token = 0;
             # C-plan: throttle locally so bursts queue instead of 429 upstream.
             rpm = 200;      # under MiniMax's 200 RPM
             tpm = 8000000;  # under MiniMax's 10M TPM
@@ -63,6 +69,10 @@
           litellm_params = {
             model = "groq/openai/gpt-oss-120b";
             api_key = "os.environ/GROQ_KEY";
+            # Free Groq tier -> explicit zero cost (no price-map key for this
+            # custom route; keeps response_cost from becoming None).
+            input_cost_per_token = 0;
+            output_cost_per_token = 0;
             # Free Groq: 30 RPM / 8K TPM / 1000 RPD — cap below each.
             # Per-deployment cooldown tuning: a single 429 must NOT bench the
             # deployment for 5 minutes while fallbacks are also rate-limited —
@@ -81,6 +91,9 @@
             model = "openai/mistral-small-latest";
             api_base = "https://api.mistral.ai/v1";
             api_key = "os.environ/MISTRAL_KEY";
+            # Real per-token cost (mistral/mistral-small-latest: $0.06/M in, $0.18/M out).
+            input_cost_per_token = 0.00000006;
+            output_cost_per_token = 0.00000018;
             rpm = 50;
             tpm = 200000;
           };
@@ -91,6 +104,9 @@
             model = "openai/gpt-oss-20b:fastest";
             api_base = "https://router.huggingface.co/v1";
             api_key = "os.environ/HF_TOKEN";
+            # Free HF router tier -> explicit zero cost.
+            input_cost_per_token = 0;
+            output_cost_per_token = 0;
             rpm = 20;
             rpd = 200;
           };
@@ -100,6 +116,9 @@
           litellm_params = {
             model = "openrouter/openrouter/free";
             api_key = "os.environ/OPENROUTER_KEY";
+            # OpenRouter free models -> explicit zero cost.
+            input_cost_per_token = 0;
+            output_cost_per_token = 0;
             rpm = 2;
             rpd = 40;
           };

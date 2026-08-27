@@ -8,7 +8,7 @@ in
       den.aspects.core
       den.aspects.core.tailscale
       den.aspects.server.hermes-agent
-      den.aspects.server.scaratec
+      den.aspects.server.email
       den.aspects.server.sillytavern
       den.aspects.server.fishaudio-proxy
       den.aspects.server.pocketrisu
@@ -200,14 +200,14 @@ in
         };
         "email/gmail/account1/adress" = {
           sopsFile = ../../../secrets/erebus/secrets.yaml;
-          owner = "scaratec";
-          group = "scaratec";
+          owner = "email";
+          group = "email";
           mode = "0400";
         };
         "email/gmail/account1/app-password" = {
           sopsFile = ../../../secrets/erebus/secrets.yaml;
-          owner = "scaratec";
-          group = "scaratec";
+          owner = "email";
+          group = "email";
           mode = "0400";
         };
       };

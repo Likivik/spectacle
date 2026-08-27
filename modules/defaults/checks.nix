@@ -154,6 +154,74 @@
             '';
           };
 
+        # MCP handshake roundtrip for mcp-email-server (Wh1isper): boot the real
+        # binary over streamable-HTTP, run initialize + list_tools, and assert
+        # the full 15-tool surface (read/draft/send/attachments/policy) + an
+        # auth-free list_available_accounts (config load + account registration).
+        # Hermetic — dummy account points at an unreachable host; no live
+        # IMAP/SMTP (live roundtrip is gated as @pytest.mark.live elsewhere).
+        # Regresses: package build, service start, HTTP transport, tool registry.
+        email-mcp-roundtrip =
+          let
+            mcp-email-server = import ../../pkgs/mcp-email-server.nix {
+              inherit pkgs;
+              lib = pkgs.lib;
+            };
+            driver-py = pkgs.python3.withPackages (p: [ p.mcp ]);
+            driver = ../../pkgs/hermes-tests/email/email_mcp_roundtrip.py;
+            email-config = pkgs.writeText "email-config.toml" ''
+              credential_storage = "plaintext"
+              enable_attachment_download = true
+              allowed_recipients = []
+
+              [[emails]]
+              account_name = "default"
+              full_name = "Test User"
+              email_address = "test@example.com"
+              save_to_sent = false
+
+              [emails.incoming]
+              user_name = "test@example.com"
+              password = "dummy"
+              host = "127.0.0.1"
+              port = 993
+              use_ssl = false
+              start_ssl = false
+              verify_ssl = false
+
+              [emails.outgoing]
+              user_name = "test@example.com"
+              password = "dummy"
+              host = "127.0.0.1"
+              port = 465
+              use_ssl = false
+              start_ssl = false
+              verify_ssl = false
+            '';
+          in
+          pkgs.testers.nixosTest {
+            name = "email-mcp-roundtrip";
+            nodes.machine = { ... }: {
+              systemd.services.email-mcp = {
+                wantedBy = [ "multi-user.target" ];
+                environment.MCP_EMAIL_SERVER_CONFIG_PATH = "${email-config}";
+                serviceConfig = {
+                  ExecStart = "${mcp-email-server}/bin/mcp-email-server streamable-http --host 127.0.0.1 --port 9557";
+                  Restart = "on-failure";
+                  RestartSec = "2";
+                };
+              };
+            };
+            testScript = ''
+              start_all()
+              machine.wait_for_unit("email-mcp.service")
+              machine.wait_for_open_port(9557)
+              machine.succeed(
+                "${driver-py}/bin/python3 ${driver} http://127.0.0.1:9557/mcp"
+              )
+            '';
+          };
+
         # MiniMax tool-calling schema fidelity — hermetic unit on the real
         # _coerce_for_schema ({item:"0"} collapse + str->number repair) under
         # the graphiti runtime venv (needs graphiti_core/openai/pydantic).

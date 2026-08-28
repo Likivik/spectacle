@@ -200,14 +200,14 @@ in
         };
         "email/gmail/account1/adress" = {
           sopsFile = ../../../secrets/erebus/secrets.yaml;
-          owner = "email";
-          group = "email";
+          owner = "hermes";
+          group = "hermes";
           mode = "0400";
         };
         "email/gmail/account1/app-password" = {
           sopsFile = ../../../secrets/erebus/secrets.yaml;
-          owner = "email";
-          group = "email";
+          owner = "hermes";
+          group = "hermes";
           mode = "0400";
         };
       };

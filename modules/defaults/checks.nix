@@ -154,70 +154,37 @@
             '';
           };
 
-        # MCP handshake roundtrip for mcp-email-server (Wh1isper): boot the real
-        # binary over streamable-HTTP, run initialize + list_tools, and assert
-        # the full 15-tool surface (read/draft/send/attachments/policy) + an
-        # auth-free list_available_accounts (config load + account registration).
-        # Hermetic — dummy account points at an unreachable host; no live
-        # IMAP/SMTP (live roundtrip is gated as @pytest.mark.live elsewhere).
-        # Regresses: package build, service start, HTTP transport, tool registry.
+        # MCP handshake roundtrip for himalaya-mcp (Rust himalaya + TS wrapper):
+        # spawn the real `node dist/index.js` over MCP stdio, run initialize +
+        # list_tools, assert the confirm-gated surface (send/compose/draft + read
+        # + attachments). list_tools is static (no IMAP dial), so this is
+        # hermetic. Regresses: TS bundle builds, stdio MCP handshake, registry.
         email-mcp-roundtrip =
           let
-            mcp-email-server = import ../../pkgs/mcp-email-server.nix {
+            himalaya-mcp = import ../../pkgs/himalaya-mcp.nix {
               inherit pkgs;
               lib = pkgs.lib;
             };
+            # The 2.1.0 override (same as the aspect deploys) — NOT pkgs.himalaya
+            # (nixpkgs 2.0.0, which dies mid-exchange with EAGAIN on large APPEND,
+            # himalaya #731/#732). The test must exercise what actually ships.
+            himalaya = pkgs.callPackage ../../pkgs/himalaya.nix { };
             driver-py = pkgs.python3.withPackages (p: [ p.mcp ]);
             driver = ../../pkgs/hermes-tests/email/email_mcp_roundtrip.py;
-            email-config = pkgs.writeText "email-config.toml" ''
-              credential_storage = "plaintext"
-              enable_attachment_download = true
-              allowed_recipients = []
-
-              [[emails]]
-              account_name = "default"
-              full_name = "Test User"
-              email_address = "test@example.com"
-              save_to_sent = false
-
-              [emails.incoming]
-              user_name = "test@example.com"
-              password = "dummy"
-              host = "127.0.0.1"
-              port = 993
-              use_ssl = false
-              start_ssl = false
-              verify_ssl = false
-
-              [emails.outgoing]
-              user_name = "test@example.com"
-              password = "dummy"
-              host = "127.0.0.1"
-              port = 465
-              use_ssl = false
-              start_ssl = false
-              verify_ssl = false
-            '';
           in
           pkgs.testers.nixosTest {
             name = "email-mcp-roundtrip";
             nodes.machine = { ... }: {
-              systemd.services.email-mcp = {
-                wantedBy = [ "multi-user.target" ];
-                environment.MCP_EMAIL_SERVER_CONFIG_PATH = "${email-config}";
-                serviceConfig = {
-                  ExecStart = "${mcp-email-server}/bin/mcp-email-server streamable-http --host 127.0.0.1 --port 9557";
-                  Restart = "on-failure";
-                  RestartSec = "2";
-                };
-              };
+              environment.systemPackages = [ himalaya pkgs.nodejs ];
             };
             testScript = ''
               start_all()
-              machine.wait_for_unit("email-mcp.service")
-              machine.wait_for_open_port(9557)
+              machine.wait_for_unit("multi-user.target")
+              # CLI smoke: binary runs and is the 2.1.0 override (transport retry),
+              # guarding against silent drift back to nixpkgs 2.0.0.
+              machine.succeed("${himalaya}/bin/himalaya --version | grep -q 'v2.1.0'")
               machine.succeed(
-                "${driver-py}/bin/python3 ${driver} http://127.0.0.1:9557/mcp"
+                "${driver-py}/bin/python3 ${driver} ${himalaya-mcp}/dist/index.js ${himalaya}/bin/himalaya"
               )
             '';
           };

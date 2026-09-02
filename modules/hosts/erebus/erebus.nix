@@ -135,6 +135,20 @@ in
           group = "hermes";
           mode = "0600";
         };
+        # Dashboard username/password auth (dashboard_auth/basic plugin) —
+        # lets mobile clients (rusty4444 app) log in without Nous OAuth.
+        "hermes/dashboard-basic-auth-hash" = {
+          sopsFile = ../../../secrets/erebus/secrets.yaml;
+          owner = "hermes";
+          group = "hermes";
+          mode = "0600";
+        };
+        "hermes/dashboard-basic-auth-secret" = {
+          sopsFile = ../../../secrets/erebus/secrets.yaml;
+          owner = "hermes";
+          group = "hermes";
+          mode = "0600";
+        };
         # Langfuse — Hermes Agent traces (project: hermes-erebus)
         "langfuse/hermes-erebus/public-key" = {
           sopsFile = ../../../secrets/erebus/secrets.yaml;

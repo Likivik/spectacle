@@ -46,3 +46,13 @@ def graphiti_nix(hermes_dir: Path) -> str:
 @pytest.fixture(scope="session")
 def agent_nix(hermes_dir: Path) -> str:
     return (hermes_dir / "hermes-agent.nix").read_text()
+
+
+@pytest.fixture(scope="session")
+def litellm_pkg_nix() -> str:
+    return (REPO_ROOT / "pkgs" / "litellm.nix").read_text()
+
+
+@pytest.fixture(scope="session")
+def expression_pkg_nix() -> str:
+    return (REPO_ROOT / "pkgs" / "expression.nix").read_text()

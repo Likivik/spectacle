@@ -1,4 +1,13 @@
-{ config, pkgs, lib }: {
+{ config, pkgs, lib }:
+
+let
+  # litellm 1.97.0 + the missing `expression` dep (see pkgs/litellm.nix).
+  # nixpkgs 56c02bc bumped litellm 1.89->1.97 without packaging `expression`,
+  # so the stock `pkgs.litellm` crashes at import. Swap in the patched
+  # derivation via services.litellm.package.
+  litellm = pkgs.callPackage ../../../../pkgs/litellm.nix { };
+in
+{
   # ── LiteLLM AI Gateway (upstream services.litellm module) ────────────
   services.postgresql = {
     enable = true;
@@ -13,6 +22,7 @@
 
   services.litellm = {
     enable = true;
+    package = litellm;
     host = "127.0.0.1";
     port = 4000;
     # NOTE: the upstream module runs the service as a DynamicUser (line 212 of
@@ -194,7 +204,7 @@
       echo "HF_TOKEN=$([ -f "$SECRETS/huggingface/api-key" ] && cat "$SECRETS/huggingface/api-key" || echo "")"
       echo "MISTRAL_KEY=$([ -f "$SECRETS/mistral/api-key" ] && cat "$SECRETS/mistral/api-key" || echo "")"
       echo "MINIMAX_KEY=$(cat /run/secrets/hermes/minimax-api-key 2>/dev/null || echo \"\")"
-      LF=/run/secrets/hermes-mitmproxy/langfuse
+      LF=/run/secrets/langfuse/graphiti-litellm
       echo "LANGFUSE_PUBLIC_KEY=$([ -f "$LF/public-key" ] && cat "$LF/public-key" || echo "")"
       echo "LANGFUSE_SECRET_KEY=$([ -f "$LF/secret-key" ] && cat "$LF/secret-key" || echo "")"
       echo "LANGFUSE_HOST=https://cloud.langfuse.com"

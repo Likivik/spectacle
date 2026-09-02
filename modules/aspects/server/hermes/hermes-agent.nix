@@ -148,7 +148,10 @@
               "NO_PROXY=127.0.0.1,localhost"
             ];
             ExecStart = "${hermes-pkg}/bin/hermes dashboard --host 0.0.0.0 --port 9119 --no-open";
-            EnvironmentFile = [ "/run/secrets/hermes/env" ];
+            EnvironmentFile = [
+              "/run/secrets/hermes/env"
+              "/var/lib/hermes/.hermes/sops-env"
+            ];
           };
         };
 
@@ -166,6 +169,8 @@
             MM=$(cat /run/secrets/hermes/minimax-api-key 2>/dev/null || true)
             SYN=$(cat /run/secrets/hermes/synthetic-api-key 2>/dev/null || true)
             APIK=$(cat /run/secrets/hermes/api-server-key 2>/dev/null || true)
+            DBAH=$(cat /run/secrets/hermes/dashboard-basic-auth-hash 2>/dev/null || true)
+            DBAS=$(cat /run/secrets/hermes/dashboard-basic-auth-secret 2>/dev/null || true)
             LFPK=$(cat /run/secrets/langfuse/hermes-erebus/public-key 2>/dev/null || true)
             LFSK=$(cat /run/secrets/langfuse/hermes-erebus/secret-key 2>/dev/null || true)
             ORK=$(cat /run/secrets/hermes-mitmproxy/llm-providers/openrouter/api-key 2>/dev/null || true)
@@ -176,6 +181,10 @@
             echo "MINIMAX_API_KEY=$MM"
             echo "SYNTHETIC_API_KEY=$SYN"
             echo "API_SERVER_KEY=$APIK"
+            # Dashboard password auth (basic provider) — alongside Nous OAuth.
+            echo "HERMES_DASHBOARD_BASIC_AUTH_USERNAME=likivik"
+            echo "HERMES_DASHBOARD_BASIC_AUTH_PASSWORD_HASH=$DBAH"
+            echo "HERMES_DASHBOARD_BASIC_AUTH_SECRET=$DBAS"
             echo "HERMES_LANGFUSE_PUBLIC_KEY=$LFPK"
             echo "HERMES_LANGFUSE_SECRET_KEY=$LFSK"
             echo "HERMES_LANGFUSE_BASE_URL=https://cloud.langfuse.com"

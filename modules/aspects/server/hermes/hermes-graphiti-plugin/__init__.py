@@ -773,10 +773,18 @@ class GraphitiMemoryProvider(MemoryProvider):
         """Background HTTP server exposing Prometheus-style metrics on
         http://127.0.0.1:<PORT>/metrics (default 8765). Stdlib only —
         no extra deps. Idempotent; one server per provider instance.
+
+        SO_REUSEADDR is set so a restarted provider instance can rebind the
+        port without waiting for TIME_WAIT to expire (previously caused 424
+        ``Address already in use`` log entries — the stale server from the
+        previous instance kept the port, metrics counters reset to zero).
         """
         if getattr(self, "_metrics_server_started", False):
             return
         port = int(os.environ.get("GRAPHITI_METRICS_PORT", "8765"))
+
+        class _ReusableHTTPServer(http.server.HTTPServer):
+            allow_reuse_address = True
 
         def _render_metrics() -> bytes:
             m = self._metrics
@@ -850,7 +858,7 @@ class GraphitiMemoryProvider(MemoryProvider):
                 pass
 
         try:
-            server = http.server.HTTPServer(("127.0.0.1", port), _Handler)
+            server = _ReusableHTTPServer(("127.0.0.1", port), _Handler)
             thread = threading.Thread(
                 target=server.serve_forever,
                 daemon=True,

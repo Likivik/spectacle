@@ -69,3 +69,32 @@ def test_scope_defers_for_default_profile(hermes_dir):
     assert "group_id: str | None = None" in plugin, "add_memory must accept deferral"
     assert "if group_id:" in plugin, "write must omit group_id when scope is None"
 
+
+def test_litellm_service_uses_patched_package(litellm_nix):
+    # nixpkgs 56c02bc bumped litellm 1.89->1.97 without the new `expression`
+    # dep, so litellm.service crashed at import and dropped graphiti episodes.
+    # The service must swap in the patched derivation.
+    assert "package = litellm" in litellm_nix
+
+
+def test_litellm_override_adds_expression_and_import_check(litellm_pkg_nix):
+    assert "expression" in litellm_pkg_nix
+    assert "overridePythonAttrs" in litellm_pkg_nix
+    # The exact chain that crashed must be import-checked at build time.
+    assert "litellm.proxy._experimental.mcp_server.outbound_credentials" in litellm_pkg_nix
+
+
+def test_expression_pinned_5_7_0(expression_pkg_nix):
+    assert "5.7.0" in expression_pkg_nix
+    assert "typing-extensions" in expression_pkg_nix
+
+
+def test_litellm_lazy_logger_patch_wired(litellm_pkg_nix):
+    # litellm 1.97.0 unconditionally imports ~50 optional observability SDKs
+    # (boto3, agentops, datadog, galileo, opik, ...) at module level; nixpkgs
+    # ships none of them. The postPatch must lazy-guard the registry or the
+    # proxy crashes at import. A revert here re-fails the litellm-imports check.
+    assert "make_lazy.py" in litellm_pkg_nix
+    assert "postPatch" in litellm_pkg_nix
+    assert "custom_logger_registry.py" in litellm_pkg_nix
+

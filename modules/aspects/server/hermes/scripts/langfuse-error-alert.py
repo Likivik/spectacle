@@ -7,7 +7,7 @@ import base64, json, subprocess, sys, urllib.request
 
 LF_PK = "pk-lf-e8b29ad2-524b-4439-98d7-9fd4f2d783e1"
 LF_SK = subprocess.run(
-    ["/run/wrappers/bin/sudo", "cat", "/run/secrets/hermes-mitmproxy/langfuse/secret-key"],
+    ["/run/wrappers/bin/sudo", "cat", "/run/secrets/langfuse/graphiti-litellm/secret-key"],
     capture_output=True, text=True,
 ).stdout.strip()
 LF_HOST = "https://cloud.langfuse.com"

@@ -219,6 +219,68 @@
             ${pkgs.litellm}
           touch "$out"
         '';
+
+        # litellm must IMPORT its proxy module chain — the 1.89->1.97 bump
+        # shipped without the new `expression` dep, so litellm.service crashed
+        # at import (`No module named 'expression'`) and took graphiti episode
+        # extraction down with it. This imports the exact crash chain against
+        # the patched package (hermetic — no server boot, no secrets).
+        litellm-imports =
+          let
+            litellm-fixed = pkgs.callPackage ../../pkgs/litellm.nix { };
+            py = pkgs.python3.withPackages (p: [ litellm-fixed ]);
+          in
+          pkgs.runCommand "litellm-imports" {
+            # proxy_server constructs an httpx client at module level; httpx
+            # resolves SSL_CERT_FILE (trust_env path) which is unset/empty in
+            # the hermetic sandbox -> FileNotFoundError. Point it at cacert.
+            SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
+            NIX_SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
+          } ''
+            ${py}/bin/python -c "import litellm.proxy._experimental.mcp_server.outbound_credentials, litellm.proxy.proxy_server" \
+              && touch "$out"
+          '';
+
+        # BOOT test — the import check above can't catch RUNTIME deps that
+        # litellm loads lazily/dynamically (uvloop via uvicorn's loop factory —
+        # litellm hard-codes loop="uvloop" on Linux; prisma via the DB error
+        # handler). That exact gap is what let litellm.service crash-loop after
+        # the 1.97.0 bump passed all import checks. This actually STARTS the
+        # proxy and asserts /health 200 + /v1/models serve (hermetic, no real
+        # keys — empty model_list).
+        litellm-boot =
+          let
+            litellm-fixed = pkgs.callPackage ../../pkgs/litellm.nix { };
+            cfg = pkgs.writeText "litellm-boot-config.yaml" ''
+              model_list: []
+              litellm_settings:
+                master_key: sk-test-boot
+              general_settings:
+                store_model_in_db: false
+            '';
+          in
+          pkgs.runCommand "litellm-boot" {
+            nativeBuildInputs = [ pkgs.curl ];
+            SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
+            NIX_SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
+            LITELLM_MASTER_KEY = "sk-test-boot";
+          } ''
+            ${litellm-fixed}/bin/litellm --config ${cfg} --host 127.0.0.1 --port 4002 > boot.log 2>&1 &
+            LPID=$!
+            ready=0
+            for i in $(seq 1 30); do
+              if curl -sf -o /dev/null -H "Authorization: Bearer sk-test-boot" http://127.0.0.1:4002/health; then ready=1; break; fi
+              if ! kill -0 "$LPID" 2>/dev/null; then echo "litellm CRASHED before ready"; cat boot.log; exit 1; fi
+              sleep 1
+            done
+            [ "$ready" = 1 ] || { echo "litellm never became healthy"; cat boot.log; exit 1; }
+            curl -sf -H "Authorization: Bearer sk-test-boot" http://127.0.0.1:4002/v1/models | grep -q '"object"' || {
+              echo "/v1/models bad"; cat boot.log; exit 1;
+            }
+            kill "$LPID" 2>/dev/null
+            echo "litellm-boot OK: /health 200 + /v1/models serve"
+            touch "$out"
+          '';
       };
 
       # Boot the erebus host headless and assert Telegram TLS connectivity.

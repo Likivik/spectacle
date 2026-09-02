@@ -194,12 +194,17 @@
       # Compare erebus kokoro-tts (works, 0.0.0.0) vs falkordb (broken, 127.0.0.1).
       networking.firewall.interfaces.eno1.allowedTCPPorts = lib.mkForce [ ];
       # tailscale0: ports exposed over Tailscale for cross-host MCP access.
+      # 22: SSH — CRITICAL. a8cafce (2026-08-05) closed all tailscale0 ports
+      #   with mkForce [], and e871f23 reopened only 6333/6334/8000, forgetting
+      #   22. SSH then only worked because tailscaled kept its old iptables
+      #   state; the 2026-09-02 flake-update deploy restarted the firewall and
+      #   locked every host out of poweredge (physical reboot required).
       # 6333/6334: qdrant HTTP+gRPC (only poweredge itself uses qdrant
       #   internally; keep for nc-rag ops + qdrant dashboard from remote).
       # 8000: nextcloud-mcp MCP endpoint (Hermes MCP client).
       # Other hosts use Tailscale magic DNS to reach
       # http://poweredge.oryx-galaxy.ts.net:8000/mcp.
-      networking.firewall.interfaces.tailscale0.allowedTCPPorts = lib.mkForce [ 6333 6334 8000 ];
+      networking.firewall.interfaces.tailscale0.allowedTCPPorts = lib.mkForce [ 22 6333 6334 8000 ];
       networking.firewall.interfaces.lo.allowedTCPPorts = lib.mkForce [ 2000 6333 6334 8000 ];
 
       # Tailscale route hijack: tailscaled installs `10.88.0.0/16 dev tailscale0`

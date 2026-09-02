@@ -92,18 +92,6 @@ in
           group = "hermes";
           mode = "0600";
         };
-        "hermes/langfuse-public-key" = {
-          sopsFile = ../../../secrets/erebus/secrets.yaml;
-          owner = "hermes";
-          group = "hermes";
-          mode = "0600";
-        };
-        "hermes/langfuse-secret-key" = {
-          sopsFile = ../../../secrets/erebus/secrets.yaml;
-          owner = "hermes";
-          group = "hermes";
-          mode = "0600";
-        };
         "hermes/telegram-bot-token" = {
           sopsFile = ../../../secrets/erebus/secrets.yaml;
           owner = "hermes";
@@ -140,14 +128,21 @@ in
           group = "hermes";
           mode = "0600";
         };
-        # New langfuse-hermes keys (separate project from mitmproxy)
-        "hermes/langfuse-hermes/public-key" = {
+        # Salem profile's gateway API key (own listener on :8643)
+        "hermes/salem-api-server-key" = {
           sopsFile = ../../../secrets/erebus/secrets.yaml;
           owner = "hermes";
           group = "hermes";
           mode = "0600";
         };
-        "hermes/langfuse-hermes/secret-key" = {
+        # Langfuse — Hermes Agent traces (project: hermes-erebus)
+        "langfuse/hermes-erebus/public-key" = {
+          sopsFile = ../../../secrets/erebus/secrets.yaml;
+          owner = "hermes";
+          group = "hermes";
+          mode = "0600";
+        };
+        "langfuse/hermes-erebus/secret-key" = {
           sopsFile = ../../../secrets/erebus/secrets.yaml;
           owner = "hermes";
           group = "hermes";
@@ -185,14 +180,14 @@ in
           group = "hermes";
           mode = "0600";
         };
-        # Langfuse Cloud (spend/observability dashboard) — keys already in secrets.yaml.
-        "hermes-mitmproxy/langfuse/public-key" = {
+        # Langfuse — LiteLLM proxy traces (project: graphiti-litellm)
+        "langfuse/graphiti-litellm/public-key" = {
           sopsFile = ../../../secrets/erebus/secrets.yaml;
           owner = "hermes";
           group = "hermes";
           mode = "0600";
         };
-        "hermes-mitmproxy/langfuse/secret-key" = {
+        "langfuse/graphiti-litellm/secret-key" = {
           sopsFile = ../../../secrets/erebus/secrets.yaml;
           owner = "hermes";
           group = "hermes";

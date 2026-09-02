@@ -17,11 +17,16 @@
 
       # Extra (non-default) Hermes profiles. `default` stays hardcoded below for
       # zero churn; these get parameterized gateway units + graphiti wiring.
+      # apiPort: per-profile gateway API listener (each profile owns its own
+      # port; default = 8642, first extra = 8643, ...).apiKeySecret: sops path
+      # for that profile's API_SERVER_KEY.
       extraHermesProfiles = [
         {
           name = "salem";
           home = "/var/lib/hermes/.hermes/profiles/salem";
           botTokenSecret = "hermes/salem-bot-token";
+          apiPort = 8643;
+          apiKeySecret = "hermes/salem-api-server-key";
         }
       ];
 
@@ -33,7 +38,7 @@
       litellmConfig = import ./_litellm.nix { inherit config pkgs lib; };
 
       # ── Extra-profile wiring (parameterized; default stays hardcoded) ──
-      mkSopsEnv = { home, botTokenSecret, ... }:
+      mkSopsEnv = { home, botTokenSecret, apiPort, apiKeySecret, ... }:
         ''
           mkdir -p "${home}"
           {
@@ -42,8 +47,9 @@
             OBS=$(cat /run/secrets/hermes/mcp-obsidian-api-key 2>/dev/null || true)
             MM=$(cat /run/secrets/hermes/minimax-api-key 2>/dev/null || true)
             SYN=$(cat /run/secrets/hermes/synthetic-api-key 2>/dev/null || true)
-            LFPK=$(cat /run/secrets/hermes/langfuse-public-key 2>/dev/null || true)
-            LFSK=$(cat /run/secrets/hermes/langfuse-secret-key 2>/dev/null || true)
+            APIK=$(cat /run/secrets/${apiKeySecret} 2>/dev/null || true)
+            LFPK=$(cat /run/secrets/langfuse/hermes-erebus/public-key 2>/dev/null || true)
+            LFSK=$(cat /run/secrets/langfuse/hermes-erebus/secret-key 2>/dev/null || true)
             ORK=$(cat /run/secrets/hermes-mitmproxy/llm-providers/openrouter/api-key 2>/dev/null || true)
             GH=$(cat /run/secrets/hermes-mitmproxy/github/pat-hermes-full 2>/dev/null || true)
             echo "TELEGRAM_BOT_TOKEN=$TG"
@@ -51,6 +57,12 @@
             echo "MCP_OBSIDIAN_API_KEY=$OBS"
             echo "MINIMAX_API_KEY=$MM"
             echo "SYNTHETIC_API_KEY=$SYN"
+            # Per-profile gateway API listener: own port + own key, so each
+            # profile's api_server never collides with another profile's.
+            echo "API_SERVER_ENABLED=true"
+            echo "API_SERVER_HOST=0.0.0.0"
+            echo "API_SERVER_PORT=${toString apiPort}"
+            echo "API_SERVER_KEY=$APIK"
             echo "HERMES_LANGFUSE_PUBLIC_KEY=$LFPK"
             echo "HERMES_LANGFUSE_SECRET_KEY=$LFSK"
             echo "HERMES_LANGFUSE_BASE_URL=https://cloud.langfuse.com"
@@ -154,8 +166,8 @@
             MM=$(cat /run/secrets/hermes/minimax-api-key 2>/dev/null || true)
             SYN=$(cat /run/secrets/hermes/synthetic-api-key 2>/dev/null || true)
             APIK=$(cat /run/secrets/hermes/api-server-key 2>/dev/null || true)
-            LFPK=$(cat /run/secrets/hermes/langfuse-public-key 2>/dev/null || true)
-            LFSK=$(cat /run/secrets/hermes/langfuse-secret-key 2>/dev/null || true)
+            LFPK=$(cat /run/secrets/langfuse/hermes-erebus/public-key 2>/dev/null || true)
+            LFSK=$(cat /run/secrets/langfuse/hermes-erebus/secret-key 2>/dev/null || true)
             ORK=$(cat /run/secrets/hermes-mitmproxy/llm-providers/openrouter/api-key 2>/dev/null || true)
             GH=$(cat /run/secrets/hermes-mitmproxy/github/pat-hermes-full 2>/dev/null || true)
             echo "TELEGRAM_BOT_TOKEN=$TG"
@@ -196,6 +208,12 @@
               "NO_PROXY=127.0.0.1,localhost"
               "WHATSAPP_ENABLED=false"
               "WHATSAPP_MODE=self-chat"
+              # Default profile's gateway API listener — own port (8642),
+              # key comes from sops-env (API_SERVER_KEY). Extra profiles
+              # get their own ports via their sops-env (8643, ...).
+              "API_SERVER_ENABLED=true"
+              "API_SERVER_HOST=0.0.0.0"
+              "API_SERVER_PORT=8642"
               "HERMES_BUNDLED_SKILLS=${hermes-pkg}/share/hermes-agent/skills"
               "HERMES_BUNDLED_PLUGINS=${hermes-pkg}/share/hermes-agent/plugins"
               "HERMES_BUNDLED_LOCALES=${hermes-pkg}/share/hermes-agent/locales"

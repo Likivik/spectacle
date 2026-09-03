@@ -126,6 +126,10 @@
         sopsFile = ../../../secrets/poweredge/secrets.yaml;
         owner = "nextcloud"; group = "nextcloud"; mode = "0400";
       };
+      sops.secrets."nextcloud/minimax-api-key" = {
+        sopsFile = ../../../secrets/poweredge/secrets.yaml;
+        owner = "nextcloud"; group = "nextcloud"; mode = "0400";
+      };
 
       services.tailscale.authKeyFile =
         config.sops.secrets."tailscale/auth-key".path;

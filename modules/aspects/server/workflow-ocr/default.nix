@@ -26,6 +26,7 @@
         set -eu
         export NC_OCR_NC_PASSWORD_FILE="$CREDENTIALS_DIRECTORY/nc-ocr-password"
         export NC_OCR_WEBHOOK_SECRET_FILE="$CREDENTIALS_DIRECTORY/nc-ocr-webhook-secret"
+        export NC_OCR_MINIMAX_KEY_FILE="$CREDENTIALS_DIRECTORY/minimax-api-key"
         if [ ! -d "${ocrVenv}" ] || [ ! -f "${ocrVenv}/.installed" ] || [ "${ocrVenv}/.installed" -ot "${ncOcrFlowSrc}/src/nc_ocr_flow/webhook_server.py" ] || [ "${ocrVenv}/.installed" -ot "${ncOcrFlowSrc}/src/nc_ocr_flow/ocr.py" ]; then
           echo "Creating OCR venv..."
           rm -rf "${ocrVenv}"
@@ -60,9 +61,26 @@
         pkgs.tesseract5
       ];
 
-      services.nextcloud.extraApps = { workflow_ocr = workflowOcr; };
+      # --- OCR Flow app: context-menu action → nc-ocr-flow webhook ---
+      # Install as a raw app directory (nix-built, no fetchNextcloudApp —
+      # the app is ours, built from this repo).
+      services.nextcloud.extraApps = {
+        workflow_ocr = workflowOcr;
+        # Nix-built app dir (appinfo/info.xml at store root — same shape as
+        # fetchNextcloudApp output)
+        ocrflow = pkgs.callPackage ../../../../pkgs/ocrflow-ncapp { };
+      };
       services.nextcloud.extraAppsEnable = true;
       services.nextcloud.appstoreEnable = lib.mkForce false;
+
+      # Wire the webhook secret into the app's system config so the PHP
+      # proxy can authenticate to the local nc-ocr-flow service.
+      # NB: $nextcloudOcc is NOT defined in postStart (only in the module's
+      # own script) — use config.services.nextcloud.occ directly.
+      systemd.services.nextcloud-setup.postStart = lib.mkAfter ''
+        ${config.services.nextcloud.occ}/bin/nextcloud-occ config:system:set ocrflow_url --value="http://127.0.0.1:8095"
+        ${config.services.nextcloud.occ}/bin/nextcloud-occ config:system:set ocrflow_secret --value="$(cat ${config.sops.secrets."nextcloud/ocr-webhook-secret".path})"
+      '';
 
       # --- OCR webhook receiver service ---
       systemd.services.nc-ocr-webhook = {
@@ -73,8 +91,14 @@
 
         environment = {
           NC_OCR_NC_URL = "http://localhost";
-          NC_OCR_NC_USER = "admin";
+          # WebDAV creds must match the app password in sops
+          # nextcloud/ocr-webdav-password (that password belongs to likivik,
+          # NOT admin — a user/password mismatch caused 401s and silently
+          # blocked all OCR processing, 2026-09-03).
+          NC_OCR_NC_USER = "likivik";
           NC_OCR_SURYA_URL = "http://serenity:8084";
+          # VLM backend: minimax (MiniMax-M3 vision) | surya. Default minimax.
+          NC_OCR_VLM_BACKEND = "minimax";
           NC_OCR_LISTEN_HOST = "127.0.0.1";
           NC_OCR_LISTEN_PORT = "8095";
           NC_OCR_FONT_PATH = "${pkgs.dejavu_fonts}/share/fonts/truetype/DejaVuSans.ttf";
@@ -94,9 +118,11 @@
           LoadCredential = let
             webdavPass = config.sops.secrets."nextcloud/ocr-webdav-password".path;
             webhookSecret = config.sops.secrets."nextcloud/ocr-webhook-secret".path;
+            minimaxKey = config.sops.secrets."nextcloud/minimax-api-key".path;
           in [
             "nc-ocr-password:${webdavPass}"
             "nc-ocr-webhook-secret:${webhookSecret}"
+            "minimax-api-key:${minimaxKey}"
           ];
         };
 

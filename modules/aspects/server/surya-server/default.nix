@@ -38,7 +38,10 @@
           pkgs.gcc
           pkgs.cudaPackages.cudatoolkit
           pkgs.stdenv.cc.cc.lib
-          pkgs.llama-cpp
+          # CUDA-enabled llama.cpp: the default pkgs.llama-cpp builds CPU-only
+          # (BLAS), so llama-server silently ran on CPU (365% CPU, GPU idle)
+          # despite -ngl 99. GPU build puts all layers on the 6GB card.
+          (pkgs.llama-cpp.override { cudaSupport = true; })
         ];
 
         environment = {
@@ -47,6 +50,11 @@
           SURYA_INFERENCE_BACKEND = "llamacpp";
           SURYA_INFERENCE_KEEP_ALIVE = "1";
           SURYA_INFERENCE_AUTOSTART = "1";
+          # 6GB VRAM card: default ctx (8 slots × 12k = 98k) + -ngl 99 didn't
+          # fit when the CUDA build was first tried; 4 slots × 8k = 32k total
+          # is enough for OCR requests (single page each) and fits VRAM.
+          SURYA_INFERENCE_PARALLEL = "4";
+          SURYA_INFERENCE_CTX_SIZE = "32768";
         };
 
         serviceConfig = {

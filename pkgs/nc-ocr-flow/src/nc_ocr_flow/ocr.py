@@ -51,6 +51,7 @@ class ProcessResult:
     output_pdf: str
     tesseract_pages: list[int] = field(default_factory=list)
     vlm_pages: list[int] = field(default_factory=list)
+    vlm_failed_pages: list[int] = field(default_factory=list)
 
 
 # --- ocrmypdf (tesseract pass) -----------------------------------------------
@@ -190,9 +191,20 @@ def _render_page_png(pdf_path: Path, page_idx: int, dpi: int = 200) -> bytes:
 # --- Surya VLM OCR -----------------------------------------------------------
 
 def _surya_ocr_page(png_bytes: bytes):
-    """Call Surya server on serenity, get blocks with bbox + text."""
-    from .surya_client import ocr_page
-    return ocr_page(png_bytes)
+    """Call the configured VLM backend for a page.
+
+    NC_OCR_VLM_BACKEND = minimax (default, no fallback)
+                       | surya (Surya only).
+    No cross-backend fallback: if MiniMax fails the page keeps the
+    tesseract layer (safe degradation) instead of silently falling back.
+    """
+    backend = os.environ.get("NC_OCR_VLM_BACKEND", "minimax").strip().lower()
+    if backend == "surya":
+        from .surya_client import ocr_page
+        return ocr_page(png_bytes)
+
+    from .minimax_client import ocr_page_minimax
+    return ocr_page_minimax(png_bytes)
 
 
 # --- Sandwich PDF embedding (PyMuPDF) ----------------------------------------
@@ -253,34 +265,53 @@ def _embed_surya_text(doc, page_idx: int, surya_result) -> None:
         y1 = block.bbox[3] * scale_y
         bbox = fitz.Rect(x0, y0, x1, y1)
 
-        # Calculate font size to fit bbox width
-        text = block.text
-        tl = font.text_length(text, fontsize=1)
-        if tl > 0:
-            fontsize = bbox.width / tl
+        # Single-block backends (MiniMax-M3) return multi-line text with one
+        # full-page bbox. insert_text draws a single run — a 3000-char line
+        # overflows the page width and lands outside the media box, so
+        # get_text() returns almost nothing. Split into lines and lay them
+        # out vertically inside the block bbox.
+        lines = block.text.split("\n")
+        line_bboxes = []
+        if len(lines) > 1:
+            n = len(lines)
+            step = bbox.height / max(n, 1)
+            for i, line in enumerate(lines):
+                lb = fitz.Rect(bbox.x0, bbox.y0 + i * step,
+                               bbox.x1, bbox.y0 + (i + 1) * step)
+                line_bboxes.append((line, lb))
         else:
-            fontsize = 10
+            line_bboxes.append((block.text, bbox))
 
-        # Clamp font size to reasonable range
-        fontsize = max(4, min(fontsize, 72))
+        for text, lb in line_bboxes:
+            if not text:
+                continue
+            # Calculate font size to fit bbox width
+            tl = font.text_length(text, fontsize=1)
+            if tl > 0:
+                fontsize = lb.width / tl
+            else:
+                fontsize = 10
 
-        # Insert invisible text at bottom-left of bbox
-        # render_mode=3 = invisible (not rendered, but selectable/searchable)
-        pos = fitz.Point(bbox.x0, bbox.y1)
-        # Adjust for descenders (g, y, p, etc.)
-        if font.descender < 0:
-            pos.y += abs(font.descender) * fontsize * 0.3
+            # Clamp font size to reasonable range
+            fontsize = max(4, min(fontsize, 72))
 
-        try:
-            page.insert_text(
-                pos, text,
-                fontsize=fontsize,
-                fontname=fontname,
-                render_mode=3,  # invisible
-            )
-        except Exception as exc:
-            log.warning("text insert failed on page %d, block bbox=%s: %s",
-                        page_idx, block.bbox, exc)
+            # Insert invisible text at bottom-left of bbox
+            # render_mode=3 = invisible (not rendered, but selectable/searchable)
+            pos = fitz.Point(lb.x0, lb.y1)
+            # Adjust for descenders (g, y, p, etc.)
+            if font.descender < 0:
+                pos.y += abs(font.descender) * fontsize * 0.3
+
+            try:
+                page.insert_text(
+                    pos, text,
+                    fontsize=fontsize,
+                    fontname=fontname,
+                    render_mode=3,  # invisible
+                )
+            except Exception as exc:
+                log.warning("text insert failed on page %d, block bbox=%s: %s",
+                            page_idx, block.bbox, exc)
 
 
 # --- main entry point --------------------------------------------------------
@@ -288,6 +319,7 @@ def _embed_surya_text(doc, page_idx: int, surya_result) -> None:
 def process_pdf(
     input_path: str | Path,
     output_path: str | Path | None = None,
+    engine: str = "auto",
 ) -> ProcessResult:
     """Run the full hybrid OCR pipeline on a single PDF.
 
@@ -297,6 +329,9 @@ def process_pdf(
     Args:
         input_path: Source PDF (or image converted to PDF)
         output_path: Destination PDF (default: input with .ocr.pdf suffix)
+        engine: "auto" (default, tesseract-first with VLM fallback),
+                "tesseract" (VLM fallback disabled), or "vlm" (force VLM
+                on all non-skipped pages)
 
     Returns:
         ProcessResult with output path, tesseract/VLM page lists.
@@ -331,28 +366,41 @@ def process_pdf(
 
     # Identify pages needing VLM (skip pages ocrmypdf already skipped)
     vlm_pages = []
-    for page_idx in range(num_pages):
-        if page_idx in skipped_pages:
-            continue
-        meta = page_meta.get(page_idx + 1)  # TSV uses 1-indexed pages
-        if meta is None or _needs_vlm(meta):
+    if engine == "vlm":
+        # Force VLM on every page tesseract touched (skip born-digital pages)
+        for page_idx in range(num_pages):
+            if page_idx in skipped_pages:
+                continue
             vlm_pages.append(page_idx)
+    elif engine == "tesseract":
+        pass  # VLM fallback disabled
+    else:  # auto
+        for page_idx in range(num_pages):
+            if page_idx in skipped_pages:
+                continue
+            meta = page_meta.get(page_idx + 1)  # TSV uses 1-indexed pages
+            if meta is None or _needs_vlm(meta):
+                vlm_pages.append(page_idx)
 
     log.info("tesseract pages: %d, vlm pages: %d",
              len(page_meta), len(vlm_pages))
 
-    # Pass 2: Surya VLM for bad pages
+    # Pass 2: VLM for bad pages
+    vlm_failed_pages = []
     if vlm_pages:
         doc = fitz.open(str(output_pdf))
 
         for page_idx in vlm_pages:
             try:
-                log.info("Surya OCR page %d", page_idx)
+                log.info("VLM OCR page %d (backend=%s)", page_idx,
+                         os.environ.get("NC_OCR_VLM_BACKEND", "minimax"))
                 png = _render_page_png(output_pdf, page_idx)
                 surya_result = _surya_ocr_page(png)
                 _embed_surya_text(doc, page_idx, surya_result)
             except Exception as exc:
-                log.warning("Surya failed for page %d: %s", page_idx, exc)
+                # Page keeps the tesseract layer; record for metadata stamp
+                log.warning("VLM failed for page %d: %s", page_idx, exc)
+                vlm_failed_pages.append(page_idx)
 
         # Save with incremental update (preserves tesseract pages)
         doc.saveIncr()
@@ -362,6 +410,7 @@ def process_pdf(
         output_pdf=str(output_pdf),
         tesseract_pages=sorted(m.page_idx for m in page_meta.values()),
         vlm_pages=sorted(vlm_pages),
+        vlm_failed_pages=vlm_failed_pages,
     )
 
 

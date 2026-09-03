@@ -30,6 +30,12 @@ log = logging.getLogger(__name__)
 PER_PAGE_CONF_FLOOR = 70.0
 PER_PAGE_MIN_CHARS = 40
 
+# L2 handwriting router (WritingtypeAPI DenseNet). When enabled
+# (NC_OCR_L2_ROUTER=1) every non-skipped page is classified first;
+# handwritten/combination pages go straight to the VLM tier regardless of
+# tesseract confidence. Typed pages keep the conf-based decision.
+L2_ROUTER_ENABLED = os.environ.get("NC_OCR_L2_ROUTER", "1") == "1"
+
 # Font for invisible text layer (must support Cyrillic)
 # On NixOS: dejavu_fonts, noto-fonts, etc.
 FONT_PATH = os.environ.get(
@@ -51,6 +57,9 @@ class ProcessResult:
     output_pdf: str
     tesseract_pages: list[int] = field(default_factory=list)
     vlm_pages: list[int] = field(default_factory=list)
+    vlm_failed_pages: list[int] = field(default_factory=list)
+    # L2 router verdicts: {page_idx: {"label","confidence","escalate"}}
+    l2_pages: dict[int, dict] = field(default_factory=dict)
 
 
 # --- ocrmypdf (tesseract pass) -----------------------------------------------
@@ -189,10 +198,26 @@ def _render_page_png(pdf_path: Path, page_idx: int, dpi: int = 200) -> bytes:
 
 # --- Surya VLM OCR -----------------------------------------------------------
 
-def _surya_ocr_page(png_bytes: bytes):
-    """Call Surya server on serenity, get blocks with bbox + text."""
-    from .surya_client import ocr_page
-    return ocr_page(png_bytes)
+def _surya_ocr_page(png_bytes: bytes, backend: str | None = None):
+    """Call the configured VLM backend for a page.
+
+    backend (explicit) overrides NC_OCR_VLM_BACKEND env.
+    monkey   = MonkeyOCRv2-B on serenity GPU (tier-2, typed pages, free)
+    minimax  = MiniMax-M3 tool-use JSON (tier-3, handwritten/photographed)
+    surya    = Surya only.
+    No cross-backend fallback at this layer: failures propagate to the
+    caller which decides tier fallback.
+    """
+    backend = (backend or os.environ.get("NC_OCR_VLM_BACKEND", "monkey")).strip().lower()
+    if backend == "surya":
+        from .surya_client import ocr_page
+        return ocr_page(png_bytes)
+    if backend == "monkey":
+        from .monkey_client import ocr_page
+        return ocr_page(png_bytes)
+
+    from .minimax_client import ocr_page_minimax
+    return ocr_page_minimax(png_bytes)
 
 
 # --- Sandwich PDF embedding (PyMuPDF) ----------------------------------------
@@ -253,34 +278,53 @@ def _embed_surya_text(doc, page_idx: int, surya_result) -> None:
         y1 = block.bbox[3] * scale_y
         bbox = fitz.Rect(x0, y0, x1, y1)
 
-        # Calculate font size to fit bbox width
-        text = block.text
-        tl = font.text_length(text, fontsize=1)
-        if tl > 0:
-            fontsize = bbox.width / tl
+        # Single-block backends (MiniMax-M3) return multi-line text with one
+        # full-page bbox. insert_text draws a single run — a 3000-char line
+        # overflows the page width and lands outside the media box, so
+        # get_text() returns almost nothing. Split into lines and lay them
+        # out vertically inside the block bbox.
+        lines = block.text.split("\n")
+        line_bboxes = []
+        if len(lines) > 1:
+            n = len(lines)
+            step = bbox.height / max(n, 1)
+            for i, line in enumerate(lines):
+                lb = fitz.Rect(bbox.x0, bbox.y0 + i * step,
+                               bbox.x1, bbox.y0 + (i + 1) * step)
+                line_bboxes.append((line, lb))
         else:
-            fontsize = 10
+            line_bboxes.append((block.text, bbox))
 
-        # Clamp font size to reasonable range
-        fontsize = max(4, min(fontsize, 72))
+        for text, lb in line_bboxes:
+            if not text:
+                continue
+            # Calculate font size to fit bbox width
+            tl = font.text_length(text, fontsize=1)
+            if tl > 0:
+                fontsize = lb.width / tl
+            else:
+                fontsize = 10
 
-        # Insert invisible text at bottom-left of bbox
-        # render_mode=3 = invisible (not rendered, but selectable/searchable)
-        pos = fitz.Point(bbox.x0, bbox.y1)
-        # Adjust for descenders (g, y, p, etc.)
-        if font.descender < 0:
-            pos.y += abs(font.descender) * fontsize * 0.3
+            # Clamp font size to reasonable range
+            fontsize = max(4, min(fontsize, 72))
 
-        try:
-            page.insert_text(
-                pos, text,
-                fontsize=fontsize,
-                fontname=fontname,
-                render_mode=3,  # invisible
-            )
-        except Exception as exc:
-            log.warning("text insert failed on page %d, block bbox=%s: %s",
-                        page_idx, block.bbox, exc)
+            # Insert invisible text at bottom-left of bbox
+            # render_mode=3 = invisible (not rendered, but selectable/searchable)
+            pos = fitz.Point(lb.x0, lb.y1)
+            # Adjust for descenders (g, y, p, etc.)
+            if font.descender < 0:
+                pos.y += abs(font.descender) * fontsize * 0.3
+
+            try:
+                page.insert_text(
+                    pos, text,
+                    fontsize=fontsize,
+                    fontname=fontname,
+                    render_mode=3,  # invisible
+                )
+            except Exception as exc:
+                log.warning("text insert failed on page %d, block bbox=%s: %s",
+                            page_idx, block.bbox, exc)
 
 
 # --- main entry point --------------------------------------------------------
@@ -288,6 +332,7 @@ def _embed_surya_text(doc, page_idx: int, surya_result) -> None:
 def process_pdf(
     input_path: str | Path,
     output_path: str | Path | None = None,
+    engine: str = "auto",
 ) -> ProcessResult:
     """Run the full hybrid OCR pipeline on a single PDF.
 
@@ -297,6 +342,9 @@ def process_pdf(
     Args:
         input_path: Source PDF (or image converted to PDF)
         output_path: Destination PDF (default: input with .ocr.pdf suffix)
+        engine: "auto" (default, tesseract-first with VLM fallback),
+                "tesseract" (VLM fallback disabled), or "vlm" (force VLM
+                on all non-skipped pages)
 
     Returns:
         ProcessResult with output path, tesseract/VLM page lists.
@@ -331,28 +379,96 @@ def process_pdf(
 
     # Identify pages needing VLM (skip pages ocrmypdf already skipped)
     vlm_pages = []
-    for page_idx in range(num_pages):
-        if page_idx in skipped_pages:
-            continue
-        meta = page_meta.get(page_idx + 1)  # TSV uses 1-indexed pages
-        if meta is None or _needs_vlm(meta):
-            vlm_pages.append(page_idx)
+    l2_pages: dict[int, dict] = {}
+
+    # L2 handwriting router: classify every non-skipped page once.
+    # handwritten/combination → force VLM (typed gate bypassed);
+    # typewritten → keep conf-based decision.
+    if L2_ROUTER_ENABLED and engine != "tesseract":
+        try:
+            from .writingtype_client import classify_page_writingtype, model_available
+            if model_available():
+                for page_idx in range(num_pages):
+                    if page_idx in skipped_pages:
+                        continue
+                    try:
+                        png = _render_page_png(input_pdf, page_idx, dpi=100)
+                        wt = classify_page_writingtype(png)
+                        l2_pages[page_idx] = {
+                            "label": wt.label,
+                            "confidence": round(wt.confidence, 3),
+                            "escalate": wt.escalate,
+                        }
+                        if wt.escalate and page_idx not in vlm_pages:
+                            vlm_pages.append(page_idx)
+                    except Exception as exc:
+                        log.warning("L2 router failed on page %d: %s", page_idx, exc)
+            else:
+                log.warning("L2 router enabled but model missing: %s",
+                            os.environ.get("NC_OCR_WRITINGTYPE_MODEL",
+                                           "/etc/static/nc-ocr/writing_type_v1.onnx"))
+        except ImportError as exc:
+            log.warning("L2 router import failed: %s", exc)
+
+    if engine == "vlm":
+        # Force VLM on every page tesseract touched (skip born-digital pages)
+        for page_idx in range(num_pages):
+            if page_idx in skipped_pages:
+                continue
+            if page_idx not in vlm_pages:
+                vlm_pages.append(page_idx)
+    elif engine == "tesseract":
+        pass  # VLM fallback disabled
+    else:  # auto
+        for page_idx in range(num_pages):
+            if page_idx in skipped_pages:
+                continue
+            if page_idx in vlm_pages:
+                continue  # already escalated by L2
+            meta = page_meta.get(page_idx + 1)  # TSV uses 1-indexed pages
+            if meta is None or _needs_vlm(meta):
+                vlm_pages.append(page_idx)
 
     log.info("tesseract pages: %d, vlm pages: %d",
              len(page_meta), len(vlm_pages))
 
-    # Pass 2: Surya VLM for bad pages
+    # Pass 2: VLM for bad pages. Two tiers:
+    #   tier-2 (typed pages): NC_OCR_VLM_BACKEND (monkey = free GPU)
+    #   tier-3 (L2-escalated handwritten/combination): NC_OCR_ESCALATION_BACKEND
+    #           (minimax M3 tool-use JSON, paid API) — with fallback to tier-2
+    #           on API failure so escalated pages still get a VLM layer.
+    vlm_failed_pages = []
+    tier2_backend = os.environ.get("NC_OCR_VLM_BACKEND", "monkey")
+    tier3_backend = os.environ.get("NC_OCR_ESCALATION_BACKEND", "minimax")
     if vlm_pages:
         doc = fitz.open(str(output_pdf))
 
         for page_idx in vlm_pages:
+            escalated = l2_pages.get(page_idx, {}).get("escalate", False)
+            backend = tier3_backend if escalated else tier2_backend
             try:
-                log.info("Surya OCR page %d", page_idx)
+                log.info("VLM OCR page %d (backend=%s, escalated=%s)",
+                         page_idx, backend, escalated)
                 png = _render_page_png(output_pdf, page_idx)
-                surya_result = _surya_ocr_page(png)
+                surya_result = _surya_ocr_page(png, backend=backend)
                 _embed_surya_text(doc, page_idx, surya_result)
             except Exception as exc:
-                log.warning("Surya failed for page %d: %s", page_idx, exc)
+                # Escalated page: fall back to tier-2 (free) so it still
+                # gets a VLM layer; typed pages keep the tesseract layer.
+                if escalated:
+                    log.warning("tier-3 failed for page %d (%s), falling back to tier-2",
+                                page_idx, exc)
+                    try:
+                        png = _render_page_png(output_pdf, page_idx)
+                        surya_result = _surya_ocr_page(png, backend=tier2_backend)
+                        _embed_surya_text(doc, page_idx, surya_result)
+                        continue
+                    except Exception as exc2:
+                        log.warning("tier-2 fallback also failed for page %d: %s",
+                                    page_idx, exc2)
+                else:
+                    log.warning("VLM failed for page %d: %s", page_idx, exc)
+                vlm_failed_pages.append(page_idx)
 
         # Save with incremental update (preserves tesseract pages)
         doc.saveIncr()
@@ -362,6 +478,8 @@ def process_pdf(
         output_pdf=str(output_pdf),
         tesseract_pages=sorted(m.page_idx for m in page_meta.values()),
         vlm_pages=sorted(vlm_pages),
+        vlm_failed_pages=vlm_failed_pages,
+        l2_pages=l2_pages,
     )
 
 

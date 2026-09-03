@@ -29,7 +29,8 @@
     nixos = { config, lib, pkgs, ... }:
     let
       modelsDir = "/var/lib/llama-cpp";
-      llama-cpp-cuda = pkgs.llama-cpp.override { cudaSupport = true; };
+      # Blessed pkgsCuda scope — cache-friendly (see core/nix.nix substituters)
+      llama-cpp-cuda = pkgs.pkgsCuda.llama-cpp;
       llama-server = "${lib.getExe' llama-cpp-cuda "llama-server"}";
       gpuServiceCfg = {
         DeviceAllow = [ "char-nvidiactl" "char-nvidia-frontend" "char-nvidia-uvm" "char-dri" ];

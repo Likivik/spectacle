@@ -8,13 +8,11 @@ in
       den.aspects.core
       den.aspects.core.tailscale
       den.aspects.server.hermes-agent
+      den.aspects.server.hermes-webui
       den.aspects.server.email
       den.aspects.server.sillytavern
       den.aspects.server.fishaudio-proxy
-      den.aspects.server.pocketrisu
-      den.aspects.server.n8n
       den.aspects.server.beszel
-      den.aspects.tts
       den.aspects.server.sops
       den.aspects.sops-cli
     ];
@@ -254,18 +252,7 @@ in
       boot.kernel.sysctl."net.ipv4.ip_forward" = 1;
       boot.kernel.sysctl."net.ipv6.conf.all.forwarding" = 1;
 
-      systemd.services.tailscale-serve-pocketrisu = {
-        description = "Tailscale HTTPS serve for PocketRisu";
-        after = [ "network-online.target" "tailscaled.service" "pocketrisu.service" ];
-        wants = [ "network-online.target" ];
-        wantedBy = [ "multi-user.target" ];
-        serviceConfig = {
-          Type = "oneshot";
-          RemainAfterExit = true;
-          ExecStart = "${config.services.tailscale.package}/bin/tailscale serve --bg http://localhost:9099";
-          ExecStop = "${config.services.tailscale.package}/bin/tailscale serve off || true";
-        };
-      };
+
       systemd.services.fix-ts-gro = {
         description = "Fix UDP GRO forwarding for Tailscale exit node performance";
         wants = [ "network-online.target" ];

@@ -18,6 +18,7 @@
       den.aspects.server.nc-rag
       den.aspects.server.olmocr-vision
       den.aspects.server.surya-server
+      den.aspects.server.monkey-server
     ];
 
     maid = {
@@ -129,22 +130,11 @@
           kernelParams = [ "nvidia_drm.modeset=1" ];
         };
 
-        # Remote desktop
-        environment.systemPackages = [ pkgs.rustdesk ];
-
-        systemd.user.services.rustdesk = {
-          description = "RustDesk remote desktop daemon";
-          after = [ "graphical-session.target" ];
-          wants = [ "graphical-session.target" ];
-          wantedBy = [ "default.target" ];
-
-          serviceConfig = {
-            Type = "simple";
-            ExecStart = "${pkgs.rustdesk}/bin/rustdesk";
-            Restart = "on-failure";
-            RestartSec = 5;
-          };
-        };
+        # Remote desktop: rustdesk dropped 2026-09-07 — no Hydra cache (job
+        # removed from latest eval, vendor-hash nondeterminism #527155), so
+        # it source-rebuilds on every nixpkgs bump and stalls deploys 40+ min.
+        # The Wayland unattended-login fix never landed; if it's needed again
+        # use a pinned rev with the vendor fix or gnome-remote-desktop.
 
         # Auto-pull spectacle repo every 5 min
         systemd.services.spectacle-autopull = {

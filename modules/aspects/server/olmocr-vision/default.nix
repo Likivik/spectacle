@@ -62,7 +62,10 @@
           # Equivalent to: -m model.gguf --mmproj mmproj.gguf
           # See llama.cpp multimodal.md.
           ExecStart = let
-            llamaCppCuda = pkgs.llama-cpp.override { cudaSupport = true; };
+            # Blessed CUDA scope (nixpkgs canonical cudaSupport config) —
+            # matches the Nixpkgs CUDA team's cache jobs; the ad-hoc
+            # .override { cudaSupport = true; } hash never hits any cache.
+            llamaCppCuda = pkgs.pkgsCuda.llama-cpp;
           in ''
             ${lib.getExe' llamaCppCuda "llama-server"} \
               --host 127.0.0.1 --port 8083 \

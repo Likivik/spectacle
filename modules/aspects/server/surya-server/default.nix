@@ -38,7 +38,11 @@
           pkgs.gcc
           pkgs.cudaPackages.cudatoolkit
           pkgs.stdenv.cc.cc.lib
-          pkgs.llama-cpp
+          # CUDA-enabled llama.cpp via the blessed pkgsCuda scope: cache-hit
+          # friendly (matches Nixpkgs CUDA team jobs). The old ad-hoc
+          # .override { cudaSupport = true; } hash never hit any public
+          # cache and recompiled all ggml-cuda kernels on every pin bump.
+          pkgs.pkgsCuda.llama-cpp
         ];
 
         environment = {
@@ -47,6 +51,11 @@
           SURYA_INFERENCE_BACKEND = "llamacpp";
           SURYA_INFERENCE_KEEP_ALIVE = "1";
           SURYA_INFERENCE_AUTOSTART = "1";
+          # 6GB VRAM card: default ctx (8 slots × 12k = 98k) + -ngl 99 didn't
+          # fit when the CUDA build was first tried; 4 slots × 8k = 32k total
+          # is enough for OCR requests (single page each) and fits VRAM.
+          SURYA_INFERENCE_PARALLEL = "4";
+          SURYA_INFERENCE_CTX_SIZE = "32768";
         };
 
         serviceConfig = {

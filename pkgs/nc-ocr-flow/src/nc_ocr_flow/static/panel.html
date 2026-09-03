@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>OCR Flow — Панель</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 1.5rem; font-family: system-ui, -apple-system, sans-serif;
+    background: #14161a; color: #e2e4e9; font-size: 14px;
+  }
+  h1 { font-size: 1.2rem; margin: 0 0 .25rem; }
+  .sub { color: #8b90a0; font-size: .85rem; margin-bottom: 1.25rem; }
+  .auth { display: flex; gap: .5rem; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; }
+  .auth input[type=password] {
+    background: #1e2128; color: #e2e4e9; border: 1px solid #2e323c; border-radius: 6px;
+    padding: .45rem .7rem; font-size: .9rem; width: 22rem;
+  }
+  .auth button {
+    background: #3563e9; border: none; color: #fff; border-radius: 6px;
+    padding: .45rem 1rem; cursor: pointer; font-size: .9rem;
+  }
+  .auth button:hover { background: #2a52c9; }
+  .stats { display: flex; gap: 1rem; margin: 1rem 0; flex-wrap: wrap; }
+  .stat {
+    background: #1e2128; border: 1px solid #2e323c; border-radius: 8px;
+    padding: .6rem 1rem; min-width: 7rem;
+  }
+  .stat b { display: block; font-size: 1.35rem; }
+  .stat span { color: #8b90a0; font-size: .78rem; }
+  table { width: 100%; border-collapse: collapse; margin-top: .5rem; }
+  th, td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid #262a33; font-size: .85rem; }
+  th { color: #8b90a0; font-weight: 600; font-size: .75rem; text-transform: uppercase; }
+  td.path { max-width: 34rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .badge { display: inline-block; padding: .1rem .55rem; border-radius: 10px; font-size: .72rem; font-weight: 600; }
+  .badge.queued { background: #3a3413; color: #e8c832; }
+  .badge.running { background: #123a5c; color: #4db2ff; }
+  .badge.done { background: #123b24; color: #35d07f; }
+  .badge.error { background: #47161a; color: #ff6b6b; }
+  .badge.skipped { background: #2a2d36; color: #9aa0ae; }
+  .rescan-row { display: flex; gap: .5rem; margin: 1.25rem 0; padding: 1rem; background: #1e2128; border-radius: 8px; border: 1px solid #2e323c; align-items: center; flex-wrap: wrap; }
+  .rescan-row input[type=text] { flex: 1; min-width: 24rem; }
+  .rescan-row input, select {
+    background: #14161a; color: #e2e4e9; border: 1px solid #2e323c; border-radius: 6px;
+    padding: .45rem .7rem; font-size: .88rem;
+  }
+  .rescan-row button {
+    background: #3563e9; border: none; color: #fff; border-radius: 6px;
+    padding: .5rem 1.2rem; cursor: pointer;
+  }
+  select { appearance: auto; }
+  .empty { color: #8b90a0; padding: 1.5rem 0; text-align: center; }
+  .flash { position: fixed; bottom: 1rem; right: 1rem; background: #123b24; color: #35d07f;
+    padding: .7rem 1.2rem; border-radius: 8px; display: none; font-size: .88rem; }
+  .flash.err { background: #47161a; color: #ff6b6b; }
+  .err-msg { color: #ff6b6b; font-size: .78rem; }
+</style>
+</head>
+<body>
+  <h1>OCR Flow</h1>
+  <div class="sub">nc-ocr-flow на poweredge — очередь OCR Nextcloud</div>
+
+  <div class="auth">
+    <input type="password" id="secret" placeholder="webhook secret" autocomplete="off">
+    <button onclick="saveSecret()">Сохранить</button>
+    <button onclick="refresh()">Обновить</button>
+    <span id="conn" class="sub"></span>
+  </div>
+
+  <div class="rescan-row">
+    <input type="text" id="rescanPath" placeholder="/likivik/files/Work/.../файл.pdf">
+    <select id="engine">
+      <option value="auto">auto (tesseract + VLM fallback)</option>
+      <option value="tesseract">только tesseract</option>
+      <option value="vlm">VLM (Surya)</option>
+    </select>
+    <button onclick="rescan()">Пересканировать</button>
+  </div>
+
+  <div class="rescan-row" style="margin-top:.4rem">
+    <input type="text" id="scanAllFolder" placeholder="папка, пусто = всё хранилище (Work/1-Аренда)">
+    <button onclick="scanAll()">Сканировать всё (skip OCR-нутых)</button>
+  </div>
+
+  <div class="stats" id="stats"></div>
+
+  <h1 style="font-size:1rem">Активные</h1>
+  <table>
+    <thead><tr><th>#</th><th>Статус</th><th>Файл</th><th>Движок</th><th>Начат</th></tr></thead>
+    <tbody id="active"></tbody>
+  </table>
+
+  <h1 style="font-size:1rem; margin-top:1.5rem">История</h1>
+  <table>
+    <thead><tr><th>#</th><th>Статус</th><th>Файл</th><th>Движок</th><th>Время</th></tr></thead>
+    <tbody id="history"></tbody>
+  </table>
+
+  <div class="flash" id="flash"></div>
+
+<script>
+const SKEY = 'ocrflow_secret';
+const secret = () => localStorage.getItem(SKEY) || '';
+const $ = (id) => document.getElementById(id);
+
+$('secret').value = secret();
+if (secret()) refresh();
+setInterval(() => { if (secret()) refresh(); }, 5000);
+
+function saveSecret() {
+  localStorage.setItem(SKEY, $('secret').value.trim());
+  refresh();
+}
+
+function flash(msg, err=false) {
+  const f = $('flash');
+  f.textContent = msg;
+  f.className = 'flash' + (err ? ' err' : '');
+  f.style.display = 'block';
+  setTimeout(() => f.style.display = 'none', 3500);
+}
+
+async function api(path, opts={}) {
+  const r = await fetch(path, {
+    ...opts,
+    headers: { 'X-Webhook-Secret': secret(), 'Content-Type': 'application/json', ...(opts.headers||{}) },
+  });
+  if (!r.ok) {
+    const d = await r.json().catch(() => ({}));
+    throw new Error(d.detail || r.statusText);
+  }
+  return r.json();
+}
+
+async function refresh() {
+  try {
+    const d = await api('/status?limit=100');
+    $('conn').textContent = '✓ подключено';
+    renderStats(d);
+    renderActive(d);
+    renderHistory(d);
+  } catch (e) {
+    $('conn').textContent = '✗ ' + e.message;
+  }
+}
+
+function renderStats(d) {
+  const hist = d.history || [];
+  const done = hist.filter(j => j.status === 'done').length;
+  const errs = hist.filter(j => j.status === 'error').length;
+  const skip = hist.filter(j => j.status === 'skipped').length;
+  $('stats').innerHTML = `
+    <div class="stat"><b>${d.queue_depth}</b><span>в очереди</span></div>
+    <div class="stat"><b>${(d.running||[]).length}</b><span>выполняется</span></div>
+    <div class="stat"><b>${done}</b><span>готово</span></div>
+    <div class="stat"><b>${errs}</b><span>ошибок</span></div>
+    <div class="stat"><b>${skip}</b><span>пропущено</span></div>`;
+}
+
+function dur(j) {
+  const t0 = j.started || j.created;
+  const t1 = j.finished || Date.now() / 1000;
+  const s = Math.round(t1 - t0);
+  return s < 60 ? `${s}с` : `${Math.floor(s / 60)}м${s % 60}с`;
+}
+
+function timeStr(ts) {
+  if (!ts) return '—';
+  return new Date(ts * 1000).toLocaleTimeString('ru-RU');
+}
+
+function esc(s) {
+  // Escape HTML metacharacters — all interpolated values (file paths, error
+  // messages) originate from the OCR queue and may contain user-controlled
+  // Nextcloud file names.
+  return String(s ?? '').replace(/[&<>"']/g, c => (
+    {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function renderActive(d) {
+  const act = [...(d.running||[]), ...(d.queued||[])];
+  $('active').innerHTML = act.length ? act.map(j => `
+    <tr>
+      <td>${j.id}</td>
+      <td><span class="badge ${esc(j.status)}">${esc(j.status)}</span></td>
+      <td class="path" title="${esc(j.path)}">${esc(j.path)}</td>
+      <td>${esc(j.engine)}</td>
+      <td>${j.status === 'running' ? dur(j) : '—'}</td>
+    </tr>`).join('') : '<tr><td colspan="5" class="empty">очередь пуста</td></tr>';
+}
+
+function renderHistory(d) {
+  const h = d.history || [];
+  $('history').innerHTML = h.length ? h.map(j => `
+    <tr>
+      <td>${j.id}</td>
+      <td><span class="badge ${esc(j.status)}">${esc(j.status)}</span>${j.error ? `<div class="err-msg">${esc(j.error.slice(0,120))}</div>` : ''}</td>
+      <td class="path" title="${esc(j.path)}">${esc(j.path)}</td>
+      <td>${esc(j.engine)}</td>
+      <td>${timeStr(j.finished)}</td>
+    </tr>`).join('') : '<tr><td colspan="5" class="empty">нет истории</td></tr>';
+  // NOTE: innerHTML is used with esc() applied to every interpolated dynamic
+  // value (path, status, engine, error) — safe against XSS from filenames.
+}
+
+async function rescan() {
+  const p = $('rescanPath').value.trim();
+  if (!p) return flash('укажи путь файла', true);
+  try {
+    const d = await api('/rescan', { method: 'POST', body: JSON.stringify({ path: p, engine: $('engine').value }) });
+    flash(`задание #${d.job_id} поставлено в очередь (${d.engine})`);
+    $('rescanPath').value = '';
+    refresh();
+  } catch (e) {
+    flash(e.message, true);
+  }
+}
+
+async function scanAll() {
+  const folder = $('scanAllFolder').value.trim();
+  const label = folder || 'всё хранилище';
+  if (!confirm(`Поставить в очередь все PDF/картинки из «${label}»?\nУже OCR-нутые будут пропущены.`)) return;
+  try {
+    const d = await api('/scan-all', { method: 'POST', body: JSON.stringify({ folder, engine: 'auto', skip_ocrd: true }) });
+    flash(`в очередь: ${d.enqueued}, пропущено уже OCR-нутых: ${d.skipped_ocrd}`);
+    refresh();
+  } catch (e) {
+    flash(e.message, true);
+  }
+}
+</script>
+</body>
+</html>

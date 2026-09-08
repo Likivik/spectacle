@@ -1,5 +1,14 @@
 # Agent Instructions — Spectacle Repository
 
+## Always research latest best practices first
+
+Before designing, implementing, or choosing a library/architecture/approach
+for ANY task (bots, infra, nix, scripts), search the web for up-to-date best
+practices, official docs, and current literature FIRST. Do not rely on
+memory of how things were done before — frameworks (aiogram etc.) and
+standards change fast. Treat "I remember it" as a trigger to verify.
+Cite/document what you found when it shapes a decision.
+
 ## Repo Location
 
 - **Erebus**: `/Storage/Git/spectacle` — primary workspace (jj repo, local edits, agents run here)
@@ -26,6 +35,13 @@ This repo uses **jj** (Jujutsu) on top of git. jj is the primary VCS.
 2. **Never create git worktrees.** jj handles parallel work via `jj new` — multiple changes in one checkout.
 
 3. **Deploy flow — pre-deploy checks always before building/pushing:**
+
+   ⏱ **TIME-BOX FIRST (mandatory):** before starting, state an estimate for the
+   *whole* job — flake eval + dry-build + build + activation + any adjacent
+   work (commit/push, other hosts, follow-up fixes). Then report elapsed vs
+   estimate when done. NixOS flake evals (den + home-manager) take 5–15 min;
+   builds 5–60 min depending on cache hits. Never begin a switch without
+   saying how long it should take. Time-blindness needs an external clock.
 
    ```bash
    # 0. Check which host you're actually on (same repo path exists on

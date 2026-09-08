@@ -7,12 +7,15 @@
       nix.settings.experimental-features = [ "nix-command" "flakes" ]; # enable flakes & new nix cli
       nix.settings.extra-substituters = [
         "https://nix-community.cachix.org"
-        # Nixpkgs CUDA team cache (nixos-cuda jobset) + cuda-maintainers
-        # cachix: prebuilt CUDA/unfree packages (pkgsCuda scope). Hydra
-        # proper never builds unfree CUDA variants — without these, every
-        # pin bump recompiles the whole CUDA closure (nvcc, ggml, torch).
+        # Nixpkgs CUDA team cache (nixos-cuda jobset): prebuilt CUDA/unfree
+        # packages (pkgsCuda scope). Hydra proper never builds unfree CUDA
+        # variants — without this, every pin bump recompiles the whole CUDA
+        # closure (nvcc, ggml, torch).
+        #
+        # NOTE: the CUDA *maintainers* cachix (cuda-maintainers.cachix.org)
+        # does NOT exist — it returns HTTP 401 and stalls every eval. Do not
+        # re-add it; cache.nixos-cuda.org is the correct, working cache.
         "https://cache.nixos-cuda.org"
-        "https://cuda-maintainers.cachix.org"
         # "https://mirror.sjtu.edu.cn/nix-channels/store"
         # "https://mirrors.ustc.edu.cn/nix-channels/store"
         # "https://mirrors.tuna.tsinghua.edu.cn/nix-channels/store"
@@ -20,7 +23,6 @@
       nix.settings.trusted-public-keys = [
         "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
         "cache.nixos-cuda.org:74DUi4Ye579gUqzH4ziL9IyiJBlDpMRn9MBN8oNan9M="
-        "cuda-maintainers.cachix.org-1:0dq3bujKpuEPMCX6U4WylrUDZ9JyUG0VpVZa7CNfq5E="
       ];
       nix.optimise = {
         automatic = true;

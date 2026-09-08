@@ -9,10 +9,12 @@
 
   den.aspects.server.hermes-agent = {
     nixos = { config, pkgs, lib, ... }: let
-      # fork pins otel 1.43.0 (mcp 2.0.0 needs TraceFlags.RANDOM_TRACE_ID, added 1.42)
-      # and ships langfuse via the `observability` extra (no PYTHONPATH layering).
+      # Upstream v0.21.1: otel 1.39.1 suffices (mcp 2.0.0 requires >=1.28; no
+      # code uses TraceFlags.RANDOM_TRACE_ID). Langfuse ships as bundled opt-in
+      # plugin; SDK lazy-installs into HERMES_LAZY_INSTALL_TARGET (~/.hermes/
+      # lazy-packages) on first enable. No `observability` extra upstream.
       hermes-pkg = (inputs.hermes-agent.packages.${pkgs.system}.minimal).override {
-        extraDependencyGroups = [ "messaging" "observability" ];
+        extraDependencyGroups = [ "messaging" ];
       };
 
       # Extra (non-default) Hermes profiles. `default` stays hardcoded below for

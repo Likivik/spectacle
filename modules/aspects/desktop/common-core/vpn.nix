@@ -13,6 +13,10 @@
           mullvad-compass
 
           ktailctl
+          # nft CLI on every desktop host: the only reliable way to inspect /
+          # purge Mullvad's killswitch table (table inet mullvad) when it
+          # bricks the box (iptables -L shows nothing — it's nftables).
+          nftables
         ];
 
         # v2raya replaced by xray-vless (TUN-mode VLESS Reality service below)
@@ -26,15 +30,18 @@
         # Traffic exclusions (Mullvad split tunneling). Applied idempotently —
         # `mullvad exclude add` is additive; prune+re-add keeps the list exact.
         #
-        # Background (2026-09-07 serenity outage): Mullvad's kill-switch is a
-        # policy-routing ladder (ip rules 5210/5230/5250/5270, fwmark 0x80000,
-        # empty table 52) that blackholes ALL traffic while the tunnel is
-        # down. That is correct behavior — but with no exemptions beyond the
-        # tunnel itself, a no-internet boot deadlocks: daemon can't connect
-        # (no internet) → kill-switch blocks everything → tailscale can't
-        # even reach its bootstrap DERP servers → box unreachable. The
-        # exemptions below (LAN, gateway, bootstrap DNS, tailscale, NTP)
-        # keep recovery paths alive without un-VPNing user traffic.
+        # Background (2026-09-07 serenity 5h outage): Mullvad's kill-switch is
+        # a policy-routing ladder (ip rules 5210/5230/5250/5270, fwmark
+        # 0x80000) PLUS an nftables `table inet mullvad { output … policy
+        # drop }` block. The nft table survives daemon-stop, never shows in
+        # iptables -L, and blackholes ALL traffic (curl to ya.ru AND local
+        # gateway both fail) while the tunnel is down. A no-internet boot
+        # deadlocks: daemon can't connect → kill-switch blocks everything →
+        # tailscale can't reach bootstrap DERP → box unreachable. Recovery
+        # was literally `nft delete table inet mullvad` (2026-09-09). We keep
+        # the policy-routing exclusions (LAN/gateway/DNS/tailscale) so
+        # recovery paths survive, and purge the nft table in postStart so a
+        # stale table can never brick the host again.
         systemd.services.mullvad-vpn.postStart = ''
           sleep 2
           ${pkgs.mullvad}/bin/mullvad exclude add 100.64.0.0/10   # tailscale CGNAT range
@@ -46,13 +53,39 @@
           ${pkgs.mullvad}/bin/mullvad exclude add 8.8.8.8/32     # fallback DNS
           ${pkgs.mullvad}/bin/mullvad exclude add 9.9.9.9/32     # fallback DNS
         '';
+        
+        # Boot deadlock breaker (community-proven fix, nixpkgs#281102 +
+        # mullvad/mullvadvpn-app#8213): Mullvad 2025.6+ AUTO-ENABLES
+        # lockdown-mode on upgrade and on missing/corrupt settings, and the
+        # `mullvad-early-boot-blocking` / `mullvad-daemon` units apply the
+        # policy-drop nftables table (table inet mullvad) during EARLY BOOT —
+        # before any mullvad-vpn postStart could delete it. lockdown-mode
+        # makes the box always require the tunnel: no tunnel at boot = the
+        # box bricks itself (both curl to ya.ru AND local gateway fail).
+        #
+        # The durable fix is NOT deleting the table (races the daemon which
+        # re-applies on every state change) — it is forcing lockdown-mode
+        # OFF at every boot via an activation script (community-standard),
+        # so the daemon starts in the safe, non-blocking state. Deleting a
+        # stale table is kept as a belt-and-braces purge.
+        system.activationScripts.mullvadLockdownOff = {
+          supportsDryActivation = true;
+          text = ''
+            if [ "''$NIXOS_ACTION" = 'dry-activate' ]; then
+              echo "Dry run: mullvad lockdown-mode off"
+            else
+              # Best effort: only relevant when the daemon is present.
+              ${pkgs.mullvad}/bin/mullvad lockdown-mode set off || true
+              # Belt-and-braces: drop any stale killswitch table so a
+              # half-baked boot can never wedge traffic.
+              ${pkgs.nftables}/bin/nft delete table inet mullvad 2>/dev/null || true
+            fi
+          '';
+        };
 
-        # Boot deadlock breaker: mullvad-early-boot-blocking holds ALL traffic
-        # hostage until the tunnel is up. If the daemon can't connect (e.g.
-        # router down at 03:00), the box stays bricked until hands touch it.
-        # Allow a bounded window instead: daemon gets 90s to establish the
-        # tunnel; if it fails, the blocker relents and the box boots with a
-        # plain connection (Mullvad's own reconnect logic takes over later).
+        # Bounded window for the early-boot blocker: if the tunnel can't come
+        # up (router down at 03:00), the blocker relents in 90s instead of
+        # holding the box hostage until hands touch it.
         systemd.services.mullvad-early-boot-blocking.serviceConfig = {
           TimeoutStartSec = lib.mkForce "90s";
           # Failure to start the blocker must NOT wedge boot — the kill-switch

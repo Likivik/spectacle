@@ -28,7 +28,12 @@
       inputs.pyproject-build-systems.follows = "pyproject-build-systems";
     };
     hermes-agent = {
-      url = "github:Likivik/hermes-agent";
+      # Dropped our 2-commit deps fork (otel 1.43 pin + langfuse extra) — both
+      # obsolete upstream: otel 1.39.1 suffices (mcp 2.0.0 needs >=1.28; nothing
+      # uses TraceFlags.RANDOM_TRACE_ID), langfuse moved to bundled opt-in
+      # plugin (plugins/observability/langfuse) with lazy-install into
+      # HERMES_LAZY_INSTALL_TARGET. Pinned to release v0.21.1 (2026.9.7).
+      url = "github:NousResearch/hermes-agent/v2026.9.7";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     hermes-webui = {

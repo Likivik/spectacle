@@ -14,6 +14,15 @@ let
   expression = python3Packages.callPackage ./expression.nix { };
 in
 python3Packages.litellm.overridePythonAttrs (old: {
+  # litellm 1.98 (nixpkgs dc5d91f) ships a native rust component
+  # (litellm-rust/python-bridge, built via maturin+cargo). Cargo --jobs 4
+  # OOM-kills (SIGKILL) during aws-lc-sys linking on the 8G VPS. Serialise.
+  env = (old.env or { }) // {
+    CARGO_BUILD_JOBS = "2";
+  };
+  # cargo/maturin also respect this for the final rustc link step.
+  enableParallelBuilding = false;
+
   postPatch =
     (old.postPatch or "")
     + ''
@@ -34,6 +43,9 @@ python3Packages.litellm.overridePythonAttrs (old: {
     python3Packages.orjson
     python3Packages.fastapi-sso
     python3Packages.python-multipart
+    # litellm 1.98 (nixpkgs dc5d91f): proxy_server.py imports `websockets`
+    # unconditionally (line 40) — its pythonImportsCheck now fails without it.
+    python3Packages.websockets
     python3Packages.backoff
     python3Packages.apscheduler
     python3Packages.redis

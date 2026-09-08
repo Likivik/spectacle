@@ -9,16 +9,34 @@
         erebus-build = inputs.self.nixosConfigurations.erebus.config.system.build.toplevel;
 
         # No-VM dependency-contract smoke against the *sealed* hermes venv.
-        # Catches mcp 1.x->2.0 rename, otel<1.42 (RANDOM_TRACE_ID), and the
-        # langfuse PYTHONPATH-layering regression — all in seconds, no VM.
+        # Catches mcp 1.x->2.0 rename and venv import regressions — all in
+        # seconds, no VM. (otel/langfuse moved out of the venv: langfuse is
+        # upstream's bundled opt-in plugin with lazy-install; otel belongs to
+        # litellm's own closure now.)
         hermes-imports =
           let
             hermes-pkg = (inputs.hermes-agent.packages.${pkgs.system}.minimal).override {
-              extraDependencyGroups = [ "messaging" "observability" ];
+              extraDependencyGroups = [ "messaging" ];
             };
           in
           pkgs.runCommand "hermes-imports" { } ''
             ${hermes-pkg.hermesVenv}/bin/python3 ${../../pkgs/hermes-tests/venv_imports.py}
+            touch "$out"
+          '';
+
+        # litellm proxy import guard — the check we dropped from the package
+        # override (upstream pythonImportsCheck only imports "litellm", not the
+        # proxy, which is what services.litellm actually runs; regressions like
+        # the 1.98 `import websockets` break surface here, at build time, not
+        # at switch time). Uses the exact closure the service gets.
+        litellm-proxy-imports =
+          let
+            litellm = inputs.self.nixosConfigurations.erebus.config.services.litellm.package;
+          in
+          pkgs.runCommand "litellm-proxy-imports" { } ''
+            export SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
+            ${pkgs.python3.withPackages (_: [ litellm ])}/bin/python3 \
+              -c "import litellm.proxy.proxy_server"
             touch "$out"
           '';
 

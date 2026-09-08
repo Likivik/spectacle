@@ -1,11 +1,18 @@
 { config, pkgs, lib }:
 
 let
-  # litellm 1.97.0 + the missing `expression` dep (see pkgs/litellm.nix).
-  # nixpkgs 56c02bc bumped litellm 1.89->1.97 without packaging `expression`,
-  # so the stock `pkgs.litellm` crashes at import. Swap in the patched
-  # derivation via services.litellm.package.
-  litellm = pkgs.callPackage ../../../../pkgs/litellm.nix { };
+  # Upstream litellm from the pinned nixpkgs — NO override. The old
+  # pkgs/litellm.nix override (make_lazy patch + 16 propagated deps + strict
+  # pythonImportsCheck) is gone: nixpkgs dc5d91f packages litellm 1.98
+  # properly (proxy / proxy-runtime / extra_proxy extras; the ~50 SDK imports
+  # in custom_logger_registry moved to guarded litellm.integrations.* modules,
+  # so make_lazy is obsolete). Any overridePythonAttrs invalidates the cache —
+  # checks now live in pkgs/hermes-tests (litellm_proxy_imports) instead.
+  litellm = pkgs.python3Packages.litellm.overridePythonAttrs (old: {
+    propagatedBuildInputs = (old.propagatedBuildInputs or [ ])
+      ++ old.optional-dependencies.proxy
+      ++ old.optional-dependencies.proxy-runtime;
+  });
 in
 {
   # ── LiteLLM AI Gateway (upstream services.litellm module) ────────────

@@ -10,11 +10,12 @@
   den.aspects.server.hermes-webui = {
     nixos = { config, pkgs, lib, ... }:
       let
-        # The fork's agent env (messaging + observability extras) — same package
-        # the gateway units run with. passthru.hermesVenv survives the override;
-        # run_agent.py sits at that env's site-packages root.
+        # Upstream agent env (messaging extra only — no observability extra
+        # since we dropped the deps fork). Same package the gateway units
+        # run with. passthru.hermesVenv survives the override; run_agent.py
+        # sits at that env's site-packages root.
         hermes-pkg = (inputs.hermes-agent.packages.${pkgs.system}.minimal).override {
-          extraDependencyGroups = [ "messaging" "observability" ];
+          extraDependencyGroups = [ "messaging" ];
         };
         agent-site-packages = "${hermes-pkg.passthru.hermesVenv}/lib/python3.12/site-packages";
       in

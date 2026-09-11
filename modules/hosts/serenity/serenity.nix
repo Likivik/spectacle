@@ -33,6 +33,7 @@
       {
         pkgs,
         config,
+        lib,
         modulesPath,
         ...
       }:
@@ -62,6 +63,36 @@
             PasswordAuthentication = false;
           };
         };
+
+        # Tailscale control channel: force the "noise" dialer onto port 443.
+        #
+        # Tailscale's control client prefers plaintext HTTP on port 80 for the
+        # control-plane upgrade (the Noise handshake rides along in the HTTP
+        # upgrade request, saving a round trip) and only falls back to
+        # HTTPS:443 when port 80 fails *fast*. On serenity's ISP path, port 80
+        # is interfered with after that upgrade: registration succeeds, then
+        # the /machine/map long-poll is killed every 2 minutes, forever, so the
+        # node never holds a netmap. Symptom: the tailnet shows serenity
+        # offline and every peer sees rx 0, while the host itself has working
+        # internet.
+        #
+        #   control: map response long-poll timed out!            (every ~2m)
+        #   control: lite map update error after 2m0.001s: Post
+        #     "https://controlplane.tailscale.com/machine/map": context canceled
+        #   health(warnable=not-in-map-poll): error: Unable to connect to the
+        #     Tailscale coordination server ...
+        #
+        # Verified 2026-09-12 on serenity (tailscale 1.102.3, state file valid,
+        # node authorized):
+        #   http://controlplane.tailscale.com/health   -> times out
+        #   https://controlplane.tailscale.com/health  -> immediate response
+        #
+        # Upstream knob: TS_FORCE_NOISE_443 in control/controlhttp/client.go —
+        # "necessary when networks or middle boxes are messing with port 80",
+        # cf. tailscale#13597 and hassio-addons#688.
+        systemd.services.tailscaled.serviceConfig.Environment = lib.mkAfter [
+          "TS_FORCE_NOISE_443=true"
+        ];
 
         users.users.likivik.openssh.authorizedKeys.keys = [
           # hermes@erebus

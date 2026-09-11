@@ -14,7 +14,7 @@
       # plugin; SDK lazy-installs into HERMES_LAZY_INSTALL_TARGET (~/.hermes/
       # lazy-packages) on first enable. No `observability` extra upstream.
       hermes-pkg = (inputs.hermes-agent.packages.${pkgs.system}.minimal).override {
-        extraDependencyGroups = [ "messaging" ];
+        extraDependencyGroups = [ "messaging" "anthropic" ];
       };
 
       # Extra (non-default) Hermes profiles. `default` stays hardcoded below for

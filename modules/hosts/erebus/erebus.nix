@@ -13,6 +13,7 @@ in
       den.aspects.server.sillytavern
       den.aspects.server.fishaudio-proxy
       den.aspects.server.beszel
+      den.aspects.server.hr-bot
       den.aspects.server.sops
       den.aspects.sops-cli
     ];
@@ -91,6 +92,12 @@ in
           mode = "0600";
         };
         "hermes/telegram-bot-token" = {
+          sopsFile = ../../../secrets/erebus/secrets.yaml;
+          owner = "hermes";
+          group = "hermes";
+          mode = "0600";
+        };
+        "hermes/hr-bot-token" = {
           sopsFile = ../../../secrets/erebus/secrets.yaml;
           owner = "hermes";
           group = "hermes";
@@ -336,6 +343,8 @@ TROJANEOF
         libreoffice
         pandoc
         poppler-utils
+        ffmpeg
+        (python3.withPackages (ps: [ ps.numpy ps.pillow ]))
       ];
 
 

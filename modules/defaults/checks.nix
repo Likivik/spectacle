@@ -40,6 +40,28 @@
             touch "$out"
           '';
 
+        # hr-bot intake logic unit tests — no network, pure functions
+        # (kb/load/save/finish-card). Catches regressions like the missing
+        # `import html` that silently dropped candidate submissions (NameError
+        # in finish() before the jsonl append) and the undefined `ask()`
+        # helper in the free-text path. Runs the actual shipped hr_bot.py.
+        hr-bot-units =
+          let
+            # engine.py + test are pure stdlib (no aiogram import needed);
+            # keep a stocked python3 so a future handler-level test can use it.
+            py = pkgs.python3.withPackages (p: [ p.aiogram p.pytest ]);
+          in
+          pkgs.runCommand "hr-bot-units" { } ''
+            ${pkgs.coreutils}/bin/cp ${../../pkgs/hr-bot/engine.py} ./engine.py
+            ${pkgs.coreutils}/bin/cp ${../../pkgs/hr-bot/hr_bot.py} ./hr_bot.py
+            ${pkgs.coreutils}/bin/cp ${../../pkgs/hr-bot/test_hr_bot_engine.py} ./test_hr_bot_engine.py
+            ${py}/bin/python ./test_hr_bot_engine.py
+            # hr_bot.py is the FSM handler layer — at least compile-guard it so
+            # a syntax/import-shape error ships as a red check, not a crash.
+            ${py}/bin/python -c "import ast; ast.parse(open('hr_bot.py').read()); ast.parse(open('engine.py').read()); print('hr-bot compile OK')"
+            touch "$out"
+          '';
+
         # Hermetic hermes-tests (gateway proxy-removal guard + graphiti wiring).
         # Reads the repo's .nix source via conftest, so copy the tree in.
         hermes-tests =

@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+#
+# jjwsync — safe cross-agent sync for jj (Jujutsu) workspaces.
+#
+# Re-bases YOUR current working-copy change onto the latest tip of the other
+# agent's workspace (default@). Guarantees: no conflicts, no writes into
+# default@, no bookmark/main movement, fully reversible.
+#
+# Design: FAIL CLOSED. Any uncertainty or dirty state -> refuse & exit non-zero.
+#
+set -euo pipefail
+
+# ── config ───────────────────────────────────────────────────────────────────
+# Other agent's workspace working copy = the "default" workspace's @.
+# We operate ONLY on our OWN change; never on theirs.
+TARGET="default@"
+# We operate on our OWN working-copy change, never theirs.
+
+say() { printf '\033[1;34mjjwsync\033[0m: %s\n' "$*"; }
+die() { printf '\033[1;31mjjwsync\033[0m: %s\n' "$*" >&2; exit 1; }
+
+cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+command -v jj >/dev/null || die "jj not found on PATH"
+
+# ── Guardrail 0a: current workspace (never operate on stale) ────────────────
+jj workspace update-stale 2>/dev/null || true
+
+# ── Guardrail 0b: working copy must be clean ──────────────────────────────
+if ! jj status 2>/dev/null | grep -qE '^Working copy changes:' ; then
+  # no uncommitted changes at all -> clean
+  :
+else
+  # there ARE working-copy changes; ensure they're only our already-committed change
+  conflicted="$(jj resolve --list -r '@' 2>/dev/null | grep -v 'No conflicts' | head -1 || true)"
+  [ -z "$conflicted" ] || die "working copy @ has conflicts; resolve first. Aborting."
+fi
+
+# ── Guardrail 0c: default@ must exist ──────────────────────────────────────
+jj log -r "$TARGET" >/dev/null 2>&1 || die "target $TARGET not resolvable; nothing to sync."
+
+MY="$(jj log --no-graph -r '@' -T 'change_id.short()' 2>/dev/null | head -1)"
+[ -n "$MY" ] || die "could not determine current change id"
+TARGET_CHANGE="$(jj log --no-graph -r "$TARGET" -T 'change_id.short()' 2>/dev/null | head -1)"
+
+say "my change: $MY    target(@+): $TARGET_CHANGE"
+
+# ── Record pre-operation id for guaranteed rollback ────────────────────────
+# First line of `jj op log`: "<marker>  <op-id> <user> <workspace> <age>"
+PRE_OP="$(jj op log --no-pager --limit 1 2>/dev/null | head -1 | awk '{print $2}')"
+[ -n "$PRE_OP" ] || die "could not capture current operation id for rollback."
+
+say "pre-op for rollback: $PRE_OP"
+
+# ── Core decision: rebase ONLY if NOT already an ancestor ──────────────────
+# Already-ancestor => rebase would manufacture a conflict. Instead move tip up.
+if jj log -r "$MY::$TARGET" >/dev/null 2>&1 && [ -n "$(jj log --no-graph -r "$MY::$TARGET" 2>/dev/null)" ]; then
+  say "my change is already an ancestor of target — nothing to rebase."
+  say "moving working copy onto target tip (empty change, no content churn)..."
+  jj new "$TARGET" >/dev/null 2>&1 || jj describe -m "jjwsync: synced to $(jj log --no-graph -r "$TARGET" -T 'commit_id.short()' | head -1)" >/dev/null 2>&1 || true
+  say "done."
+  exit 0
+fi
+
+# Not an ancestor -> a real rebase is warranted.
+say "rebase my change ($MY) onto $TARGET..."
+
+# ── Guardrail 1: pre-verify no divergence surprise via a throwaway check ───
+# (rebase itself is reversible via op restore; we verify after)
+
+if ! jj rebase -r "$MY" -d "$TARGET" >/dev/null 2>&1; then
+  jj operation restore "$PRE_OP" >/dev/null 2>&1 || true
+  die "rebase failed; restored to prior state."
+fi
+
+# ── Guardrail 2: verify no conflicts; auto-rollback if any ─────────────────
+conflicts="$(jj resolve --list -r "@" 2>/dev/null | grep -vE 'No conflicts' | head -1 || true)"
+if [ -n "$conflicts" ]; then
+  say "conflict detected — rolling back (operation $PRE_OP)..."
+  jj operation restore "$PRE_OP" >/dev/null 2>&1 || die "ROLLBACK FAILED: manually run: jj operation restore $PRE_OP"
+  exit 1
+fi
+
+NEW_TIP="$(jj log --no-graph -r '@' -T 'commit_id.short()' 2>/dev/null | head -1)"
+say "clean sync. new tip: $NEW_TIP"

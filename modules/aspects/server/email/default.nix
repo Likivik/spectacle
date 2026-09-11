@@ -39,7 +39,25 @@ let
     mailbox.alias.drafts = "[Gmail]/Drafts"
     mailbox.alias.trash = "[Gmail]/Trash"
     mailbox.alias.archive = "[Gmail]/All Mail"
-  '';
+
+  [accounts.likivik]
+  email = "likivik@gmail.com"
+  display-name = "Likivik"
+
+  imap.server = "imaps://imap.gmail.com:993"
+  imap.sasl.plain.username = "likivik@gmail.com"
+  imap.sasl.plain.password.command = ["cat", "/run/secrets/email/gmail/account2/app-password"]
+
+  smtp.server = "smtps://smtp.gmail.com:465"
+  smtp.sasl.plain.username = "likivik@gmail.com"
+  smtp.sasl.plain.password.command = ["cat", "/run/secrets/email/gmail/account2/app-password"]
+
+  mailbox.alias.inbox = "INBOX"
+  mailbox.alias.sent = "[Gmail]/Sent Mail"
+  mailbox.alias.drafts = "[Gmail]/Drafts"
+  mailbox.alias.trash = "[Gmail]/Trash"
+  mailbox.alias.archive = "[Gmail]/All Mail"
+'';
 
   mcpDir = "/var/lib/hermes/.hermes/mcp-servers/himalaya-mcp";
   cfgPath = "/var/lib/hermes/.config/himalaya/config.toml";

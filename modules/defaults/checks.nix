@@ -8,6 +8,13 @@
         # Config still evaluates + builds (the "won't break Hermes on deploy" guard).
         erebus-build = inputs.self.nixosConfigurations.erebus.config.system.build.toplevel;
 
+        # Forgejo aspect: boots a VM with the real forgejo module and asserts the
+        # deployable contract — service active, data dirs created/owned, parent
+        # dir readable (users group), sandbox ReadWritePaths exposes it, HTTP on
+        # loopback. Guards the namespace / sandbox / group regressions hit on the
+        # first serenity deploy.
+        forgejo-boot = import ../../tests/forgejo-boot.nix { inherit inputs pkgs; };
+
         # No-VM dependency-contract smoke against the *sealed* hermes venv.
         # Catches mcp 1.x->2.0 rename and venv import regressions — all in
         # seconds, no VM. (otel/langfuse moved out of the venv: langfuse is

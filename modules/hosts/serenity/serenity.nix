@@ -19,6 +19,7 @@
       den.aspects.server.olmocr-vision
       den.aspects.server.surya-server
       den.aspects.server.monkey-server
+      den.aspects.server.forgejo
     ];
 
     maid = {
@@ -93,6 +94,21 @@
         systemd.services.tailscaled.serviceConfig.Environment = lib.mkAfter [
           "TS_FORCE_NOISE_443=true"
         ];
+
+        # Declarative tailscale prefs, applied post-start by tailscaled-set.service
+        # (module wires `after = tailscaled.service`; runs `tailscale set <flags>`
+        # once the backend is Running). Runtime `tailscale set` changes are
+        # overwritten on every activation — keep this block in sync.
+        services.tailscale.extraSetFlags = [
+          "--exit-node=erebus"
+          "--exit-node-allow-lan-access=true"
+        ];
+
+        # Open UDP 41641 (WireGuard endpoint) at the global firewall level.
+        # Interface-scoped rules are useless here: peer punches arrive from the
+        # NAT-mapped external port (e.g. 185.237.239.110:1481), and by then they
+        # have not been decapsulated onto tailscale0 yet.
+        services.tailscale.openFirewall = true;
 
         users.users.likivik.openssh.authorizedKeys.keys = [
           # hermes@erebus

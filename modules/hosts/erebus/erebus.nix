@@ -60,6 +60,12 @@ in
 
       networking.firewall = {
         enable = true;
+        # WireGuard endpoint for tailscaled: must be open on the WAN interface
+        # (global level). `interfaces.tailscale0.allowedUDPPorts` is wrong — by
+        # the time packets arrive on tailscale0 the tunnel is already decapsulated;
+        # the inbound UDP from peers (e.g. serenity) hits the WAN interface and
+        # was silently dropped, forcing every peer pair through DERP relays.
+        allowedUDPPorts = [ 41641 ];
         interfaces.tailscale0.allowedTCPPorts = [
           9119
           8642
@@ -219,6 +225,18 @@ in
           mode = "0400";
         };
         "email/gmail/account1/app-password" = {
+          sopsFile = ../../../secrets/erebus/secrets.yaml;
+          owner = "hermes";
+          group = "hermes";
+          mode = "0400";
+        };
+        "email/gmail/account2/adress" = {
+          sopsFile = ../../../secrets/erebus/secrets.yaml;
+          owner = "hermes";
+          group = "hermes";
+          mode = "0400";
+        };
+        "email/gmail/account2/app-password" = {
           sopsFile = ../../../secrets/erebus/secrets.yaml;
           owner = "hermes";
           group = "hermes";

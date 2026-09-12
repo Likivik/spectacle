@@ -69,7 +69,6 @@
     };
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     nixpkgs-master.url = "github:NixOS/nixpkgs/master";
-    obsidian-live-share.url = "github:Mewski/obsidian-live-share";
     pyproject-nix = {
       url = "github:pyproject-nix/pyproject.nix";
       inputs.nixpkgs.follows = "nixpkgs";

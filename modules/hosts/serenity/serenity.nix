@@ -20,6 +20,7 @@
       den.aspects.server.surya-server
       den.aspects.server.monkey-server
       den.aspects.server.forgejo
+      den.aspects.server.sops
     ];
 
     maid = {
@@ -103,6 +104,20 @@
           "--exit-node=erebus"
           "--exit-node-allow-lan-access=true"
         ];
+
+        # ── sops (TPM-bound identity for serenity) ───────────────────────
+        # Serenity is a TPM host: decrypt with the TPM age identity, NOT
+        # ssh-to-age (the generic server.sops aspect defaults to sshKeyPaths;
+        # override to the TPM keyFile).
+        sops.age.keyFile = "/var/lib/sops/tpm-identity.txt";
+        sops.age.sshKeyPaths = lib.mkForce [ ];
+
+        sops.secrets."registration-token" = {
+          sopsFile = ../../../secrets/serenity/secrets.yaml;
+          owner = "gitea-runner";
+          group = "gitea-runner";
+          mode = "0600";
+        };
 
         # Open UDP 41641 (WireGuard endpoint) at the global firewall level.
         # Interface-scoped rules are useless here: peer punches arrive from the

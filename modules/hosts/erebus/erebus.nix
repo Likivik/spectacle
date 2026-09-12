@@ -25,6 +25,32 @@ in
         ./_hardware-configuration.nix
       ];
 
+      # ── Low-RAM / OOM safety (erebus has 7.8 GiB; nix evals can spike) ─────
+      # zram compressed swap absorbs a memory spike so a heavy eval doesn't
+      # push the box into a thrash-lockup (NixOS ships no swap by default).
+      zramSwap.enable = true;
+      zramSwap.memoryPercent = 50;
+      # Persistent journal across reboots (so an OOM is recoverable next time).
+      services.journald.storage = "persistent";
+      services.journald.settings.Journal.SystemMaxUse = "2G";
+      # oomd: act before the kernel OOM thrash. Graduate limits: system slice
+      # is less latency-critical (60%); ROOT stays the 80% net. We do NOT lower
+      # the user slice here: Hermes + this agent's nix subprocesses share one
+      # cgroup (user@998/…/hermes-gateway), so oomd can't kill one without the
+      # other — we rely on zram headroom instead of risking an eager user-slice
+      # cull.
+      systemd.oomd = {
+        enable = true;
+        enableRootSlice = true;
+        enableSystemSlice = true;
+        enableUserSlices = true;
+      };
+      systemd.slices."system".sliceConfig.ManagedOOMMemoryPressureLimit = "60%";
+      # Kill-last for services the box can't lose.
+      systemd.services.sshd.serviceConfig.ManagedOOMPreference = "avoid";
+      systemd.services.tailscaled.serviceConfig.ManagedOOMPreference = "avoid";
+      systemd.services.nix-daemon.serviceConfig.ManagedOOMPreference = "avoid";
+
       boot.loader.grub = {
         enable = true;
         efiSupport = false;
@@ -82,7 +108,7 @@ in
 
       swapDevices = [ { device = "/swapfile"; size = 4096; } ];
 
-      users.users.hermes.extraGroups = [ "users" ];
+      users.users.hermes.extraGroups = [ "users" "systemd-journal" ];
 
       sops.secrets = {
         "tailscale/auth-key" = {

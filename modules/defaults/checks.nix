@@ -347,5 +347,18 @@
               exec ${run-vm} -nographic "$@"
             ''}";
         };
+
+      # Per-host config EVAL guard — run manually, one host at a time (bounded
+      # RAM: each is a fresh `nix eval` subprocess, so heavy hosts can't OOM a
+      # small builder). Run from the repo root:
+      #   nix run .#host-eval -- poweredge
+      apps.host-eval = {
+        type = "app";
+        program = toString (pkgs.writeShellScript "host-eval" ''
+          set -eu
+          host="''${1:?usage: nix run .#host-eval -- <host> (from repo root)}"
+          nix eval --accept-flake-config --raw ".#nixosConfigurations.$host.config.system.build.toplevel.drvPath"
+        '');
+      };
     };
 }

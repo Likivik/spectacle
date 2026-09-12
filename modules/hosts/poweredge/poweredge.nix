@@ -13,7 +13,6 @@
       # immich-nc-bridge disabled — requires Extism WASM rewrite + real npm deps hash.
       # Re-enable once plugin SDK integration lands.
       # den.aspects.server.immich-nc-bridge
-      den.aspects.server.obsidian-collab
       den.aspects.server.trilium
       den.aspects.server.nc-rag
     ];
@@ -56,11 +55,34 @@
           # hermes@erebus
           "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIECMxs9cBFN8Adq8AJ9I62gVNFTkgNkr0ikg+VkWbHx1 hermes@erebus"
           # likivik@traversal
-          "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDLeI2EqFsNLBPNIi/neXss0yZ3Q0vLevkiK5gfF5Fc+Zo0i9Nf0JPPkq3ak+uc5wJvumSvMAgO+gUUxDbQ6ieMZKCU6HSEhcQvjiHKczyYx+mDxxz6TXnd9TQRUFwmM/u/5kocl9PIwzjDnEdC/84H4sKiv9tmCy6Lv97VpdTYwkYerNWPm3wiapfGROHcS1WjKFOTD7+S++SQLDzir07W509b15HzgiP0Mk7Jdcc3axfIVl/FykGUQeYEFCram0XHvlDIB4yCb9rFxVACQXvUFgXLLb942lvoKeg5d2HbOxLXRVFlJJCnJlYQB3aKis983zjNmZ18Pm21YYvG6vmH traversal-likivik-2024-07-rsa"
+          "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDLeI2EqFsNLBPNIi/neXss0yZ3Q0vLevkiK5gfF5Fc+Zo0i9Nf0JPPkq3ak+uc5wJvumSvMAgO+gUUxDbQ6ieMZKCU6HSEhcQvjiHKczyYx+mDxxz6TXnd9TQRUFwmM/u/5kocl9PIwzjDnEdC/84H4sKiv9tmCy6Lv97VpdTYwkYerNWPm3wiapGROHcS1WjKFOTD7+S++SQLDzir07W509b15HzgiP0Mk7Jdcc3axfIVl/FykGUQeYEFCram0XHvlDIB4yCb9rFxVACQXvUFgXLLb942lvoKeg5d2HbOxLXRVFlJJCnJlYQB3aKis983zjNmZ18Pm21YYvG6vmH traversal-likivik-2024-07-rsa"
           # likivik@serenity
           "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPyWUPBV/fxkioRPFJ5ws3XQYwMX0hzo6SmQSJkLSV5w likivik@gmail.com"
         ];
       };
+
+      # Low-privilege receiver for serenity's Forgejo backups (forgejo dump →
+      # rsync'd over the tailnet). Intentionally NOT nologin: rsync needs a real
+      # shell for its remote trampoline. Security = no sudo + `restrict` on the
+      # key (no agent/pty/port-forward) + $HOME locked to
+      # /tank/backups/serenity/forgejo. So this user CAN get an interactive
+      # shell, but only as an unprivileged user with nothing writable outside its
+      # home. Acceptable for a homelab; add a forced `command=` for hard restriction.
+      users.users.forgejo-backup = {
+        isSystemUser = true;
+        group = "forgejo-backup";
+        home = "/tank/backups/serenity/forgejo";
+        # rsync needs a real shell to run its remote server trampoline (nologin
+        # breaks it). Security is kept via: no sudo, `restrict` on the key, and
+        # home locked to the backup dir.
+        shell = "/run/current-system/sw/bin/bash";
+        openssh.authorizedKeys.keys = [
+          # forgejo user on serenity (pushed forgejo dumps nightly); `restrict`
+          # disables agent/port-forwarding/pty. Writable only in its home.
+          "restrict ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC7qnde9dh/4V4fJ7WyMAVDt2Tl0Ylx2VpUthWB7BVmj forgejo-backup@serenity"
+        ];
+      };
+      users.groups.forgejo-backup = { };
 
       # Rootless podman was attempted (per-service users, subuid/subgid,
       # linger, sdnotify) but rootless has known issues with pasta port
@@ -153,7 +175,6 @@
         script = ''
           ${lib.getExe pkgs.tailscale} serve --bg --https=443 http://127.0.0.1:80
           ${lib.getExe pkgs.tailscale} serve --bg --https=8443 http://127.0.0.1:3001
-          ${lib.getExe pkgs.tailscale} serve --bg --https=5984 http://127.0.0.1:5984
           ${lib.getExe pkgs.tailscale} serve --bg --https=8787 http://127.0.0.1:8787
         '';
       };
@@ -266,18 +287,12 @@
             # Env vars per upstream docs (README + 'Required configuration' log).
             # Auth: Basic auth with app password. nc-mcp reads NEXTCLOUD_PASSWORD
             # as a literal string (no file:// support), so we use systemd's
-            # credential mechanism to hand it the password without plaintext
-            # ever living on disk:
-            #   1. nc-mcp-encrypt-secret.service (oneshot, Before=nc-mcp.service)
-            #      reads the sops secret at /run/secrets/nextcloud/mcp-app-password
-            #      and encrypts it with systemd-creds (host-bound key in
-            #      /var/lib/systemd/credential.secret), writing the blob to
-            #      /run/credentials-cache/nc-mcp/mcp-password.cred
-            #   2. nc-mcp.service loads that blob via LoadCredentialEncrypted=,
-            #      systemd decrypts it in-memory and exposes the path at %d/mcp-password
-            #   3. ExecStartPre= reads %d/mcp-password and writes a single-line
+            # LoadCredential= (below): systemd binds the sops secret at
+            # /run/secrets/nextcloud/mcp-app-password into
+            # CREDENTIALS_DIRECTORY/mcp-password at unit start, then
+            #   1. ExecStartPre= reads %d/mcp-password and writes a single-line
             #      KEY=VALUE env file to /run/nextcloud-mcp.env (mode 0600, tmpfs)
-            #   4. EnvironmentFile= feeds it into the container as env vars
+            #   2. EnvironmentFile= feeds it into the container as env vars
             # Note: app passwords created BEFORE 2FA enforcement get flagged
             # 'PasswordLoginForbidden' by Nextcloud's Sabre DAV. To regenerate:
             #   occ user:add-app-password likivik --name='nc-mcp'
@@ -317,51 +332,28 @@
           # Defined outside serviceConfig to keep serviceConfig pure.
           serviceConfig = {
             Restart = "always";
-            # systemd decrypts the blob in-memory, exposes at
-            # /run/credentials/<unit>/mcp-password
-            LoadCredentialEncrypted = "mcp-password:/run/credentials-cache/nc-mcp/mcp-password.cred";
+            # systemd-native credentials: bind the sops plaintext straight into
+            # CREDENTIALS_DIRECTORY/mcp-password at unit start (no separate
+            # encrypt-oneshot, no blob, no cross-unit ordering hazard). The sops
+            # secret is already plaintext at /run/secrets. RequiresMountsFor
+            # orders us after the sops secrets mount.
+            LoadCredential = "mcp-password:${config.sops.secrets."nextcloud/mcp-app-password".path}";
+            RequiresMountsFor = [ "/run/secrets" ];
             # ExecStartPre runs the helper script defined in the let block.
             ExecStartPre = "${toString pkgs.bash}/bin/bash ${ncMcpCredsToEnvScript}";
           };
         };
       };
-      # systemd-creds encrypt the sops secret at boot, write encrypted blob
-      # to /run/credentials-cache/nc-mcp/. Runs BEFORE nc-mcp.service so the
-      # LoadCredentialEncrypted= resolves successfully.
-      systemd.services.nc-mcp-encrypt-secret = {
-        description = "Encrypt nc-mcp app password with systemd-creds for nc-mcp.service";
-        wantedBy = [ "multi-user.target" ];
-        before = [ "nc-mcp.service" ];
-        # sops-nix installs secrets via systemd activation script during boot
-        # (NOT a separate systemd unit). Rely on NixOS ordering — sops secrets
-        # are written to /run/secrets before any systemd unit starts.
-        after = [ "local-fs.target" ];
-        serviceConfig = {
-          Type = "oneshot";
-          RemainAfterExit = true;
-          # Don't let anyone read the encrypted blob except root
-          UMask = "0077";
-        };
-        script = ''
-          set -e
-          mkdir -p /run/credentials-cache/nc-mcp
-          # - reads plaintext from sops-installed secret
-          # - encrypts with host key (systemd 258+ supports this via creds setup)
-          # - writes to /run/credentials-cache/nc-mcp/mcp-password.cred
-          tmp=$(mktemp /tmp/nc-mcp-plain-XXXXXX.txt)
-          chmod 0600 "$tmp"
-          cp ${config.sops.secrets."nextcloud/mcp-app-password".path} "$tmp"
-          ${pkgs.systemd}/bin/systemd-creds encrypt \
-            --name=mcp-password \
-            "$tmp" \
-            /run/credentials-cache/nc-mcp/mcp-password.cred
-          rm -f "$tmp"
-        '';
-      };
+      # systemd loads the sops secret directly as a credential (see LoadCredential
+      # above); no encrypt-oneshot / blob / ordering needed.
       # Ensure qdrant storage dirs exist (rootful quadlets: root-owned).
       system.activationScripts."nc-rag-qdrant-dirs".text = ''
         mkdir -p /var/lib/qdrant/storage /var/lib/qdrant/snapshots
         chmod 0750 /var/lib/qdrant /var/lib/qdrant/storage /var/lib/qdrant/snapshots
+      '';
+      # Forgejo backup receiver home (idempotent; owner has no shell/sudo).
+      system.activationScripts."forgejo-backup-dir".text = ''
+        install -d -o forgejo-backup -g forgejo-backup -m 0700 /tank/backups/serenity/forgejo
       '';
       # 8GB swapfile on root SSD
       swapDevices = [{

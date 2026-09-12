@@ -8,7 +8,6 @@ use OCP\AppFramework\App;
 use OCP\AppFramework\Bootstrap\IBootContext;
 use OCP\AppFramework\Bootstrap\IBootstrap;
 use OCP\AppFramework\Bootstrap\IRegistrationContext;
-use OCA\OcrFlow\Settings\Admin;
 
 class Application extends App implements IBootstrap {
     public const APP_ID = 'ocrflow';
@@ -18,7 +17,11 @@ class Application extends App implements IBootstrap {
     }
 
     public function register(IRegistrationContext $context): void {
-        $context->registerSetting(Admin::class);
+        // Admin settings section is registered declaratively in
+        // appinfo/info.xml (<settings><admin>...</admin></settings>).
+        // IRegistrationContext has NO registerSetting() — calling it throws
+        // "Call to undefined method" at bootstrap, spamming error.log on
+        // every request. Nothing to do here.
     }
 
     public function boot(IBootContext $context): void {

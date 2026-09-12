@@ -46,7 +46,6 @@
           {
             TG=$(cat /run/secrets/${botTokenSecret} 2>/dev/null || true)
             EXA=$(cat /run/secrets/hermes/exa-api-key 2>/dev/null || true)
-            OBS=$(cat /run/secrets/hermes/mcp-obsidian-api-key 2>/dev/null || true)
             MM=$(cat /run/secrets/hermes/minimax-api-key 2>/dev/null || true)
             SYN=$(cat /run/secrets/hermes/synthetic-api-key 2>/dev/null || true)
             APIK=$(cat /run/secrets/${apiKeySecret} 2>/dev/null || true)
@@ -56,7 +55,6 @@
             GH=$(cat /run/secrets/hermes-mitmproxy/github/pat-hermes-full 2>/dev/null || true)
             echo "TELEGRAM_BOT_TOKEN=$TG"
             echo "EXA_API_KEY=$EXA"
-            echo "MCP_OBSIDIAN_API_KEY=$OBS"
             echo "MINIMAX_API_KEY=$MM"
             echo "SYNTHETIC_API_KEY=$SYN"
             # Per-profile gateway API listener: own port + own key, so each
@@ -167,7 +165,6 @@
           {
             TG=$(cat /run/secrets/hermes/telegram-bot-token 2>/dev/null || true)
             EXA=$(cat /run/secrets/hermes/exa-api-key 2>/dev/null || true)
-            OBS=$(cat /run/secrets/hermes/mcp-obsidian-api-key 2>/dev/null || true)
             MM=$(cat /run/secrets/hermes/minimax-api-key 2>/dev/null || true)
             SYN=$(cat /run/secrets/hermes/synthetic-api-key 2>/dev/null || true)
             APIK=$(cat /run/secrets/hermes/api-server-key 2>/dev/null || true)
@@ -179,7 +176,6 @@
             GH=$(cat /run/secrets/hermes-mitmproxy/github/pat-hermes-full 2>/dev/null || true)
             echo "TELEGRAM_BOT_TOKEN=$TG"
             echo "EXA_API_KEY=$EXA"
-            echo "MCP_OBSIDIAN_API_KEY=$OBS"
             echo "MINIMAX_API_KEY=$MM"
             echo "SYNTHETIC_API_KEY=$SYN"
             echo "API_SERVER_KEY=$APIK"

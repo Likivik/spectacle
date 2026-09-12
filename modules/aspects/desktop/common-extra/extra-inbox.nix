@@ -9,7 +9,6 @@
 
         environment.systemPackages = with pkgs; [
           typora
-          obsidian
           joplin-desktop
 
           # Password Management --------------------------------------------------------------------------------

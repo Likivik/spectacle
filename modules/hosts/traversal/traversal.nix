@@ -34,13 +34,6 @@
         sops.age.sshKeyPaths = lib.mkForce [ ];
         sops.age.keyFile = "/var/lib/sops/tpm-identity.txt";
 
-        sops.secrets."obsidian/obsidian-sync-mcp/mcp-auth-token" = {
-          sopsFile = ../../../secrets/traversal/secrets.yaml;
-          owner = "likivik";
-          group = "users";
-          mode = "0600";
-        };
-
         # services.openssh.enable = true;
 
         hardware.amdgpu.initrd.enable = lib.mkDefault true;

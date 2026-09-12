@@ -115,12 +115,6 @@ in
           group = "hermes";
           mode = "0600";
         };
-        "hermes/mcp-obsidian-api-key" = {
-          sopsFile = ../../../secrets/erebus/secrets.yaml;
-          owner = "hermes";
-          group = "hermes";
-          mode = "0600";
-        };
         "hermes/minimax-api-key" = {
           sopsFile = ../../../secrets/erebus/secrets.yaml;
           owner = "hermes";

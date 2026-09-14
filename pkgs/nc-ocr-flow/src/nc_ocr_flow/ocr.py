@@ -70,7 +70,7 @@ def _run_ocrmypdf(input_pdf: Path, output_pdf: Path, tsv_path: Path) -> None:
         "ocrmypdf",
         "--skip-text",       # skip pages with existing text (born-digital)
         "--rotate-pages",
-        "--deskew",
+        "--rotate-pages-threshold", "2.0",
         "--language", "rus+eng",
         "--sidecar", str(tsv_path.with_suffix(".txt")),
         "--output-type", "pdf",

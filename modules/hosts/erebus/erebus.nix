@@ -166,6 +166,13 @@ in
           group = "hermes";
           mode = "0600";
         };
+        # Salem profile's Telegram bot token (The Witch Queen bot)
+        "hermes/salem-bot-token" = {
+          sopsFile = ../../../secrets/erebus/secrets.yaml;
+          owner = "hermes";
+          group = "hermes";
+          mode = "0600";
+        };
         # Dashboard username/password auth (dashboard_auth/basic plugin) —
         # lets mobile clients (rusty4444 app) log in without Nous OAuth.
         "hermes/dashboard-basic-auth-hash" = {

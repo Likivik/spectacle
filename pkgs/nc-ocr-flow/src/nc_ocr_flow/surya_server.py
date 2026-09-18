@@ -36,6 +36,18 @@ class OcrResponse(BaseModel):
     page_height: float
 
 
+class DetectionLineOut(BaseModel):
+    bbox: list[float]
+    polygon: list[list[float]] | None = None
+    confidence: float | None = None
+
+
+class DetectionResponse(BaseModel):
+    lines: list[DetectionLineOut]
+    page_width: float
+    page_height: float
+
+
 def _create_app():
     from fastapi import FastAPI
     from PIL import Image
@@ -51,6 +63,36 @@ def _create_app():
             manager = SuryaInferenceManager()
             _predictor = RecognitionPredictor(manager)
         return _predictor
+
+    _detector = None
+
+    def _get_detector():
+        nonlocal _detector
+        if _detector is None:
+            from surya.detection import DetectionPredictor
+            # Use the in-process predictor: DetectionPredictor() is a client
+            # for Surya's separate detection server in current Surya releases.
+            _detector = DetectionPredictor.local()
+        return _detector
+
+    @app.post("/detect", response_model=DetectionResponse)
+    def detect(req: OcrRequest):
+        img = Image.open(io.BytesIO(base64.b64decode(req.image_b64)))
+        pred = _get_detector()([img])[0]
+        lines = []
+        for box in pred.bboxes:
+            polygon = getattr(box, "polygon", None)
+            lines.append(DetectionLineOut(
+                bbox=list(box.bbox),
+                polygon=[list(point) for point in polygon] if polygon is not None else None,
+                confidence=getattr(box, "confidence", None),
+            ))
+
+        return DetectionResponse(
+            lines=lines,
+            page_width=float(pred.image_bbox[2]),
+            page_height=float(pred.image_bbox[3]),
+        )
 
     @app.post("/ocr", response_model=OcrResponse)
     def ocr(req: OcrRequest):

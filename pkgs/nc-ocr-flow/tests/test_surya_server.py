@@ -85,6 +85,47 @@ def test_ocr_endpoint_with_mock_predictor(surya_app):
         assert "page_height" in data
 
 
+def test_detect_endpoint_with_mock_predictor(surya_app):
+    """POST /detect returns detector line geometry without recognition."""
+    from fastapi.testclient import TestClient
+    from PIL import Image
+
+    img = Image.new("RGB", (100, 50), "white")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    image_b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+
+    mock_box = MagicMock()
+    mock_box.bbox = [10, 11, 80, 30]
+    mock_box.polygon = [[10, 11], [80, 12], [79, 30], [11, 29]]
+    mock_box.confidence = 0.87
+    mock_pred = MagicMock(bboxes=[mock_box], image_bbox=[0, 0, 100, 50])
+    mock_detector = MagicMock(return_value=[mock_pred])
+    mock_detection = MagicMock(DetectionPredictor=MagicMock())
+    mock_detection.DetectionPredictor.local.return_value = mock_detector
+
+    with patch.dict(sys.modules, {"surya.detection": mock_detection}):
+        resp = TestClient(surya_app).post("/detect", json={"image_b64": image_b64})
+
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "lines": [{
+            "bbox": [10.0, 11.0, 80.0, 30.0],
+            "polygon": [[10.0, 11.0], [80.0, 12.0], [79.0, 30.0], [11.0, 29.0]],
+            "confidence": 0.87,
+        }],
+        "page_width": 100.0,
+        "page_height": 50.0,
+    }
+    mock_detection.DetectionPredictor.local.assert_called_once_with()
+    mock_detector.assert_called_once()
+
+
+def test_detect_endpoint_missing_field(surya_app):
+    from fastapi.testclient import TestClient
+    assert TestClient(surya_app).post("/detect", json={}).status_code == 422
+
+
 def test_ocr_endpoint_empty_blocks(surya_app):
     """POST /ocr with image that has no text returns empty blocks."""
     from fastapi.testclient import TestClient

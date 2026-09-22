@@ -1,0 +1,192 @@
+{
+  "task": "Экономика поездки СПб–Москва–СПб 25–27 сентября 2026, ~1400 км RT, 7 ч в одну сторону, хоккейные сумки",
+  "group_sizes": [5, "10-11"],
+  "inputs": {
+    "distance_km_round_trip": 1400,
+    "fuel_price_ai95_rub_per_l": 76.0,
+    "fuel_source": "Среднее по РФ на 22.09.2026 (Москва 72.82, РФ средн. 80.60), взято 76",
+    "consumption_l_per_100km": {"car": 9.0, "minivan": 12.0, "bus_50": 30.0},
+    "m11_toll_round_trip_rub": {"car": 10500, "minivan": 12000, "bus_47": 18000},
+    "parking_event_rub": {"cska_arena_standard": 500, "cska_vip_or_floor1": 1500, "bus_drop_off": 0},
+    "hotel_driver_per_night_rub": 5500,
+    "sapsan_per_person_one_way_rub": {"economy_min_early": 1300, "economy_avg": 2500, "business_avg": 5500},
+    "events_count": 1,
+    "trip_dates_weekend_tariff_days": ["2026-09-26", "2026-09-27"],
+    "trip_dates_weekday_tariff_day": ["2026-09-25"],
+    "intercity_van_rental_with_driver_rub_estimate": {"minivan_16_20_RT_with_2day_wait": 90000, "bus_47_RT_with_2day_wait": 180000}
+  },
+  "scenarios_group_5": [
+    {
+      "scenario": "5чел / 2 легковых (свои)",
+      "people": 5, "cars": 2,
+      "fuel_l": 126.0, "fuel_rub": 9576, "m11_rub": 10500, "parking_rub": 1000,
+      "hotel_driver_rub": 0, "city_transfers_rub": 0,
+      "total_rub": 21076, "per_person_rub": 4215,
+      "comfort": "средний (тесно в 5-местной с баулами)",
+      "baggage": "багажник 1 машины ~3 сумки; 5-я сумка в салоне",
+      "wait_time_h": "водитель сам, гибкий график",
+      "notes": "Лучший баланс цена/гибкость если есть 2 водителя-добровольца"
+    },
+    {
+      "scenario": "5чел / 1 минивэн (свой)",
+      "people": 5, "cars": 1,
+      "fuel_l": 168.0, "fuel_rub": 12768, "m11_rub": 12000, "parking_rub": 1500,
+      "hotel_driver_rub": 0, "city_transfers_rub": 0,
+      "total_rub": 26268, "per_person_rub": 5254,
+      "comfort": "высокий",
+      "baggage": "5 сумок в багажнике минивэна + место в салоне",
+      "wait_time_h": "водитель сам",
+      "notes": "Только при наличии 7-местного минивэна. Допустимо по ПДД"
+    },
+    {
+      "scenario": "5чел / Сапсан эконом средний + трансфер",
+      "people": 5, "cars": 0,
+      "fuel_l": 0, "fuel_rub": 0, "m11_rub": 0, "parking_rub": 0,
+      "hotel_driver_rub": 0, "city_transfers_rub": 6900,
+      "sapsan_rub": 25000,
+      "total_rub": 31900, "per_person_rub": 6380,
+      "comfort": "высокий (4ч vs 7ч)",
+      "baggage": "сложно: 5 хоккейных сумок в поезд не берут; нужно такси-багажник 2-3 машины",
+      "wait_time_h": "4ч в пути; ожидание подачи такси ~30 мин на вокзале",
+      "notes": "Только если заказать минивэн-трансфер для багажа отдельно (+6000₽)"
+    },
+    {
+      "scenario": "5чел / Минивэн с водителем (Sprinter 16-20 мест)",
+      "people": 5, "cars": 1,
+      "fuel_l": 0, "fuel_rub": 0, "m11_rub": 0, "parking_rub": 1500,
+      "hotel_driver_rub": 5500, "city_transfers_rub": 0,
+      "minivan_rental_rub": 90000,
+      "total_rub": 97000, "per_person_rub": 19400,
+      "comfort": "высокий",
+      "baggage": "багажный отсек есть",
+      "wait_time_h": "водитель ждёт группу; гибкий график подачи",
+      "notes": "В ~4.6× дороже двух своих машин. Оправдано при <2 водителей-добровольцев"
+    }
+  ],
+  "scenarios_group_10_11": [
+    {
+      "scenario": "10чел / 2 минивэна (свои)",
+      "people": 10, "cars": 2,
+      "fuel_l": 168.0, "fuel_rub": 12768, "m11_rub": 12000, "parking_rub": 3000,
+      "hotel_driver_rub": 0, "city_transfers_rub": 0,
+      "total_rub": 27768, "per_person_rub": 2777,
+      "comfort": "средний-высокий (5+5)",
+      "baggage": "5 сумок на минивэн, влезают",
+      "wait_time_h": "водители-добровольцы",
+      "notes": "Оптимально по цене для 10 чел. Нужны 2 водителя-добровольца"
+    },
+    {
+      "scenario": "10чел / 1 большая машина (своя)",
+      "people": 10, "cars": 1,
+      "feasible": false,
+      "reason": "10 хоккеистов с баулами в одной машине невозможно по ПДД и комфорту. Не рассматривается"
+    },
+    {
+      "scenario": "10чел / Сапсан бизнес + трансфер",
+      "people": 10, "cars": 0,
+      "fuel_l": 0, "fuel_rub": 0, "m11_rub": 0, "parking_rub": 0,
+      "hotel_driver_rub": 0, "city_transfers_rub": 9200,
+      "sapsan_rub": 110000,
+      "total_rub": 119200, "per_person_rub": 11920,
+      "comfort": "высокий",
+      "baggage": "очень сложно: 10 хоккейных сумок = минимум 3 минивэна-трансфера по Мск",
+      "wait_time_h": "4ч в пути",
+      "notes": "Сумки идут отдельным трансфером (доп. ~12000₽). В 4.3× дороже 2 минивэнов"
+    },
+    {
+      "scenario": "10чел / Минивэн 16-20 мест с водителем",
+      "people": 10, "cars": 1,
+      "fuel_l": 0, "fuel_rub": 0, "m11_rub": 0, "parking_rub": 1500,
+      "hotel_driver_rub": 5500, "city_transfers_rub": 0,
+      "minivan_rental_rub": 95000,
+      "total_rub": 102000, "per_person_rub": 10200,
+      "comfort": "высокий",
+      "baggage": "багажный отсек есть",
+      "wait_time_h": "водитель ждёт группу",
+      "notes": "В 3.7× дороже 2 своих минивэнов"
+    },
+    {
+      "scenario": "10чел / Большой автобус 47 мест с водителем",
+      "people": 10, "cars": 1,
+      "fuel_l": 0, "fuel_rub": 0, "m11_rub": 0, "parking_rub": 0,
+      "hotel_driver_rub": 11000, "city_transfers_rub": 0,
+      "bus_rental_rub": 180000,
+      "total_rub": 191000, "per_person_rub": 19100,
+      "comfort": "высокий",
+      "baggage": "большой багажный отсек",
+      "wait_time_h": "водитель ждёт",
+      "notes": "Overkill для 10 чел. Автобус не во все хоккейные зоны (развороты). В 6.9× дороже"
+    }
+  ],
+  "ranking_by_per_person": {
+    "group_5": [
+      {"rank": 1, "scenario": "2 легковых (свои)", "per_person": 4215},
+      {"rank": 2, "scenario": "1 минивэн (свой)", "per_person": 5254},
+      {"rank": 3, "scenario": "Сапсан эконом + трансфер", "per_person": 6380},
+      {"rank": 4, "scenario": "Минивэн с водителем", "per_person": 19400}
+    ],
+    "group_10_11": [
+      {"rank": 1, "scenario": "2 минивэна (свои)", "per_person": 2777},
+      {"rank": 2, "scenario": "Минивэн 16-20 мест с водителем", "per_person": 10200},
+      {"rank": 3, "scenario": "Сапсан бизнес + трансфер", "per_person": 11920},
+      {"rank": 4, "scenario": "Автобус 47 мест с водителем", "per_person": 19100}
+    ]
+  },
+  "break_even": {
+    "group_5": {
+      "minivan_rental_breakeven_rub": 15576,
+      "market_minivan_rental_rub": 90000,
+      "ratio_market_to_breakeven": 5.8,
+      "verdict": "Аренда минивэна с водителем НЕ выгодна для 5 чел при наличии 1-2 водителей-добровольцев. Экономия 74к (81%) при поездке на своих."
+    },
+    "group_10_11": {
+      "minivan_rental_breakeven_rub": 22268,
+      "market_minivan_rental_rub": 95000,
+      "ratio_market_to_breakeven": 4.3,
+      "verdict": "Аренда минивэна с водителем НЕ выгодна для 10 чел против 2 своих минивэнов. Экономия 67к (74%).",
+      "bus_47_breakeven_rub": 16768,
+      "bus_47_market_rub": 180000,
+      "verdict_bus": "Автобус 47 мест НЕ выгоден для 10 чел: рынок в 10.7× выше break-even. Оправдан при >25 чел (per-head опускается до ~7200₽)."
+    },
+    "sapsan_vs_own_car": {
+      "group_5_diff_rub": 10824,
+      "group_10_diff_rub_with_business": 91432,
+      "verdict": "Сапсан для 5 чел дороже 2 машин на 11к, но экономит 3ч в одну сторону (6ч RT). Оправдан если ценность времени >4к/чел. Для 10 чел Сапсан бизнес проигрывает ~91к — только при отсутствии водителей."
+    },
+    "sensitivity": {
+      "fuel_price_x2_impact": "Удвоение бензина (76→152 ₽/л) добавляет ~13к к сценарию 2 минивэна. Не меняет выводов: свои машины выгоднее аренды на 60-160к в любом разумном диапазоне цен.",
+      "transponder_savings_M11": "Транспондер T-Pass экономит ~15-20% на М-11 (≈1500-2000₽ RT). Учтено в базовых ценах."
+    }
+  },
+  "recommendations": {
+    "group_5_primary": "2 легковых (свои) — 4215 ₽/чел, 21 076 ₽ всего. Требуется 2 водителя.",
+    "group_5_alternative_if_no_2_drivers": "Сапсан эконом + минивэн-трансфер для багажа — 6380 ₽/чел, ~31 900 ₽ + 6000 (багажный минивэн) = ~37 900 ₽. Экономия 57к vs аренда минивэна с водителем.",
+    "group_5_premium_only_if": "Минивэн с водителем — 19 400 ₽/чел. Только если (а) группа пьёт на обратном пути, (б) есть дети 8-12 лет, (в) сбор из разных районов СПб.",
+    "group_10_11_primary": "2 минивэна (свои) — 2777 ₽/чел, 27 768 ₽ всего. Требуется 2 водителя. Лучшая цена/гибкость.",
+    "group_10_11_alternative_if_no_2_drivers": "Минивэн с водителем (Sprinter) — 10 200 ₽/чел, 102 000 ₽. Переплата 74к за комфорт и снятие руля.",
+    "group_10_11_NEVER": "Автобус 47 мест — 19 100 ₽/чел, 191 000 ₽. Не оправдан для 10-11 чел.",
+    "shared_notes": [
+      "Транспондер М-11 экономит ~1.5-2к за поездку; у группы из 2 машин = 3-4к",
+      "Парковка у арены ЗИЛ 'Мероприятие' = 500₽/этаж 3-4 (экономия vs VIP 1000₽)",
+      "Хоккейные сумки НЕ возят в Сапсане — нужно отдельное такси-багажник в Москве",
+      "М-11 в выходные (26-27.09) дороже на ~10-15%; пятница (25.09) — будний тариф",
+      "Время в пути Сапсан 4ч vs машина 7ч — экономия 6ч RT, но не покрывает переплату в 5-6 раз"
+    ]
+  },
+  "data_sources": {
+    "m11_tariffs": "m11-neva.ru + t-j.ru (тарифы с 12.01.2026)",
+    "fuel_price": "Росстат, Рахмат, sravni.ru на 14-22.09.2026",
+    "sapsan_prices": "tutu.ru, ufs-online.ru",
+    "minivan_rental": "finitrans.ru, mosbus.ru, spb-transfer.ru, taxi-van.ru",
+    "bus_rental": "busigo.ru, officebus.ru, spbtransbus.ru, miniven-piter.ru",
+    "parking": "icearenamsk.ru, parkovkazil.ru, ratour.ru (ЦСКА Арена)",
+    "transfer_taxi": "vc.ru, pulkovo.taxi-krim.com, baltictransfer.ru"
+  },
+  "caveats": [
+    "Цены на минивэн/автобус с водителем — индивидуальные; запрошенная цена может отличаться ±30%",
+    "Не учитывает стоимость гостиницы для самих хоккеистов (отдельная статья)",
+    "Не учитывает питание в дороге (~500-1000₽/чел)",
+    "Парковка — для 1 события; если 2 матча — удваивать",
+    "Все цены без НДС-сюрпризов; компании платят с НДС, физлица — без"
+  ]
+}

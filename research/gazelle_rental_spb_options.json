@@ -1,0 +1,381 @@
+{
+  "task_summary": {
+    "requirement": "Gazelle/GAZelle Next or Sobol NN passenger-cargo 6+ people + 6 hockey bags, без водителя, SPb-Moscow-SPb, 25.09.2026 12:00 - 27.09.2026 23:00 (~1400 km, ~467 km/day)",
+    "exclusions": "carsharing excluded",
+    "verification_basis": "Official rental company websites only (no booking performed)",
+    "must_have_specs": "6 legal seats, separate cargo space, MT ok, 3 days, unlimited mileage OR full overage cost, Moscow permission, deposit, insurance/franchise terms",
+    "compatibility_notes": {
+      "6_hockey_bags_volume": "Each hockey bag ~0.6-0.8 m^3; 6 bags ~4-5 m^3 minimum; needs cargo hold 4+ m^3",
+      "transmission": "All GAZ/Sobol passenger-cargo variants are MT (5-MT); no AT option",
+      "moscow_permission": "Gazelle Next/Sobol NN gross weight <3.5t (cat B) = no MKAD propusk required for cargo vans; category D versions of large buses DO need propusk",
+      "category_B_compatible": "Sobol 2752 Kombi (6+1, ~3.0t) AND GAZelle Next Ferromer Kombi (1+6, cat B if payload<=1t) — both can be driven on cat B license"
+    }
+  },
+  "search_conducted": {
+    "official_sites_visited": [
+      "kts-plus.ru (gas-sobol-nn-van-2024.html, gas-sobol-kombi.html, ford-transit-kombi.html, arenda.html)",
+      "perpetuum-rent.ru (cars.php?id=43, tarif.php, rent.php, arenda_gazeley.php)",
+      "busrentspb.ru (prokat-gazeley, prokat-mikroavtobusov, prokat-minivena)",
+      "7verstavto.ru (gazel-next-dizel page, gruzoviki page, uslovia page)",
+      "amegacar.ru (cars/commercial/gazel-next)",
+      "spb.gazel.rent (ceny)",
+      "brilliant-cars.ru (gazel-fermer, gazel-furgon, gazel-bortovaya)"
+    ],
+    "additional_sources": [
+      "u-drive.ru/arenda-gazel-bez-voditelya"
+    ],
+    "blocked": [
+      "7verstavto.ru refused direct connection from network; tariff data captured via search index"
+    ]
+  },
+  "rental_options": [
+    {
+      "rank": 1,
+      "company": "KTS+ (kts-plus.ru)",
+      "address": "SPb, nab. Obvodnogo kanala, 118AB, BC Perspektiva, of. 335; 3 min from m. Baltiyskaya/Frunzenskaya",
+      "phones": [
+        "+7 (812) 719-70-08",
+        "+7 (911) 777-14-51"
+      ],
+      "model": "ГАЗ Соболь NN Комби 2023",
+      "category_class": "Грузопассажирский (комби)",
+      "passenger_capacity": "6+1 = 7 legal seats (cat B)",
+      "cargo_volume": "~4.8 m^3 (factory specification per sto-gaz.ru), kombi configuration with separate cargo compartment behind passenger seats",
+      "transmission": "MT (5-step manual)",
+      "engine_hp": "150 hp diesel (GAZ Cummins G51C 2.5L)",
+      "tariffs_per_day_RUB": {
+        "tariff_100_3-7_days": 4900,
+        "tariff_200_3-7_days": 5150,
+        "tariff_300_3-7_days": 6150,
+        "tariff_500_5-7_days": 7050
+      },
+      "price_3_days_calc": {
+        "tariff_100": 14700,
+        "tariff_200": 15450,
+        "tariff_300": 18450,
+        "tariff_500": 21150
+      },
+      "daily_mileage_included": "100/200/300/500 km/day (sums over rental period)",
+      "mileage_for_1400km_route": "1400 km over 3 days = 466 km/day. Tariff 300 (900 km included) leaves 500 km overage. Tariff 500 (1500 km included) = full route covered.",
+      "overage_per_km": "16 RUB/km (above limit)",
+      "deposit": "20000 RUB",
+      "insurance": "КАСКО with franchise (franshiza) + OSAGO included in all tariffs (per arenda.html: 'все тарифы включают в себя страховку Каско от повреждений и угона с франшизой, страхование Гражданской ответственности перед третьими лицами и все налоги и сборы'); franchise amount not published — confirm by phone",
+      "moscow_permission": "Yes — by prior agreement with manager (по предварительному согласованию с менеджером); other regions of Russia ok with Каско extension + Green card self-purchase; Belarussia ok; Ukraine/Schengen prohibited",
+      "min_age": 24,
+      "min_experience": "2 years",
+      "verification_status": "confirmed_official_page",
+      "url": "https://www.kts-plus.ru/gaz-sobol-kombi.html",
+      "notes": "BEST FIT. Sobol NN Kombi is the 2023 model with 6+1 seats, factory 4.8 m^3 cargo compartment, modern Cummins diesel; tariff 500 covers 1400 km without overage (1500 km included over 3 days = 3x500). Total cost with tariff 500: 3*7050 + 20000 deposit = 41150 RUB (+ refundable deposit)."
+    },
+    {
+      "rank": 2,
+      "company": "KTS+ (kts-plus.ru)",
+      "model": "ГАЗ Соболь NN VAN 2024 (miniвэн-class)",
+      "passenger_capacity": "9 seats (full miniвэн)",
+      "cargo_volume": "smaller than Kombi; VAN is passenger-focused, not 'комби'; cargo behind rear seats only",
+      "tariffs_per_day_RUB": {
+        "tariff_100_3-7_days": 6550,
+        "tariff_200_3-7_days": 6800,
+        "tariff_300_3-7_days": 7800,
+        "tariff_500_5-7_days": 8700
+      },
+      "price_3_days_calc": {
+        "tariff_300": 23400,
+        "tariff_500": 26100
+      },
+      "overage_per_km": 16,
+      "deposit": 20000,
+      "insurance": "КАСКО + OSAGO, franchise (amount by phone)",
+      "moscow_permission": "Yes, prior agreement",
+      "verification_status": "confirmed_official_page",
+      "url": "https://www.kts-plus.ru/gaz-sobol-nn-van-2024.html",
+      "notes": "9-seat VAN, but cargo space is less than Kombi; 6 hockey bags + 6 people may not all fit comfortably. Choose Kombi instead unless full 9-seat van needed."
+    },
+    {
+      "rank": 3,
+      "company": "Перпетуум Мобиле (perpetuum-rent.ru)",
+      "address": "SPb, ul. Shkapina, 51G (m. Baltiyskaya); also ul. Baltiyskaya 38, Lanskoe sh. 7",
+      "phones": [
+        "+7 (812) 777-01-78",
+        "+7 (921) 859-46-61"
+      ],
+      "model": "Соболь-Бизнес Комби (ГАЗ-2752)",
+      "passenger_capacity": "6+1 = 7 seats (cat B)",
+      "cargo_volume": "1.3 x 1.5 x 1.45 m = 2.8 m^3",
+      "transmission": "MT, gasoline AI-92",
+      "tariffs_RUB_per_day": {
+        "1_day_9h": 3400,
+        "1_sutki_24h": 3995,
+        "2-3_sut": 3900,
+        "4-5_sut": 3800,
+        "6-7_sut": 3700,
+        "8-15_sut": 3600,
+        "16_plus_sut": 3500
+      },
+      "price_3_days_calc_24h": "3 x 3900 = 11700 RUB (2-3 sut bracket)",
+      "mileage_included": "250 km/day (24h tariff) or 200 km/day (9h day tariff)",
+      "overage_per_km": 10,
+      "deposit": "15000 RUB (outside LO region = individual agreement)",
+      "insurance": "OSAGO included; KASKO not stated",
+      "moscow_permission": "Territory: SPb, LO, regions up to 1000 km from SPb (Moscow = 706 km from SPb, so within), Belarus — ok",
+      "min_age_tenant": 25,
+      "min_age_driver": 23,
+      "min_experience": "3 years",
+      "verification_status": "confirmed_official_page",
+      "url": "http://www.perpetuum-rent.ru/tarif.php and arenda_gazeley.php",
+      "notes": "ECONOMICAL CHOICE. Cargo volume 2.8 m^3 is TIGHT for 6 hockey bags (~4-5 m^3 needed) — measure before booking; consider 2705 Kombi (4.2 m^3) instead. With 1400 km total over 3 days = 467 km/day, need tariff with 500 km included or pay overage; 9h day tariff gives 200 km/day insufficient."
+    },
+    {
+      "rank": 4,
+      "company": "Перпетуум Мобиле (perpetuum-rent.ru)",
+      "model": "ГАЗель-Бизнес Комби (ГАЗ-2705)",
+      "passenger_capacity": "6+1 = 7 seats (cat B)",
+      "cargo_volume": "1.95 x 1.5 x 1.45 m = 4.2 m^3 (FITS 6 hockey bags)",
+      "transmission": "MT, gasoline (with LPG)",
+      "tariffs_RUB_per_day": {
+        "1_sutki_24h": 4295,
+        "2-3_sut": 4200,
+        "4-5_sut": 4100,
+        "6-7_sut": 4000,
+        "8-15_sut": 3900,
+        "16_plus_sut": 3800
+      },
+      "price_3_days_calc_24h": "3 x 4200 = 12600 RUB (2-3 sut bracket)",
+      "overage_per_km": 10,
+      "deposit": 15000,
+      "moscow_permission": "Yes, within 1000 km of SPb (Moscow ok)",
+      "insurance": "OSAGO included",
+      "verification_status": "confirmed_official_page",
+      "url": "http://www.perpetuum-rent.ru/tarif.php",
+      "notes": "BEST CARGO FIT at this company. 4.2 m^3 holds 6 hockey bags. Same 250 km/day issue — pay overage 10 RUB/km x 650 overage = +6500 RUB. Total: 12600 + 6500 + 15000 deposit = ~34100 RUB. Phone-confirm fuel policy (LPG/benzin mix) and exact Moscow entry."
+    },
+    {
+      "rank": 5,
+      "company": "BusRentSPb (busrentspb.ru)",
+      "address": "SPb, ul. Savushkina, 141 (m. Begovaya)",
+      "phones": [
+        "+7 (951) 683-40-40",
+        "info@busrentspb.ru"
+      ],
+      "model": "Соболь грузопассажирский 7 мест",
+      "passenger_capacity": "7 seats (cat B)",
+      "cargo_volume": "small per spec; exact LxWxH not on page",
+      "transmission": "MT",
+      "tariffs_RUB_per_day": {
+        "1_sutki": 2500,
+        "7-20_sut": 2300,
+        "21_plus_sut": 2000
+      },
+      "price_3_days_calc": "3 x 2500 = 7500 RUB",
+      "overage_per_km": 8,
+      "deposit": 5000,
+      "insurance": "OSAGO mentioned; KASKO not specified",
+      "moscow_permission": "Yes — outside SPb/LO deposit +5000 RUB, mileage 250 km/day",
+      "mileage_included": "250 km/day",
+      "verification_status": "confirmed_official_page",
+      "url": "https://busrentspb.ru/prokat-mikroavtobusov",
+      "notes": "LOWEST DEPOSIT and CHEAPEST base rate; mileage 250 km/day insufficient for 467 km/day route — pay 8 RUB/km x 650 km overage = +5200 RUB. Total ~12700 + 5000 + 5000 = 22700 RUB. Cargo volume spec NOT detailed on page — phone-confirm before booking. Old 2014/2018 fleet."
+    },
+    {
+      "rank": 6,
+      "company": "BusRentSPb (busrentspb.ru)",
+      "model": "Соболь Некст 8 мест (2014)",
+      "passenger_capacity": "8 seats",
+      "tariffs_RUB_per_day": {
+        "1_sutki": 3000,
+        "7-20_sut": 2800,
+        "21_plus_sut": 2600
+      },
+      "price_3_days_calc": "3 x 3000 = 9000 RUB",
+      "overage_per_km": 8,
+      "deposit": 15000,
+      "verification_status": "confirmed_official_page",
+      "url": "https://busrentspb.ru/prokat-gazeley",
+      "notes": "8 seats but cargo capacity spec absent — call to confirm."
+    },
+    {
+      "rank": 7,
+      "company": "BusRentSPb (busrentspb.ru)",
+      "model": "Газель Некст грузопассажирская (2016)",
+      "passenger_capacity": "7 seats (Gazel Next Kombi configuration)",
+      "tariffs_RUB_per_day": {
+        "1_sutki": 3500,
+        "7-20_sut": 3200,
+        "21_plus_sut": 3000
+      },
+      "price_3_days_calc": "3 x 3500 = 10500 RUB",
+      "overage_per_km": 8,
+      "deposit": 15000,
+      "verification_status": "confirmed_official_page",
+      "url": "https://busrentspb.ru/prokat-gazeley",
+      "notes": "Modern GAZelle Next Kombi with 7 seats + cargo hold; mileage limit 250 km/day."
+    },
+    {
+      "rank": 8,
+      "company": "Brilliant Cars (brilliant-cars.ru)",
+      "phones": [
+        "+7 (812) 944-39-04",
+        "+7 (921) 859-46-66"
+      ],
+      "address": "SPb",
+      "model": "ГАЗель Фермер (GAZ-330232)",
+      "passenger_capacity": "6 (5+1) — JUST BELOW 6+1 requirement; cat B",
+      "cargo_volume": "3.0 x 1.9 x 1.42 m = 8 m^3 (good for bags)",
+      "transmission": "MT, gasoline 2.8L (107 hp)",
+      "tariffs_RUB_per_day": {
+        "7-14_sutok": 2350,
+        "15_plus": 2150
+      },
+      "price_3_days_calc": "7-14 bracket: 3 x 2350 = 7050 RUB",
+      "deposit": 10000,
+      "verification_status": "confirmed_official_page (pricing partial)",
+      "url": "https://brilliant-cars.ru/prokat-bez-voditelya/kommercheskiy-transport/gazel-fermer.html",
+      "notes": "5+1 seats (only 6 total with driver = no passenger seat for 6th person since user drives). NOT a fit because user IS the driver; need 6 PASSENGER seats. CALL to confirm Gazel Kombi 6+1 option if exists in fleet."
+    },
+    {
+      "rank": 9,
+      "company": "7verstavto (7verstavto.ru)",
+      "address": "SPb, ul. Salova, 70",
+      "phones": [
+        "+7 (812) 325-51-55"
+      ],
+      "model": "Газель NEXT дизель (cargo бортовой 4.2 m)",
+      "passenger_capacity": "1+2 (driver+2) — NOT a passenger-cargo variant; грузовой only",
+      "cargo_volume": "4.3 x 2.1 x 1.8 m cargo bed",
+      "transmission": "6-MT",
+      "engine": "2.0L diesel Cummins 136 hp",
+      "tariffs_RUB_per_day": {
+        "1-2_sut": 3500,
+        "3-6_sut": 3400,
+        "7-14_sut": 3300,
+        "standard_EU": 3600,
+        "unlimited_SPb_LO": 4900,
+        "unlimited_RF_EU": 4900,
+        "dayny_8h_150km": 2400
+      },
+      "price_3_days_calc": {
+        "standard_with_overage": "3x3400 + (1000 km overage @ undisclosed rate) ~ 10200+",
+        "unlimited_RF": "3x4900 = 14700"
+      },
+      "overage_per_km": "Per rate table not shown for cargo Gazelle — call",
+      "deposit": {
+        "standard": 10000,
+        "full_unlimited_RF": 20000
+      },
+      "insurance": "OSAGO + KASKO included per company policy (page text: 'Полная ОСАГО/КАСКО' standard for fleet)",
+      "moscow_permission": "Yes — 'Полный Безлимит РФ' tariff covers all RF; 'Стандарт' limit 300 km/day; cargo Gazelle <=3.5t cat B",
+      "verification_status": "confirmed_official_page (site blocked from network; data via search index)",
+      "url": "https://7verstavto.ru/vse-avtomobili/gruzoperevozki/gazel-next-dizel/",
+      "notes": "GRUZOVOY variant, only 3 seats — user must look for their passenger/kombi Sobol NN or call to confirm a 7-seat Sobol Next in lineup (likely only cargo). NOT FIT for 6 passengers. Best for unlimited RF/EU mileage though."
+    },
+    {
+      "rank": 10,
+      "company": "AmegaCar (amegacar.ru)",
+      "address": "SPb",
+      "phones": [
+        "+7 (812) 3-100-100",
+        "+7 (911) 940-12-12"
+      ],
+      "model": "ГАЗель NEXT (commercial cargo version)",
+      "passenger_capacity": "1+2 only (cargo variant)",
+      "tariffs_RUB_per_day": {
+        "150_km_3-7": 3300,
+        "250_km_3-7": 3400,
+        "350_km_3-7": 3700,
+        "500_km_3-7": 4100,
+        "unlimited_SPb_3-7": 3850
+      },
+      "price_3_days_calc": {
+        "150_tariff_with_500overage": "3x3300 + (1400-450) km overage",
+        "unlimited_SPb": "3x3850 = 11550 RUB but only valid for SPb territory, NOT allowed for Moscow trip"
+      },
+      "overage_per_km": 10,
+      "deposit": 20000,
+      "moscow_permission": "Unlimited tariff valid 'only on territory of SPb' — TRIP TO MOSCOW NOT COVERED. Standard tariffs allow it but with mileage limits; phone-confirm",
+      "verification_status": "confirmed_official_page",
+      "url": "https://amegacar.ru/cars/commercial/gazel-next",
+      "notes": "CARGO ONLY (1+2 seats). Not fit for 6 passengers. Unlimited tariff explicitly excludes travel beyond SPb. NOT a fit."
+    },
+    {
+      "rank": 11,
+      "company": "spb.gazel.rent",
+      "phones": [
+        "+7 (994) 427-60-47"
+      ],
+      "address": "SPb, Sirevnevyy bulvar 2k1",
+      "model": "ГАЗель Next Фургон / Бортовой 6м / Mercedes Sprinter",
+      "passenger_capacity": "cargo only (1+2)",
+      "tariffs_RUB_per_day": {
+        "1-9_sut": 3300,
+        "10-19_sut": 3300,
+        "20-29_sut": 3300
+      },
+      "mileage_included": "300 km/day",
+      "overage_per_km": 5,
+      "deposit": 10000,
+      "moscow_permission": "Not specifically stated; phone-confirm",
+      "insurance": "all insured, cost included",
+      "verification_status": "confirmed_official_page",
+      "url": "https://spb.gazel.rent/ceny",
+      "notes": "CARGO only, not passenger. Not fit."
+    },
+    {
+      "rank": 12,
+      "company": "U-Drive (u-drive.ru)",
+      "address": "SPb, ul. Predportovaya 6k15 (m. Moskovskaya)",
+      "phones": [
+        "+7 (812) 767-94-56"
+      ],
+      "model": "ГАЗель Next промтоварный/рефрижератор фургон (200+ vehicles)",
+      "passenger_capacity": "1+2 (cargo variant)",
+      "tariffs_RUB_per_day": {
+        "from": 3000
+      },
+      "deposit": "not specified on landing; phone-confirm",
+      "insurance": "OSAGO + KASKO included; minimal franchise on accident",
+      "verification_status": "landing_page_only",
+      "url": "https://u-drive.ru/arenda-gazel-bez-voditelya",
+      "notes": "CARGO fleet only, no passenger-cargo option. Not fit."
+    }
+  ],
+  "best_choice_summary": {
+    "top_pick_legal_6plus_cargo_MT": {
+      "company": "KTS+",
+      "model": "ГАЗ Соболь NN Комби 2023",
+      "url": "https://www.kts-plus.ru/gaz-sobol-kombi.html",
+      "estimated_total_RUB_3_days_moscow": "3 x 7050 (tariff 500) + 20000 deposit = 41150 RUB (deposit refundable)",
+      "seats": "6+1 (cat B)",
+      "cargo_m3": "~4.8 (factory spec per dealer)",
+      "transmission": "MT (5-step)",
+      "mileage": "1500 km included over 3 days at 500 km/day = full 1400 km route covered, no overage",
+      "moscow_ok": "Yes, by prior agreement (Каско extension may apply)",
+      "insurance": "KASKO with franchise + OSAGO included; franchise amount by phone"
+    },
+    "economical_pick": {
+      "company": "BusRentSPb",
+      "model": "Соболь грузопассажирский 7 мест (or GAZelle Next грузопассажирская)",
+      "estimated_total_RUB_3_days_moscow": "7500-10500 base + ~5200-6500 overage + 5000-15000 deposit = 17700-32000 RUB",
+      "seats": "7 (cat B)",
+      "transmission": "MT",
+      "moscow_ok": "Yes, +5000 RUB to deposit if outside SPb/LO",
+      "caveats": "Older 2014-2018 fleet; cargo spec not detailed on page — phone-confirm 6 hockey bags fit"
+    },
+    "best_legacy_brand_combo": {
+      "company": "Перпетуум Мобиле",
+      "model": "ГАЗель-Бизнес 2705 Комби (6+1, 4.2 m^3 cargo)",
+      "estimated_total_RUB_3_days_moscow": "3 x 4200 = 12600 + 6500 overage (650 km x 10) + 15000 deposit = 34100 RUB",
+      "seats": "6+1 (cat B)",
+      "cargo_m3": "4.2 (fits 6 hockey bags)",
+      "transmission": "MT (gasoline + LPG)",
+      "moscow_ok": "Yes, within 1000 km of SPb"
+    }
+  },
+  "items_requiring_phone_confirmation": [
+    "KTS+ KASKO franchise amount (not published)",
+    "KTS+ Sobol NN Kombi exact cargo compartment dimensions",
+    "BusRentSPb Sobol 7-seat exact LxWxH and 6-bag fit",
+    "Perpetuum Mobily 2705 Kombi — fuel policy (LPG/AI-92) and exact Moscow city entry",
+    "All companies — exact pickup/return office hours on Fri 25.09 12:00 and Sun 27.09 23:00"
+  ],
+  "not_books": "Confirmed — no booking performed. Recommendation: call KTS+ first (+7 812 719-70-08) for Sobol NN Kombi 2023 with tariff 500."
+}

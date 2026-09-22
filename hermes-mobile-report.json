@@ -1,0 +1,29 @@
+{
+  "root_cause": "HermesWsClient is a Kotlin `object` (process-singleton). Its `private val requestId = AtomicInteger(0)` at HermesWsClient.kt:102 persists across the 3 androidTest classes in the same instrumentation JVM. The scripted reply envelopes hardcode id=\"1\"/\"2\"/\"3\" under the assumption that each test starts a fresh process — they don't. After test 1 sends session.list / commands.catalog / session.create with id=1,2,3, test 2's first send has id=4, etc. ChatViewModel.handleRpcResult (ChatViewModel.kt:750) does `pendingRequests.remove(id) ?: return`, so the unmatched id silently drops the SESSION_LIST branch and the rail renders empty. waitUntilAtLeastOneExists(rail_item_*) then times out at 30s. Secondary leak: hermes_rail.xml SharedPreferences (last_session/pinned/home_order) persists across tests; stale last_session reroutes handleGatewayReady into switchSession(staleId), firing an unscripted session.resume before any scripted envelope can match.",
+  "fix_summary": [
+    "HermesWsClient.kt: added @VisibleForTesting internal fun resetRequestCounterForTest(rejectInflight: Boolean = true) that calls rejectAllPending() then sets requestId.set(0).",
+    "E2eHarness.kt: added fun resetStateForTest() that calls HermesWsClient.resetRequestCounterForTest, clears HermesWsClient.e2eWsOverride, and wipes the hermes_rail SharedPreferences (last_session/pinned/home_order).",
+    "RailReorderE2eTest.kt / RenameE2eTest.kt / RenameFailureE2eTest.kt: each test now calls E2eHarness.resetStateForTest() as step 1, and the setup is reordered to the user-requested order: reset → gatewayServer.start()+gw.enqueue → seedServerProfile → e2eWsOverride=wsUrl → ActivityScenario.launch(MainActivity)."
+  ],
+  "files_changed": [
+    "app/src/main/java/com/m57/hermescontrol/data/ws/HermesWsClient.kt",
+    "app/src/androidTest/java/com/m57/hermescontrol/e2e/E2eHarness.kt",
+    "app/src/androidTest/java/com/m57/hermescontrol/e2e/RailReorderE2eTest.kt",
+    "app/src/androidTest/java/com/m57/hermescontrol/e2e/RenameE2eTest.kt",
+    "app/src/androidTest/java/com/m57/hermescontrol/e2e/RenameFailureE2eTest.kt"
+  ],
+  "diff_lines": "5 files changed, 112 insertions(+), 12 deletions(-)",
+  "commit": "0f41e347972c60759fa34085a2967f1023662789",
+  "tag": "e2e-23",
+  "branch": "likivik/rail-instantswitch",
+  "pushed": true,
+  "static_check_status": "skipped_no_android_sdk",
+  "static_check_reason": "Local environment lacks /tmp/android-sdk and Gradle 9.7.1 download is blocked by SSL handshake_failure from services.gradle.org. ./gradlew :app:compileIrisDebugAndroidTestKotlin cannot complete here; remote CI must confirm green.",
+  "contract_match_after_fix": "With requestId reset to 0 before each test: id=\"1\" = session.list (sent by handleGatewayReady→loadSessions), id=\"2\" = commands.catalog (handleGatewayReady→fetchCommandCatalog), id=\"3\" = session.create (handleGatewayReady→createNewSession after last_session reset to null). The 4th id (rename tests) = session.resume (id=\"4\"), title = id=\"5\".",
+  "untouched": [
+    "BubbleWidthContainerTest failures (unrelated, per user instruction)",
+    "E2eComposeRule.kt / E2eScenarioRule.kt (untracked dead code from an earlier experiment; not part of this fix)",
+    "The session.list payload shape (id/title/preview/started_at/message_count/source — matches hermes-agent tui_gateway/methods_session.py:196-208 exactly)",
+    "Step.Reply / errorEnvelope / resumeAck / titleAccept builders in ScriptedGateway.kt (id-bearing envelopes unchanged on purpose)"
+  ]
+}

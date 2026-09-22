@@ -106,13 +106,16 @@
 
         export PATH="/run/wrappers/bin:${pkgs.stdenv.cc}/bin:$PATH"
         export LD_LIBRARY_PATH="/run/opengl-driver/lib:${pkgs.stdenv.cc.cc.lib}/lib"
-        export TRITON_LIBCUDA_PATH="/run/opengl-driver/lib/libcuda.so.1"
+        export TRITON_LIBCUDA_PATH="/run/opengl-driver/lib"
+        export TRITON_CACHE_DIR="/var/lib/monkey-server/.triton/cache"
         export MOCR_MODEL_DIR="$MODEL"
         exec ${monkeyVenv}/bin/python ${monkeyServerSrc}/monkey_server.py --port ${toString port}
       '';
     in {
       systemd.tmpfiles.rules = [
         "d /var/lib/monkey-server 0755 monkey monkey -"
+        "d /var/lib/monkey-server/.triton 0755 monkey monkey -"
+        "d /var/lib/monkey-server/.triton/cache 0755 monkey monkey -"
       ];
 
       users.users.monkey = {

@@ -1,0 +1,50 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: ocrflow 0.2.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-09-27 15:00+0300\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "Send to OCR"
+msgstr ""
+
+msgid "Re-OCR from original"
+msgstr ""
+
+msgid "Scan folder (OCR)"
+msgstr ""
+
+#. TRANSLATORS: the singular/plural is keyed off the number of queued files
+msgid "File sent for OCR"
+msgstr ""
+
+msgid "%n files sent for OCR"
+msgstr ""
+
+msgid "File sent for re-OCR (from original)"
+msgstr ""
+
+msgid "%n files sent for re-OCR (from original)"
+msgstr ""
+
+msgid "OCR: %s sent, %s failed"
+msgstr ""
+
+msgid "Could not send for OCR"
+msgstr ""
+
+msgid "Folder scan failed: %s"
+msgstr ""
+
+msgid "Folder queued for OCR: %s added, %s skipped (already OCR)"
+msgstr ""
+
+msgid "Could not scan folder"
+msgstr ""

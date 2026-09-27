@@ -1,0 +1,5 @@
+# Files to exclude from translation string scraping. Prevent false positives.
+js/dist/
+node_modules/
+vendor/
+docs/

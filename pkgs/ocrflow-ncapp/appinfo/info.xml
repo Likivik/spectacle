@@ -3,9 +3,9 @@
       xsi:noNamespaceSchemaLocation="https://apps.nextcloud.com/schema/apps/info.xsd">
     <id>ocrflow</id>
     <name>OCR Flow</name>
-    <summary>Send files to the OCR pipeline (tesseract + Surya VLM) from the Files context menu</summary>
-    <description><![CDATA[Adds a "Send to OCR" action to the Files context menu (single and multi-select). Files are queued to the nc-ocr-flow service running on the same host; progress is visible at /panel on port 8095.]]></description>
-    <version>0.1.0</version>
+    <summary>Send files and folders to the OCR pipeline (Google Vision, tesseract, MiniMax) from the Files context menu</summary>
+    <description><![CDATA[Adds "Send to OCR", "Re-OCR from original", and "Scan folder" actions to the Files context menu (single and multi-select). Files are queued to the nc-ocr-flow service running on the same host; progress is visible at /panel on port 8095.]]></description>
+    <version>0.2.0</version>
     <licence>agpl</licence>
     <author mail="kirilllipskii@gmail.com" homepage="https://filepath.ru">Likivik</author>
     <namespace>OcrFlow</namespace>
@@ -21,4 +21,9 @@
     <settings>
         <admin>OCA\OcrFlow\Settings\Admin</admin>
     </settings>
+    <!-- Load the Files context-menu actions; the l10n/ JS is loaded
+         automatically by Nextcloud for the user's locale. -->
+    <scripts>
+        <js>js/ocr-action.js</js>
+    </scripts>
 </info>

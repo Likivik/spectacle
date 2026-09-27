@@ -127,6 +127,59 @@ def _webdav_download(nc_path: str, dest: Path) -> None:
             f.write(chunk)
 
 
+def _versions_hrefs(nc_path: str, node_id: int) -> list[str]:
+    """Return version hrefs for a file, oldest first.
+
+    NC exposes per-file versions at
+    ``/remote.php/dav/versions/<user>/versions/<fileId>``; each entry is named
+    by an ms-accurate timestamp. The smallest timestamp is therefore the
+    ORIGINAL (pristine) upload, before any OCR overwrite created new versions.
+
+    ``node_id`` is the NC fileId — required to address the versions DAV node
+    (versions are keyed by fileId, not path).
+    """
+    if not node_id:
+        return []
+    from urllib.parse import quote
+    user = (nc_path.lstrip("/").split("/", 1) or [NC_USER])[0]
+    url = f"{NC_URL}/remote.php/dav/versions/{quote(user)}/versions/{int(node_id)}"
+    propfind_body = (
+        '<?xml version="1.0"?>'
+        '<d:propfind xmlns:d="DAV:"><d:prop>'
+        "<d:resourcetype/><d:getcontentlength/><d:getlastmodified/>"
+        "</d:prop></d:propfind>"
+    )
+    resp = requests.request(
+        "PROPFIND", url, auth=(NC_USER, NC_PASSWORD),
+        headers={"Depth": "1", "Content-Type": "application/xml"},
+        data=propfind_body, timeout=120,
+    )
+    if resp.status_code == 404:
+        # No versions for this file (never overwritten) → treat as none
+        return []
+    resp.raise_for_status()
+    import re as _re
+    hrefs = _re.findall(r"<d:href>([^<]+)</d:href>", resp.text)
+    # Sort by the trailing timestamp so the OLDEST version comes first.
+    def _ts(h: str) -> int:
+        try:
+            return int(h.rstrip("/").split("/")[-1])
+        except ValueError:
+            return 0
+    return sorted(dict.fromkeys(h for h in hrefs if _ts(h) > 0), key=_ts)
+
+
+def _webdav_download_version(version_href: str, dest: Path) -> None:
+    """Download the content of a specific version href to ``dest``."""
+    url = NC_URL + version_href if version_href.startswith("/") else version_href
+    log.info("WebDAV GET version %s", url)
+    resp = requests.get(url, auth=(NC_USER, NC_PASSWORD), stream=True, timeout=120)
+    resp.raise_for_status()
+    with dest.open("wb") as f:
+        for chunk in resp.iter_content(8192):
+            f.write(chunk)
+
+
 def _webdav_upload(nc_path: str, src: Path) -> None:
     """Upload file to NC via WebDAV PUT (creates new version automatically)."""
     url = _webdav_url(nc_path)
@@ -230,11 +283,15 @@ def _stamp_metadata(
     doc.close()
 
 
-def _process_file(nc_path: str, node_id: int, engine: str | None = None) -> dict:
+def _process_file(nc_path: str, node_id: int, engine: str | None = None,
+                  source: str | None = None) -> dict:
     """Download, OCR, upload back. Returns result dict.
 
     ``engine`` defaults to ``None`` → orchestrator resolves via
     ``NC_OCR_ENGINE`` env var (default: "google").
+    ``source == "pristine"`` → OCR the file's original (first) version and
+    write the result back to the current path (previous layers preserved as
+    versions). Requires ``node_id`` to address the versions DAV node.
     """
     ext = Path(nc_path).suffix.lower()
     filename = Path(nc_path).name
@@ -245,7 +302,18 @@ def _process_file(nc_path: str, node_id: int, engine: str | None = None) -> dict
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
         local_file = tmp / filename
-        _webdav_download(nc_path, local_file)
+
+        if source == "pristine":
+            vers = _versions_hrefs(nc_path, node_id)
+            if not vers:
+                # No versions → no prior OCR overwrite; current file IS pristine.
+                log.info("pristine: no versions for %s, OCR current file", nc_path)
+                _webdav_download(nc_path, local_file)
+            else:
+                log.info("pristine: OCR original version of %s (%s)", nc_path, vers[0])
+                _webdav_download_version(vers[0], local_file)
+        else:
+            _webdav_download(nc_path, local_file)
 
         if ext in IMAGE_EXTS:
             log.info("classifying image: %s", nc_path)
@@ -336,8 +404,10 @@ def _ocr_worker() -> None:
         try:
             job["status"] = "running"
             job["started"] = time.time()
-            log.info("worker: job %d start: %s (engine=%s)", job["id"], job["path"], job["engine"])
-            result = _process_file(item["nc_path"], item["node_id"], item["engine"])
+            log.info("worker: job %d start: %s (engine=%s source=%s)",
+                     job["id"], job["path"], job["engine"], item.get("source"))
+            result = _process_file(item["nc_path"], item["node_id"],
+                                   item["engine"], item.get("source"))
             job["status"] = "done" if not result.get("skipped") else "skipped"
             job["result"] = result
             if result.get("skipped"):
@@ -362,15 +432,19 @@ def _ocr_worker() -> None:
 threading.Thread(target=_ocr_worker, daemon=True, name="ocr-worker").start()
 
 
-def _enqueue(nc_path: str, node_id: int, engine: str | None = None) -> dict:
+def _enqueue(nc_path: str, node_id: int, engine: str | None = None,
+             source: str | None = None) -> dict:
     """Create a job record and enqueue for processing.
 
     ``engine`` defaults to None → orchestrator resolves via env.
+    ``source``: "pristine" → OCR the file's first/original version (before any
+    prior OCR overwrite) and write the result back to the current path.
     """
     job = {
         "id": next(_job_seq),
         "path": nc_path,
         "engine": engine,
+        "source": source,
         "status": "queued",
         "created": time.time(),
         "finished": None,
@@ -379,7 +453,8 @@ def _enqueue(nc_path: str, node_id: int, engine: str | None = None) -> dict:
         "reason": None,
     }
     _record_job(job)
-    _ocr_queue.put({"job": job, "nc_path": nc_path, "node_id": node_id, "engine": engine})
+    _ocr_queue.put({"job": job, "nc_path": nc_path, "node_id": node_id,
+                    "engine": engine, "source": source})
     return job
 
 
@@ -475,6 +550,7 @@ class RescanRequest(BaseModel):
     path: str                    # NC-internal path: /<user>/files/<rel>
     node_id: int = 0
     engine: str | None = None    # google|tesseract|minimax; None → env
+    source: str | None = None    # "pristine" → OCR the file's first version
 
 
 @app.post("/rescan")
@@ -491,6 +567,8 @@ async def rescan(
         raise HTTPException(status_code=422, detail=f"unsupported ext: {ext}")
     if body.engine is not None and body.engine not in ("google", "tesseract", "minimax"):
         raise HTTPException(status_code=422, detail=f"invalid engine: {body.engine}")
+    if body.source is not None and body.source not in ("pristine",):
+        raise HTTPException(status_code=422, detail=f"invalid source: {body.source}")
     if "files_trashbin" in nc_path or "files_versions" in nc_path:
         raise HTTPException(status_code=422, detail="cannot rescan trashbin/versions")
 
@@ -499,8 +577,9 @@ async def rescan(
         with _processed_lock:
             _processed_ids.pop(body.node_id, None)
 
-    job = _enqueue(nc_path, body.node_id, body.engine)
-    return {"status": "queued", "job_id": job["id"], "engine": body.engine}
+    job = _enqueue(nc_path, body.node_id, body.engine, source=body.source)
+    return {"status": "queued", "job_id": job["id"],
+            "engine": body.engine, "source": body.source}
 
 
 class ScanAllRequest(BaseModel):

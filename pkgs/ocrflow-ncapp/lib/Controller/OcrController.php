@@ -34,7 +34,7 @@ class OcrController extends OCSController {
      * @NoCSRFRequired
      * @NoAdminRequired
      *
-     * Body: { "fileIds": [123, 456], "engine": "auto"|"tesseract"|"vlm" }
+     * Body: { "fileIds": [123, 456], "engine": "google"|"tesseract"|"minimax", "source": "pristine"? }
      * Returns: { results: [{ fileId, path, status, jobId?|error? }] }
      */
     public function scan(): array {
@@ -46,8 +46,9 @@ class OcrController extends OCSController {
         $body = json_decode($this->request->getParam('body', '{}'), true)
             ?? $this->request->getParams();
         $fileIds = $body['fileIds'] ?? [];
-        $engine = in_array($body['engine'] ?? 'auto', ['auto', 'tesseract', 'vlm'], true)
+        $engine = in_array($body['engine'] ?? 'auto', ['auto', 'google', 'tesseract', 'minimax'], true)
             ? $body['engine'] ?? 'auto' : 'auto';
+        $source = ($body['source'] ?? null) === 'pristine' ? 'pristine' : null;
 
         if (!is_array($fileIds) || count($fileIds) === 0) {
             return ['results' => [], 'error' => 'fileIds required'];
@@ -75,7 +76,12 @@ class OcrController extends OCSController {
             // NC-internal path format expected by the webhook: /<user>/files/<rel>
             $ncPath = '/' . $userId . '/files/' . ltrim($relPath, '/');
 
-            $res = $this->webhook->enqueue($ncPath, (int)$fileId, $engine);
+            if ($source === 'pristine') {
+                // node_id = NC fileId is required to address the versions DAV node
+                $res = $this->webhook->rescanPristine($ncPath, (int)$fileId, $engine);
+            } else {
+                $res = $this->webhook->enqueue($ncPath, (int)$fileId, $engine);
+            }
             $results[] = array_merge(
                 ['fileId' => $fileId, 'path' => $ncPath],
                 $res
@@ -83,5 +89,33 @@ class OcrController extends OCSController {
         }
 
         return ['results' => $results];
+    }
+
+    /**
+     * @NoCSRFRequired
+     * @NoAdminRequired
+     *
+     * Folder scan: forward the folder path to the webhook's /scan-all, which
+     * PROPFINDs it and enqueues every processable file inside.
+     * Body: { "folder": "Work/1-Аренда", "engine": ... } ("" = whole storage)
+     */
+    public function scanFolder(): array {
+        $userId = $this->userSession->getUser()?->getUID();
+        if ($userId === null) {
+            return ['error' => 'not logged in'];
+        }
+
+        $body = json_decode($this->request->getParam('body', '{}'), true)
+            ?? $this->request->getParams();
+        $folder = trim((string)($body['folder'] ?? ''));
+        $engine = in_array($body['engine'] ?? 'auto', ['auto', 'google', 'tesseract', 'minimax'], true)
+            ? $body['engine'] ?? 'auto' : 'auto';
+
+        // Only allow folders inside this user's storage (no traversal)
+        if ($folder !== '' && (str_contains($folder, '..') || str_starts_with($folder, '/'))) {
+            return ['error' => 'invalid folder'];
+        }
+
+        return $this->webhook->scanFolder($folder, $engine === 'auto' ? null : $engine);
     }
 }

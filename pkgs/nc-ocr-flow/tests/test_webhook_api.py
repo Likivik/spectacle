@@ -36,7 +36,7 @@ def client(monkeypatch):
         ws._ocr_queue.task_done()
 
     # Stub out actual processing: instant success
-    def fake_process(nc_path, node_id, engine="auto"):
+    def fake_process(nc_path, node_id, engine="auto", source=None):
         return {"path": nc_path, "output": nc_path, "vlm_pages": []}
 
     with patch.object(ws, "_process_file", side_effect=fake_process):
@@ -246,3 +246,88 @@ def test_worker_marks_ocrd(client):
     ws._ocr_queue.join()  # wait for the worker to drain
     with ws._ocrd_lock:
         assert "/likivik/files/x.pdf" in ws._ocrd_paths
+
+
+# --- pristine (re-OCR from original version) --------------------------------
+
+def test_process_file_source_pristine_uses_first_version(monkeypatch):
+    """With source='pristine', _process_file must OCR the oldest version
+    (not the current file) and write back to the same path."""
+    calls = {"vers": [], "dl_ver": [], "dl": [], "proc": [], "upload": []}
+
+    def fake_versions(nc_path, node_id):
+        calls["vers"].append((nc_path, node_id))
+        return ["/remote.php/dav/versions/likivik/versions/42/1000"]
+
+    def fake_dl_version(href, dest):
+        calls["dl_ver"].append((href, str(dest)))
+        # write a minimal valid PDF so process_pdf sees a file
+        import fitz
+        doc = fitz.open()
+        doc.new_page()
+        doc.save(str(dest))
+        doc.close()
+
+    def fake_dl(nc_path, dest):
+        calls["dl"].append(nc_path)
+
+    def fake_proc(pdf_path, engine=None):
+        calls["proc"].append((str(pdf_path), engine))
+        from nc_ocr_flow.ocr import ProcessResult
+        return ProcessResult(output_pdf=str(pdf_path), engine_used="google")
+
+    def fake_upload(nc_path, src):
+        calls["upload"].append((nc_path, str(src)))
+
+    with patch.object(ws, "_versions_hrefs", side_effect=fake_versions), \
+         patch.object(ws, "_webdav_download_version", side_effect=fake_dl_version), \
+         patch.object(ws, "_webdav_download", side_effect=fake_dl), \
+         patch.object(ws, "_webdav_upload", side_effect=fake_upload), \
+         patch.object(ws, "process_pdf", side_effect=fake_proc):
+        from nc_ocr_flow.webhook_server import _process_file
+        res = _process_file("/likivik/files/work/scanned.pdf",
+                            node_id=42, engine=None, source="pristine")
+
+    # pristine path used the oldest version, never the current file
+    assert calls["dl_ver"], "expected download of a version href"
+    assert calls["dl"] == [], "pristine must NOT download the current file"
+    assert calls["proc"], "expected process_pdf to run on the pristine file"
+    # uploaded back to the CURRENT path (writes a new version), not a version href
+    assert calls["upload"][0][0] == "/likivik/files/work/scanned.pdf"
+
+
+def test_process_file_pristine_no_versions_falls_back_to_current(monkeypatch):
+    """If a file has no versions (never overwritten), pristine == current file."""
+    calls = {"dl": [], "upload": []}
+
+    def fake_versions(nc_path, node_id):
+        return []
+
+    def fake_dl(nc_path, dest):
+        calls["dl"].append(nc_path)
+        import fitz
+        doc = fitz.open()
+        doc.new_page()
+        doc.save(str(dest))
+        doc.close()
+
+    def fake_proc(pdf_path, engine=None):
+        from nc_ocr_flow.ocr import ProcessResult
+        return ProcessResult(output_pdf=str(pdf_path), engine_used="google")
+
+    def fake_upload(nc_path, src):
+        calls["upload"].append((nc_path, str(src)))
+
+    with patch.object(ws, "_versions_hrefs", side_effect=fake_versions), \
+         patch.object(ws, "_webdav_download_version", side_effect=AssertionError("no versions")), \
+         patch.object(ws, "_webdav_download", side_effect=fake_dl), \
+         patch.object(ws, "_webdav_upload", side_effect=fake_upload), \
+         patch.object(ws, "process_pdf", side_effect=fake_proc):
+        from nc_ocr_flow.webhook_server import _process_file
+        res = _process_file("/likivik/files/work/scanned.pdf",
+                            node_id=42, engine=None, source="pristine")
+
+    # fell back to current file, then uploaded result back to same path
+    assert calls["dl"] == ["/likivik/files/work/scanned.pdf"]
+    assert calls["upload"][0][0] == "/likivik/files/work/scanned.pdf"
+    assert res.get("path") == "/likivik/files/work/scanned.pdf"

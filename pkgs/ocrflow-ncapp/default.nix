@@ -7,9 +7,10 @@
   runCommand,
   copyPathToStore ? null,
 }:
-runCommand "nextcloud-app-ocrflow-0.1.0" { } ''
+runCommand "nextcloud-app-ocrflow-0.2.0" { } ''
   mkdir -p $out
   cp -r ${./appinfo} $out/appinfo
   cp -r ${./lib} $out/lib
   cp -r ${./js} $out/js
+  cp -r ${./l10n} $out/l10n
 ''

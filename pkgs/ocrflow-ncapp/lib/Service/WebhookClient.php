@@ -1,170 +1,169 @@
 <?php
-/**
- * Thin HTTP client for the nc-ocr-flow webhook (runs on the same host, :8095).
- * Secret read from system config — never leaves the server.
- */
+
+declare(strict_types=1);
+
 namespace OCA\OcrFlow\Service;
 
+use OCA\OcrFlow\AppInfo\AppInfo;
+use OCP\Http\Client\IClientService;
 use OCP\IConfig;
 use Psr\Log\LoggerInterface;
 
-class WebhookClient {
-    private IConfig $config;
-    private LoggerInterface $logger;
+/**
+ * Client for the nc-ocr-flow webhook service.
+ *
+ * Forwards "Send to OCR" / "Scan folder" calls to the FastAPI webhook
+ * running on the same host, on port 8095 by default.
+ */
+final class WebhookClient
+{
+    public function __construct(
+        private readonly IConfig $config,
+        private readonly IClientService $clientService,
+        private readonly LoggerInterface $logger,
+    ) {}
 
-    public function __construct(IConfig $config, LoggerInterface $logger) {
-        $this->config = $config;
-        $this->logger = $logger;
+    public function baseUrl(): string
+    {
+        $url = $this->config->getAppValue(AppInfo::APP_ID, 'webhook_url', '');
+        if ($url === '') {
+            $url = 'http://127.0.0.1:8095';
+        }
+        return rtrim($url, '/');
     }
 
-    private function baseUrl(): string {
-        return rtrim($this->config->getSystemValue('ocrflow_url', 'http://127.0.0.1:8095'), '/');
-    }
-
-    private function secret(): string {
-        return (string)$this->config->getSystemValue('ocrflow_secret', '');
+    public function secret(): string
+    {
+        return $this->config->getAppValue(AppInfo::APP_ID, 'webhook_secret', '');
     }
 
     /**
-     * Enqueue one file for OCR.
-     * @return array ['status' => 'queued', 'jobId' => int] or ['status' => 'error', 'error' => string]
+     * Queue a single file (or folder, the webhook resolves) for OCR.
+     *
+     * @param string $ncPath   NC-internal path (e.g. /<user>/files/<rel>)
+     * @param int    $nodeId   NC fileId (0 if unknown)
+     * @param string $engine   google|tesseract|minimax|auto
+     * @param bool   $force    bypass the born-digital skip decision AND
+     *                         the recently-processed guard. The
+     *                         "Re-OCR anyway" action sends force=true
+     *                         so the user can deliberately re-OCR a
+     *                         file we previously stamped or classified.
      */
-    public function enqueue(string $ncPath, int $nodeId, string $engine = 'auto'): array {
-        $payload = json_encode([
+    public function enqueue(
+        string $ncPath,
+        int $nodeId = 0,
+        string $engine = 'auto',
+        bool $force = false,
+    ): array {
+        $payload = [
             'event' => [
-                'class' => 'OCP\\Files\\Events\\Node\\NodeCreatedEvent',
-                'node' => ['id' => $nodeId, 'path' => $ncPath],
+                'class' => 'OCP\\Files\\Events\\Node\\NodeWrittenEvent',
+                'node' => [
+                    'id'   => $nodeId,
+                    'path' => $ncPath,
+                ],
             ],
-            'rescan' => true,      // bypass recently_processed guard on the service side
-            'engine' => $engine,
-            'time' => time(),
-        ]);
-
-        $ch = curl_init($this->baseUrl() . '/webhook');
-        curl_setopt_array($ch, [
-            CURLOPT_POST => true,
-            CURLOPT_POSTFIELDS => $payload,
-            CURLOPT_HTTPHEADER => [
-                'Content-Type: application/json',
-                'X-Webhook-Secret: ' . $this->secret(),
-            ],
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 30,
-        ]);
-        $resp = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $curlErr = curl_error($ch);
-        curl_close($ch);
-
-        if ($resp === false || $httpCode !== 200) {
-            $this->logger->warning('ocrflow: webhook failed', [
-                'path' => $ncPath, 'http' => $httpCode, 'curl' => $curlErr,
-            ]);
-            return ['status' => 'error', 'error' => "webhook unavailable (HTTP $httpCode)"];
-        }
-
-        $data = json_decode($resp, true);
-        if (!is_array($data) || ($data['status'] ?? '') !== 'queued') {
-            return ['status' => 'error', 'error' => 'unexpected webhook response: ' . substr($resp, 0, 200)];
-        }
-
-        return ['status' => 'queued', 'jobId' => $data['job_id'] ?? 0];
-    }
-
-    /**
-     * Re-OCR a file from its pristine (first/original upload) version.
-     * The webhook downloads that version, OCRs it, and writes the result back
-     * to the current path as a new version — leaving the bad layer behind.
-     * @return array ['status' => 'queued', 'jobId' => int] or error
-     */
-    public function rescanPristine(string $ncPath, int $nodeId, string $engine = 'auto'): array {
-        return $this->postRescan($ncPath, $nodeId, $engine, 'pristine');
-    }
-
-    private function postRescan(string $ncPath, int $nodeId, string $engine, ?string $source): array {
-        $payload = json_encode([
-            'path' => $ncPath,
-            'node_id' => $nodeId,
-            'engine' => $engine === 'auto' ? null : $engine,
-            'source' => $source,
-            'time' => time(),
-        ]);
-
-        $ch = curl_init($this->baseUrl() . '/rescan');
-        curl_setopt_array($ch, [
-            CURLOPT_POST => true,
-            CURLOPT_POSTFIELDS => $payload,
-            CURLOPT_HTTPHEADER => [
-                'Content-Type: application/json',
-                'X-Webhook-Secret: ' . $this->secret(),
-            ],
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 30,
-        ]);
-        $resp = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $curlErr = curl_error($ch);
-        curl_close($ch);
-
-        if ($resp === false || $httpCode !== 200) {
-            $this->logger->warning('ocrflow: rescan failed', [
-                'path' => $ncPath, 'http' => $httpCode, 'curl' => $curlErr,
-            ]);
-            return ['status' => 'error', 'error' => "webhook unavailable (HTTP $httpCode)"];
-        }
-
-        $data = json_decode($resp, true);
-        if (!is_array($data) || ($data['status'] ?? '') !== 'queued') {
-            return ['status' => 'error', 'error' => 'unexpected webhook response: ' . substr($resp, 0, 200)];
-        }
-
-        return ['status' => 'queued', 'jobId' => $data['job_id'] ?? 0];
-    }
-
-    /**
-     * Enqueue every processable file under a folder ("" = whole storage).
-     * Delegates to the webhook's /scan-all, which PROPFINDs the folder.
-     * @return array ['enqueued' => int, 'skipped_ocrd' => int] or ['error' => string]
-     */
-    public function scanFolder(string $folder, ?string $engine = null): array {
-        $payload = json_encode([
-            'folder' => $folder,
-            'engine' => $engine,
-            'skip_ocrd' => true,
-            'time' => time(),
-        ]);
-
-        $ch = curl_init($this->baseUrl() . '/scan-all');
-        curl_setopt_array($ch, [
-            CURLOPT_POST => true,
-            CURLOPT_POSTFIELDS => $payload,
-            CURLOPT_HTTPHEADER => [
-                'Content-Type: application/json',
-                'X-Webhook-Secret: ' . $this->secret(),
-            ],
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 30,
-        ]);
-        $resp = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $curlErr = curl_error($ch);
-        curl_close($ch);
-
-        if ($resp === false || $httpCode !== 200) {
-            $this->logger->warning('ocrflow: scan-folder failed', [
-                'folder' => $folder, 'http' => $httpCode, 'curl' => $curlErr,
-            ]);
-            return ['error' => "webhook unavailable (HTTP $httpCode)"];
-        }
-
-        $data = json_decode($resp, true);
-        if (!is_array($data)) {
-            return ['error' => 'unexpected webhook response: ' . substr($resp, 0, 200)];
-        }
-
-        return [
-            'enqueued' => $data['enqueued'] ?? 0,
-            'skipped_ocrd' => $data['skipped_ocrd'] ?? 0,
+            'force' => $force,
         ];
+
+        return $this->post('/webhook', $payload);
+    }
+
+    /**
+     * Trigger an engine override re-OCR (panel action).
+     *
+     * @param bool $force bypass the born-digital skip decision
+     */
+    public function rescan(
+        string $ncPath,
+        int $nodeId,
+        string $engine,
+        bool $force = false,
+    ): array {
+        $payload = [
+            'path'    => $ncPath,
+            'node_id' => $nodeId,
+            'engine'  => $engine,
+            'force'   => $force,
+        ];
+
+        return $this->post('/rescan', $payload);
+    }
+
+    /**
+     * Scan a folder: forward to the webhook's /scan-all, which PROPFINDs
+     * the folder and enqueues every processable file inside.
+     *
+     * @param string $folder   relative folder path ("" = whole storage)
+     * @param string|null $engine  google|tesseract|minimax; null → env
+     */
+    public function scanFolder(string $folder, ?string $engine = null): array
+    {
+        $payload = [
+            'folder' => $folder,
+        ];
+        if ($engine !== null) {
+            $payload['engine'] = $engine;
+        }
+        return $this->post('/scan-all', $payload);
+    }
+
+    /** Get the webhook's job-queue snapshot for the panel. */
+    public function status(int $limit = 50): array
+    {
+        return $this->get('/status', ['limit' => $limit]);
+    }
+
+    private function post(string $path, array $payload): array
+    {
+        $url = $this->baseUrl() . $path;
+        try {
+            $client = $this->clientService->newClient();
+            $resp = $client->post($url, [
+                'headers' => $this->headers(),
+                'body'    => json_encode($payload, JSON_THROW_ON_ERROR),
+                'timeout' => 5,
+            ]);
+            return ['ok' => true, 'status' => $resp->getStatusCode(),
+                    'body' => json_decode((string)$resp->getBody(), true)];
+        } catch (\Throwable $e) {
+            $this->logger->error('WebhookClient POST failed: ' . $e->getMessage(),
+                ['url' => $url, 'payload' => $payload]);
+            return ['ok' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    private function get(string $path, array $query = []): array
+    {
+        $url = $this->baseUrl() . $path;
+        if ($query) {
+            $url .= '?' . http_build_query($query);
+        }
+        try {
+            $client = $this->clientService->newClient();
+            $resp = $client->get($url, [
+                'headers' => $this->headers(),
+                'timeout' => 5,
+            ]);
+            return ['ok' => true, 'status' => $resp->getStatusCode(),
+                    'body' => json_decode((string)$resp->getBody(), true)];
+        } catch (\Throwable $e) {
+            $this->logger->error('WebhookClient GET failed: ' . $e->getMessage(),
+                ['url' => $url]);
+            return ['ok' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    private function headers(): array
+    {
+        $h = [
+            'Content-Type' => 'application/json',
+            'Accept'       => 'application/json',
+        ];
+        $secret = $this->secret();
+        if ($secret !== '') {
+            $h['X-Webhook-Secret'] = $secret;
+        }
+        return $h;
     }
 }

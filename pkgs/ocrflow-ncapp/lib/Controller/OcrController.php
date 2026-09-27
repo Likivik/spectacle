@@ -34,7 +34,7 @@ class OcrController extends OCSController {
      * @NoCSRFRequired
      * @NoAdminRequired
      *
-     * Body: { "fileIds": [123, 456], "engine": "google"|"tesseract"|"minimax", "source": "pristine"? }
+     * Body: { "fileIds": [123, 456], "engine": "google"|"tesseract"|"minimax", "force": bool? }
      * Returns: { results: [{ fileId, path, status, jobId?|error? }] }
      */
     public function scan(): array {
@@ -48,7 +48,11 @@ class OcrController extends OCSController {
         $fileIds = $body['fileIds'] ?? [];
         $engine = in_array($body['engine'] ?? 'auto', ['auto', 'google', 'tesseract', 'minimax'], true)
             ? $body['engine'] ?? 'auto' : 'auto';
-        $source = ($body['source'] ?? null) === 'pristine' ? 'pristine' : null;
+        // ``force`` is opt-in: the regular "Send to OCR" action leaves
+        // it false (webhook decides whether OCR is needed); the
+        // "Re-OCR anyway" action calls the dedicated /rescanForce
+        // endpoint below with force=true.
+        $force = filter_var($body['force'] ?? false, FILTER_VALIDATE_BOOLEAN);
 
         if (!is_array($fileIds) || count($fileIds) === 0) {
             return ['results' => [], 'error' => 'fileIds required'];
@@ -76,12 +80,7 @@ class OcrController extends OCSController {
             // NC-internal path format expected by the webhook: /<user>/files/<rel>
             $ncPath = '/' . $userId . '/files/' . ltrim($relPath, '/');
 
-            if ($source === 'pristine') {
-                // node_id = NC fileId is required to address the versions DAV node
-                $res = $this->webhook->rescanPristine($ncPath, (int)$fileId, $engine);
-            } else {
-                $res = $this->webhook->enqueue($ncPath, (int)$fileId, $engine);
-            }
+            $res = $this->webhook->enqueue($ncPath, (int)$fileId, $engine, $force);
             $results[] = array_merge(
                 ['fileId' => $fileId, 'path' => $ncPath],
                 $res
@@ -89,6 +88,49 @@ class OcrController extends OCSController {
         }
 
         return ['results' => $results];
+    }
+
+    /**
+     * @NoCSRFRequired
+     * @NoAdminRequired
+     *
+     * "Re-OCR anyway" action: deliberately re-OCR a single file, bypassing
+     * the born-digital skip decision AND the recently-processed guard.
+     *
+     * Body: { "fileId": 123, "engine": "google"|"tesseract"|"minimax" }
+     */
+    public function rescanForce(): array {
+        $userId = $this->userSession->getUser()?->getUID();
+        if ($userId === null) {
+            return ['error' => 'not logged in'];
+        }
+
+        $body = json_decode($this->request->getParam('body', '{}'), true)
+            ?? $this->request->getParams();
+        $fileId = (int)($body['fileId'] ?? 0);
+        $engine = in_array($body['engine'] ?? 'auto', ['auto', 'google', 'tesseract', 'minimax'], true)
+            ? $body['engine'] ?? 'auto' : 'auto';
+
+        if ($fileId <= 0) {
+            return ['error' => 'fileId required'];
+        }
+
+        $userFolder = $this->rootFolder->getUserFolder($userId);
+        $nodes = $userFolder->getById($fileId);
+        if (count($nodes) === 0) {
+            return ['error' => 'file not found'];
+        }
+        $node = $nodes[0];
+        if ($node instanceof \OCP\Files\Folder) {
+            return ['error' => 'is a folder'];
+        }
+
+        $relPath = $userFolder->getRelativePath($node->getPath());
+        $ncPath = '/' . $userId . '/files/' . ltrim($relPath, '/');
+
+        // force=true is the whole point of this endpoint.
+        $res = $this->webhook->rescan($ncPath, $fileId, $engine, /*force=*/true);
+        return ['job' => $res['body'] ?? null, 'force' => true];
     }
 
     /**

@@ -24,9 +24,15 @@ minimax = [
   # MiniMax-M3 is OpenAI-compatible; no extra package needed, but
   # we keep this group for parity with other engines.
 ]
+# pdf-inspector is a Rust-backed PDF classifier used to decide if a
+# freshly-uploaded PDF is already born-digital (skip OCR) or genuinely
+# needs it. Falls back to a PyMuPDF heuristic if missing.
+classify = [
+  "pdf-inspector>=1.25",
+]
 
 [dependency-groups]
-dev = ["pytest>=8.0", "pytest-cov>=4.0"]
+dev = ["pytest>=8.0", "pytest-cov>=4.0", "pdf-inspector>=1.25"]
 
 [build-system]
 requires = ["hatchling"]

@@ -19,7 +19,7 @@
 
       # nc-ocr-flow source — Python deps installed via uv venv
       ncOcrFlowSrc = ../../../../pkgs/nc-ocr-flow;
-      ocrVenv = "/var/lib/nc-ocr/venv-v3";
+      ocrVenv = "/var/lib/nc-ocr/venv-v4";
 
       # L2 handwriting router model (WritingtypeAPI DenseNet-121, Apache-2.0)
       # https://github.com/DALAI-project/WritingtypeAPI
@@ -41,6 +41,7 @@
           ${pkgs.python312}/bin/python3.12 -m venv ${ocrVenv}
           ${ocrVenv}/bin/pip install --no-cache-dir pymupdf pillow requests img2pdf numpy onnxruntime fastapi uvicorn pydantic
           ${ocrVenv}/bin/pip install --no-cache-dir google-cloud-vision google-cloud-storage
+          ${ocrVenv}/bin/pip install --no-cache-dir pdf-inspector
           ${ocrVenv}/bin/pip install --no-cache-dir --no-deps ${ncOcrFlowSrc}
           touch ${ocrVenv}/.installed
         fi

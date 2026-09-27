@@ -35,8 +35,10 @@ def client(monkeypatch):
         ws._ocr_queue.get_nowait()
         ws._ocr_queue.task_done()
 
-    # Stub out actual processing: instant success
-    def fake_process(nc_path, node_id, engine="auto", source=None):
+    # Stub out actual processing: instant success. ``force=None`` keeps
+    # the stub signature compatible with both /webhook (force default)
+    # and /rescan (force=True) call shapes.
+    def fake_process(nc_path, node_id, engine="auto", force=None):
         return {"path": nc_path, "output": nc_path, "vlm_pages": []}
 
     with patch.object(ws, "_process_file", side_effect=fake_process):
@@ -231,8 +233,17 @@ def test_stamp_metadata(tmp_path):
     meta = fitz.open(str(pdf)).metadata
     assert meta["producer"].startswith("nc-ocr-flow")
     assert "engine=auto" in meta["producer"]
-    assert "tesseract_pages=1-4" in meta["subject"]
-    assert "vlm_pages=5-6,10" in meta["subject"]
+    # New 0.3 format: Subject carries input_sha256, source=current,
+    # langs=rus+eng, per-engine api/ver, and the page ranges.
+    subject = meta["subject"]
+    assert subject.startswith("OCR ")
+    assert "source=current" in subject
+    assert "langs=rus+eng" in subject
+    assert "input_sha256=" in subject
+    assert "auto:api=" in subject
+    assert "auto:ver=" in subject
+    assert "tesseract_pages=1-4" in subject
+    assert "vlm_pages=5-6,10" in subject
     assert "nc-ocr-flow" in meta["keywords"]
 
 
@@ -248,86 +259,156 @@ def test_worker_marks_ocrd(client):
         assert "/likivik/files/x.pdf" in ws._ocrd_paths
 
 
-# --- pristine (re-OCR from original version) --------------------------------
+# --- born-digital / force-skip --------------------------------------------
 
-def test_process_file_source_pristine_uses_first_version(monkeypatch):
-    """With source='pristine', _process_file must OCR the oldest version
-    (not the current file) and write back to the same path."""
-    calls = {"vers": [], "dl_ver": [], "dl": [], "proc": [], "upload": []}
+def _build_pdf(path, *, with_text=True):
+    """Create a minimal PDF at ``path`` (with or without text)."""
+    import fitz
+    doc = fitz.open()
+    p = doc.new_page()
+    if with_text:
+        p.insert_text((72, 72), "Hello world born-digital text " * 4)
+    doc.save(str(path))
+    doc.close()
 
-    def fake_versions(nc_path, node_id):
-        calls["vers"].append((nc_path, node_id))
-        return ["/remote.php/dav/versions/likivik/versions/42/1000"]
 
-    def fake_dl_version(href, dest):
-        calls["dl_ver"].append((href, str(dest)))
-        # write a minimal valid PDF so process_pdf sees a file
-        import fitz
-        doc = fitz.open()
-        doc.new_page()
-        doc.save(str(dest))
-        doc.close()
+def test_process_file_force_bypasses_skip(monkeypatch, tmp_path):
+    """force=True → process_pdf runs even when classify says no-need.
 
-    def fake_dl(nc_path, dest):
-        calls["dl"].append(nc_path)
+    With a born-digital text_based input and force=True, the skip
+    decision must be bypassed and process_pdf must be invoked.
+    """
+    pdf = tmp_path / "x.pdf"
+    _build_pdf(pdf, with_text=True)
+
+    calls = {"proc": []}
 
     def fake_proc(pdf_path, engine=None):
         calls["proc"].append((str(pdf_path), engine))
         from nc_ocr_flow.ocr import ProcessResult
         return ProcessResult(output_pdf=str(pdf_path), engine_used="google")
 
-    def fake_upload(nc_path, src):
-        calls["upload"].append((nc_path, str(src)))
+    # classify returns needs_ocr=False → would normally skip.
+    def fake_classify(_path):
+        return {
+            "needs_ocr": False,
+            "pdf_type": "text_based",
+            "confidence": 1.0,
+            "has_encoding_issues": False,
+        }
 
-    with patch.object(ws, "_versions_hrefs", side_effect=fake_versions), \
-         patch.object(ws, "_webdav_download_version", side_effect=fake_dl_version), \
-         patch.object(ws, "_webdav_download", side_effect=fake_dl), \
-         patch.object(ws, "_webdav_upload", side_effect=fake_upload), \
-         patch.object(ws, "process_pdf", side_effect=fake_proc):
+    monkeypatch.setattr(
+        "nc_ocr_flow.webhook_server._webdav_download",
+        lambda nc, dest: __import__("shutil").copy2(pdf, dest),
+    )
+    monkeypatch.setattr(
+        "nc_ocr_flow.webhook_server._webdav_upload", lambda *a, **k: None
+    )
+    monkeypatch.setattr(
+        "nc_ocr_flow.webhook_server._stamp_metadata",
+        lambda *a, **k: None,
+    )
+    with patch.object(ws, "process_pdf", side_effect=fake_proc), \
+         patch.object(ws, "classify_pdf", side_effect=fake_classify):
         from nc_ocr_flow.webhook_server import _process_file
-        res = _process_file("/likivik/files/work/scanned.pdf",
-                            node_id=42, engine=None, source="pristine")
+        res = _process_file("/likivik/files/x.pdf", node_id=1,
+                            engine="google", force=True)
 
-    # pristine path used the oldest version, never the current file
-    assert calls["dl_ver"], "expected download of a version href"
-    assert calls["dl"] == [], "pristine must NOT download the current file"
-    assert calls["proc"], "expected process_pdf to run on the pristine file"
-    # uploaded back to the CURRENT path (writes a new version), not a version href
-    assert calls["upload"][0][0] == "/likivik/files/work/scanned.pdf"
+    # force=True bypassed the skip; process_pdf was called.
+    assert calls["proc"], "force=True must invoke process_pdf even when classifier says skip"
+    assert res.get("skipped") is not True
+    assert res.get("path") == "/likivik/files/x.pdf"
 
 
-def test_process_file_pristine_no_versions_falls_back_to_current(monkeypatch):
-    """If a file has no versions (never overwritten), pristine == current file."""
-    calls = {"dl": [], "upload": []}
+def test_process_file_skips_born_digital(monkeypatch, tmp_path):
+    """classifier says needs_ocr=False → _process_file returns skipped.
 
-    def fake_versions(nc_path, node_id):
-        return []
+    No prior Google-stamp (file is fresh) → classifier decides →
+    ``born_digital_or_stamped_good`` skip reason. process_pdf MUST
+    not be called.
+    """
+    pdf = tmp_path / "y.pdf"
+    _build_pdf(pdf, with_text=True)
 
-    def fake_dl(nc_path, dest):
-        calls["dl"].append(nc_path)
-        import fitz
-        doc = fitz.open()
-        doc.new_page()
-        doc.save(str(dest))
-        doc.close()
+    calls = {"proc": []}
 
     def fake_proc(pdf_path, engine=None):
+        calls["proc"].append(str(pdf_path))
         from nc_ocr_flow.ocr import ProcessResult
         return ProcessResult(output_pdf=str(pdf_path), engine_used="google")
 
-    def fake_upload(nc_path, src):
-        calls["upload"].append((nc_path, str(src)))
+    def fake_classify(_path):
+        return {
+            "needs_ocr": False,
+            "pdf_type": "text_based",
+            "confidence": 1.0,
+            "has_encoding_issues": False,
+        }
 
-    with patch.object(ws, "_versions_hrefs", side_effect=fake_versions), \
-         patch.object(ws, "_webdav_download_version", side_effect=AssertionError("no versions")), \
-         patch.object(ws, "_webdav_download", side_effect=fake_dl), \
-         patch.object(ws, "_webdav_upload", side_effect=fake_upload), \
-         patch.object(ws, "process_pdf", side_effect=fake_proc):
+    monkeypatch.setattr(
+        "nc_ocr_flow.webhook_server._webdav_download",
+        lambda nc, dest: __import__("shutil").copy2(pdf, dest),
+    )
+    monkeypatch.setattr(
+        "nc_ocr_flow.webhook_server._webdav_upload", lambda *a, **k: None
+    )
+    monkeypatch.setattr(
+        "nc_ocr_flow.webhook_server._stamp_metadata",
+        lambda *a, **k: None,
+    )
+    with patch.object(ws, "process_pdf", side_effect=fake_proc), \
+         patch.object(ws, "classify_pdf", side_effect=fake_classify):
         from nc_ocr_flow.webhook_server import _process_file
-        res = _process_file("/likivik/files/work/scanned.pdf",
-                            node_id=42, engine=None, source="pristine")
+        res = _process_file("/likivik/files/y.pdf", node_id=2,
+                            engine="google", force=False)
 
-    # fell back to current file, then uploaded result back to same path
-    assert calls["dl"] == ["/likivik/files/work/scanned.pdf"]
-    assert calls["upload"][0][0] == "/likivik/files/work/scanned.pdf"
-    assert res.get("path") == "/likivik/files/work/scanned.pdf"
+    assert calls["proc"] == [], "process_pdf must NOT run when classifier says skip"
+    assert res.get("skipped") is True
+    assert res.get("reason") == "born_digital_or_stamped_good"
+
+
+def test_process_file_bad_layer_reocr(monkeypatch, tmp_path):
+    """classifier says needs_ocr=True → _process_file OCRs the file.
+
+    Pathological input: a PDF whose classifier flags encoding issues
+    (or is otherwise not text_based). _process_file must invoke
+    process_pdf and return a non-skip result.
+    """
+    pdf = tmp_path / "z.pdf"
+    _build_pdf(pdf, with_text=False)  # blank page — pdf-inspector calls it "scanned"
+
+    calls = {"proc": []}
+
+    def fake_proc(pdf_path, engine=None):
+        calls["proc"].append((str(pdf_path), engine))
+        from nc_ocr_flow.ocr import ProcessResult
+        return ProcessResult(output_pdf=str(pdf_path), engine_used="google")
+
+    def fake_classify(_path):
+        return {
+            "needs_ocr": True,
+            "pdf_type": "scanned",
+            "confidence": 0.95,
+            "has_encoding_issues": False,
+        }
+
+    monkeypatch.setattr(
+        "nc_ocr_flow.webhook_server._webdav_download",
+        lambda nc, dest: __import__("shutil").copy2(pdf, dest),
+    )
+    monkeypatch.setattr(
+        "nc_ocr_flow.webhook_server._webdav_upload", lambda *a, **k: None
+    )
+    monkeypatch.setattr(
+        "nc_ocr_flow.webhook_server._stamp_metadata",
+        lambda *a, **k: None,
+    )
+    with patch.object(ws, "process_pdf", side_effect=fake_proc), \
+         patch.object(ws, "classify_pdf", side_effect=fake_classify):
+        from nc_ocr_flow.webhook_server import _process_file
+        res = _process_file("/likivik/files/z.pdf", node_id=3,
+                            engine="google", force=False)
+
+    assert calls["proc"], "classifier said needs_ocr=True → process_pdf must run"
+    assert res.get("skipped") is not True
+    assert res.get("path") == "/likivik/files/z.pdf"

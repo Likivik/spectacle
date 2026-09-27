@@ -26,6 +26,7 @@ from urllib.parse import quote
 
 from .classifier import classify
 from .ocr import process_pdf
+from .pdf_classify import classify_pdf
 
 log = logging.getLogger(__name__)
 
@@ -127,57 +128,51 @@ def _webdav_download(nc_path: str, dest: Path) -> None:
             f.write(chunk)
 
 
-def _versions_hrefs(nc_path: str, node_id: int) -> list[str]:
-    """Return version hrefs for a file, oldest first.
+# --- Per-engine version stamping (used by _stamp_metadata) -----------------
 
-    NC exposes per-file versions at
-    ``/remote.php/dav/versions/<user>/versions/<fileId>``; each entry is named
-    by an ms-accurate timestamp. The smallest timestamp is therefore the
-    ORIGINAL (pristine) upload, before any OCR overwrite created new versions.
 
-    ``node_id`` is the NC fileId — required to address the versions DAV node
-    (versions are keyed by fileId, not path).
+def _engine_api_version(engine: str) -> tuple[str, str]:
+    """Return (api, version) for a given engine, both best-effort.
+
+    Used by ``_stamp_metadata`` to record which OCR API/version
+    actually processed this PDF. Failures degrade to "unknown" rather
+    than raising — metadata stamping must never block an OCR result.
     """
-    if not node_id:
-        return []
-    from urllib.parse import quote
-    user = (nc_path.lstrip("/").split("/", 1) or [NC_USER])[0]
-    url = f"{NC_URL}/remote.php/dav/versions/{quote(user)}/versions/{int(node_id)}"
-    propfind_body = (
-        '<?xml version="1.0"?>'
-        '<d:propfind xmlns:d="DAV:"><d:prop>'
-        "<d:resourcetype/><d:getcontentlength/><d:getlastmodified/>"
-        "</d:prop></d:propfind>"
-    )
-    resp = requests.request(
-        "PROPFIND", url, auth=(NC_USER, NC_PASSWORD),
-        headers={"Depth": "1", "Content-Type": "application/xml"},
-        data=propfind_body, timeout=120,
-    )
-    if resp.status_code == 404:
-        # No versions for this file (never overwritten) → treat as none
-        return []
-    resp.raise_for_status()
-    import re as _re
-    hrefs = _re.findall(r"<d:href>([^<]+)</d:href>", resp.text)
-    # Sort by the trailing timestamp so the OLDEST version comes first.
-    def _ts(h: str) -> int:
+    engine = (engine or "").lower()
+    if engine == "google":
+        api = "google.cloud.vision_v1"
         try:
-            return int(h.rstrip("/").split("/")[-1])
-        except ValueError:
-            return 0
-    return sorted(dict.fromkeys(h for h in hrefs if _ts(h) > 0), key=_ts)
-
-
-def _webdav_download_version(version_href: str, dest: Path) -> None:
-    """Download the content of a specific version href to ``dest``."""
-    url = NC_URL + version_href if version_href.startswith("/") else version_href
-    log.info("WebDAV GET version %s", url)
-    resp = requests.get(url, auth=(NC_USER, NC_PASSWORD), stream=True, timeout=120)
-    resp.raise_for_status()
-    with dest.open("wb") as f:
-        for chunk in resp.iter_content(8192):
-            f.write(chunk)
+            from importlib.metadata import version as _pkg_version
+            ver = _pkg_version("google-cloud-vision")
+        except Exception:
+            ver = "unknown"
+        return api, ver
+    if engine == "tesseract":
+        # tesseract binary version (first line of `tesseract --version`).
+        ver = "unknown"
+        try:
+            import subprocess as _sp
+            r = _sp.run(
+                ["tesseract", "--version"],
+                capture_output=True, text=True, timeout=10,
+            )
+            out = (r.stdout or r.stderr or "").strip().splitlines()
+            if out:
+                ver = out[0].strip()
+        except Exception:
+            pass
+        api = "ocrmypdf"
+        try:
+            from importlib.metadata import version as _pkg_version
+            api = f"ocrmypdf {_pkg_version('ocrmypdf')}"
+        except Exception:
+            pass
+        return api, ver
+    if engine == "minimax":
+        return "minimax-chat-completions", "MiniMax-M3"
+    # 'auto' or unknown: stamp whatever engine actually ran via the
+    # caller passing it in; this branch shouldn't normally fire.
+    return "unknown", "unknown"
 
 
 def _webdav_upload(nc_path: str, src: Path) -> None:
@@ -225,16 +220,27 @@ def _stamp_metadata(
 ) -> None:
     """Write OCR provenance into PDF metadata (PyMuPDF).
 
-    Sets Producer/Subject/Keywords so any PDF reader can show when and how
-    the file was OCR'd:
-      Producer: nc-ocr-flow 0.3 (engine=auto)
-      Subject:  OCR 2026-09-04T10:00:00+03:00 tesseract_pages=1-4 vlm_pages=5
-      Keywords: nc-ocr-flow, ocr[, vlm-failed]
-    vlm_failed pages kept their tesseract layer (backend error) — stamped
-    so they can be found and re-OCR'd later.
+    Sets Producer/Subject/Keywords so any PDF reader can show when and
+    how the file was OCR'd.
+
+    New (0.3) per-engine stamped format:
+
+      Producer: nc-ocr-flow 0.3 (engine=X)
+
+      Subject:  OCR <ts> input_sha256=<hex64> source=current
+                langs=rus+eng <engine>:api=<api> <engine>:ver=<ver>
+                tesseract_pages=<ranges> vlm_pages=<ranges>
+                [vlm_failed=<ranges>] [l2=<p:l:c[,esc];...>]
+
+      Keywords: nc-ocr-flow, ocr[, vlm-failed][, handwriting]
+
+    The ``source=current`` marker is reserved (the pristine source was
+    removed in 0.3 — re-OCR always works on the current file via the
+    ``force=True`` flag).
     """
     import fitz  # PyMuPDF
     import datetime
+    import hashlib
 
     doc = fitz.open(str(pdf_path))
     meta = doc.metadata or {}
@@ -255,22 +261,48 @@ def _stamp_metadata(
         return ",".join(out)
 
     ts = datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat(timespec="seconds")
+
+    # Per-engine api/ver — degrade to "unknown" on failure (never raise)
+    engine_api, engine_ver = _engine_api_version(engine)
+
+    # sha256 of the PDF bytes actually OCR'd. Falls back to "-" if the
+    # file is missing or unreadable (shouldn't happen — we just wrote
+    # it — but defensive).
+    try:
+        h = hashlib.sha256()
+        with open(pdf_path, "rb") as _f:
+            for chunk in iter(lambda: _f.read(65536), b""):
+                h.update(chunk)
+        input_sha = h.hexdigest()
+    except OSError:
+        input_sha = "-"
+
     meta["producer"] = f"nc-ocr-flow 0.3 (engine={engine})"
-    subj = (
-        f"OCR {ts} tesseract_pages={_ranges(tess_pages)} "
-        f"vlm_pages={_ranges(vlm_pages)}"
-    )
+
+    # Build Subject as a single line — keys appear in a fixed order so
+    # /status and triage scripts can grep reliably.
+    parts = [
+        f"OCR {ts}",
+        f"input_sha256={input_sha}",
+        "source=current",
+        "langs=rus+eng",
+        f"{engine}:api={engine_api}",
+        f"{engine}:ver={engine_ver}",
+        f"tesseract_pages={_ranges(tess_pages)}",
+        f"vlm_pages={_ranges(vlm_pages)}",
+    ]
     if vlm_failed:
-        subj += f" vlm_failed={_ranges(vlm_failed)}"
+        parts.append(f"vlm_failed={_ranges(vlm_failed)}")
     if l2_pages:
         # compact L2 verdicts: p5:combination:0.85,escalated
-        parts = []
+        l2_parts = []
         for p in sorted(l2_pages):
             v = l2_pages[p]
             flag = ",esc" if v.get("escalate") else ""
-            parts.append(f"p{p + 1}:{v.get('label')}:{v.get('confidence')}{flag}")
-        subj += f" l2={';'.join(parts)}"
-    meta["subject"] = subj
+            l2_parts.append(f"p{p + 1}:{v.get('label')}:{v.get('confidence')}{flag}")
+        parts.append(f"l2={';'.join(l2_parts)}")
+    meta["subject"] = " ".join(parts)
+
     kw = "nc-ocr-flow, ocr"
     if vlm_failed:
         kw += ", vlm-failed"
@@ -283,15 +315,65 @@ def _stamp_metadata(
     doc.close()
 
 
+def _already_stamped_by_us(path: Path) -> bool:
+    """True if ``path`` carries our 0.3 stamp from a previous OCR run.
+
+    Returns True only when the Producer line contains both ``nc-ocr-flow``
+    and ``engine=google`` — Google's whole-doc OCR produces the highest-
+    fidelity text layer, so any file with a Google-engine stamp from us
+    can be skipped without risking a worse result.
+    """
+    try:
+        import fitz
+        with fitz.open(str(path)) as doc:
+            producer = (doc.metadata or {}).get("producer", "") or ""
+    except Exception:
+        return False
+    if "nc-ocr-flow" not in producer:
+        return False
+    if "engine=google" not in producer:
+        return False
+    return True
+
+
+def _needs_ocr_decision(path: Path, force: bool) -> bool:
+    """Decide whether ``path`` actually needs OCR.
+
+    Returns False (skip) only when ``force`` is False AND one of:
+      - The file already carries a Google-engine stamp from us, OR
+      - pdf-inspector (or the heuristic fallback) classifies it as
+        text_based with no encoding issues.
+
+    The Google-stamp check is fast (PyMuPDF metadata read) and avoids
+    loading pdf-inspector on files we already OCR'd with our best
+    engine. The pdf-inspector call is the expensive path but only runs
+    once per newly-seen file.
+    """
+    if force:
+        return True
+
+    if _already_stamped_by_us(path):
+        return False
+
+    try:
+        cls = classify_pdf(path)
+        return bool(cls.get("needs_ocr", True))
+    except Exception as exc:
+        # Classifier crashed — default to OCR (better safe than skip).
+        log.warning("pdf_classify raised (%s); defaulting to OCR", exc)
+        return True
+
+
 def _process_file(nc_path: str, node_id: int, engine: str | None = None,
-                  source: str | None = None) -> dict:
+                  force: bool = False) -> dict:
     """Download, OCR, upload back. Returns result dict.
 
     ``engine`` defaults to ``None`` → orchestrator resolves via
     ``NC_OCR_ENGINE`` env var (default: "google").
-    ``source == "pristine"`` → OCR the file's original (first) version and
-    write the result back to the current path (previous layers preserved as
-    versions). Requires ``node_id`` to address the versions DAV node.
+    ``force`` (default False): bypass the born-digital skip decision
+    AND the recently-processed guard. The user invokes this from the
+    NC app's "Re-OCR anyway" action to force a re-OCR even on files
+    we previously stamped or classified as born-digital.
     """
     ext = Path(nc_path).suffix.lower()
     filename = Path(nc_path).name
@@ -302,18 +384,7 @@ def _process_file(nc_path: str, node_id: int, engine: str | None = None,
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
         local_file = tmp / filename
-
-        if source == "pristine":
-            vers = _versions_hrefs(nc_path, node_id)
-            if not vers:
-                # No versions → no prior OCR overwrite; current file IS pristine.
-                log.info("pristine: no versions for %s, OCR current file", nc_path)
-                _webdav_download(nc_path, local_file)
-            else:
-                log.info("pristine: OCR original version of %s (%s)", nc_path, vers[0])
-                _webdav_download_version(vers[0], local_file)
-        else:
-            _webdav_download(nc_path, local_file)
+        _webdav_download(nc_path, local_file)
 
         if ext in IMAGE_EXTS:
             log.info("classifying image: %s", nc_path)
@@ -349,7 +420,20 @@ def _process_file(nc_path: str, node_id: int, engine: str | None = None,
             }
 
         if ext in PDF_EXTS:
-            log.info("OCR-ing PDF (engine=%s): %s", engine, nc_path)
+            # Born-digital / stamped-good skip decision. ``force=True``
+            # bypasses it (used by the "Re-OCR anyway" action).
+            if not _needs_ocr_decision(local_file, force):
+                log.info(
+                    "skip born-digital / stamped-good: %s (force=%s)",
+                    nc_path, force,
+                )
+                return {
+                    "path": nc_path,
+                    "skipped": True,
+                    "reason": "born_digital_or_stamped_good",
+                }
+
+            log.info("OCR-ing PDF (engine=%s force=%s): %s", engine, force, nc_path)
             result = process_pdf(local_file, engine=engine)
 
             # Stamp PDF metadata: engine, timestamp, pages per engine
@@ -404,10 +488,10 @@ def _ocr_worker() -> None:
         try:
             job["status"] = "running"
             job["started"] = time.time()
-            log.info("worker: job %d start: %s (engine=%s source=%s)",
-                     job["id"], job["path"], job["engine"], item.get("source"))
+            log.info("worker: job %d start: %s (engine=%s force=%s)",
+                     job["id"], job["path"], job["engine"], item.get("force"))
             result = _process_file(item["nc_path"], item["node_id"],
-                                   item["engine"], item.get("source"))
+                                   item["engine"], item.get("force", False))
             job["status"] = "done" if not result.get("skipped") else "skipped"
             job["result"] = result
             if result.get("skipped"):
@@ -421,7 +505,12 @@ def _ocr_worker() -> None:
             job["finished"] = time.time()
             _record_job(job)
             node_id = item["node_id"]
-            if node_id:
+            force = item.get("force", False)
+            # ``force`` re-OCRs skip the recently_processed guard so the
+            # user can deliberately re-OCR a file we just processed. The
+            # _ocrd_paths bookkeeping still records the path (it's the
+            # same file the worker just touched).
+            if node_id and not force:
                 _mark_processed(node_id)
             if job["status"] == "done":
                 with _ocrd_lock:
@@ -433,20 +522,23 @@ threading.Thread(target=_ocr_worker, daemon=True, name="ocr-worker").start()
 
 
 def _enqueue(nc_path: str, node_id: int, engine: str | None = None,
-             source: str | None = None) -> dict:
+             force: bool = False) -> dict:
     """Create a job record and enqueue for processing.
 
     ``engine`` defaults to None → orchestrator resolves via env.
-    ``source``: "pristine" → OCR the file's first/original version (before any
-    prior OCR overwrite) and write the result back to the current path.
+    ``force`` (default False): bypass the born-digital skip decision AND
+    the recently-processed guard. The NC app's "Re-OCR anyway" action
+    sends this so the user can deliberately re-OCR a file we previously
+    classified or stamped.
     """
     job = {
         "id": next(_job_seq),
         "path": nc_path,
         "engine": engine,
-        "source": source,
+        "force": force,
         "status": "queued",
         "created": time.time(),
+        "started": None,
         "finished": None,
         "result": None,
         "error": None,
@@ -454,7 +546,7 @@ def _enqueue(nc_path: str, node_id: int, engine: str | None = None,
     }
     _record_job(job)
     _ocr_queue.put({"job": job, "nc_path": nc_path, "node_id": node_id,
-                    "engine": engine, "source": source})
+                    "engine": engine, "force": force})
     return job
 
 
@@ -513,16 +605,21 @@ async def handle_webhook(
     if "files_versions" in nc_path:
         return {"status": "ignored", "reason": "versions"}
 
-    # Loop prevention: skip if we just processed this file
-    if node_id and _is_recently_processed(node_id):
+    # Loop prevention: skip if we just processed this file.
+    # ``force`` (set by the NC app's "Re-OCR anyway" action) bypasses
+    # this guard — the user is asking for a deliberate re-OCR.
+    force = bool(body.get("force", False))
+    if not force and node_id and _is_recently_processed(node_id):
         log.info("skip recently processed: id=%s path=%s", node_id, nc_path)
         return {"status": "skipped", "reason": "recently_processed"}
 
-    log.info("webhook: event=%s path=%s id=%s", event_class, nc_path, node_id)
+    log.info("webhook: event=%s path=%s id=%s force=%s",
+             event_class, nc_path, node_id, force)
 
-    job = _enqueue(nc_path, node_id or 0)
+    job = _enqueue(nc_path, node_id or 0, force=force)
     # Return 200 immediately — NC won't retry, worker processes async
-    return {"status": "queued", "job_id": job["id"], "path": nc_path}
+    return {"status": "queued", "job_id": job["id"], "path": nc_path,
+            "force": force}
 
 
 @app.get("/status")
@@ -550,7 +647,7 @@ class RescanRequest(BaseModel):
     path: str                    # NC-internal path: /<user>/files/<rel>
     node_id: int = 0
     engine: str | None = None    # google|tesseract|minimax; None → env
-    source: str | None = None    # "pristine" → OCR the file's first version
+    force: bool = False          # bypass born-digital skip + recent guard
 
 
 @app.post("/rescan")
@@ -558,7 +655,14 @@ async def rescan(
     body: RescanRequest,
     x_webhook_secret: str | None = Header(None, alias="X-Webhook-Secret"),
 ):
-    """Re-OCR a specific file with engine override (panel / NC-app action)."""
+    """Re-OCR a specific file with engine override (panel / NC-app action).
+
+    ``body.force`` (default False): bypass the born-digital skip
+    decision AND the recently-processed guard. The NC app's
+    "Re-OCR anyway" action sends ``force=true`` so a user can
+    deliberately re-OCR a file we previously stamped or classified
+    as born-digital.
+    """
     _check_secret(x_webhook_secret)
 
     nc_path = body.path
@@ -567,19 +671,18 @@ async def rescan(
         raise HTTPException(status_code=422, detail=f"unsupported ext: {ext}")
     if body.engine is not None and body.engine not in ("google", "tesseract", "minimax"):
         raise HTTPException(status_code=422, detail=f"invalid engine: {body.engine}")
-    if body.source is not None and body.source not in ("pristine",):
-        raise HTTPException(status_code=422, detail=f"invalid source: {body.source}")
     if "files_trashbin" in nc_path or "files_versions" in nc_path:
         raise HTTPException(status_code=422, detail="cannot rescan trashbin/versions")
 
-    # Rescan must bypass recently_processed guard: clear the marker
-    if body.node_id:
+    # Rescan must bypass recently_processed guard: clear the marker.
+    # When force=True, the worker won't re-mark either — see _ocr_worker.
+    if body.node_id and not body.force:
         with _processed_lock:
             _processed_ids.pop(body.node_id, None)
 
-    job = _enqueue(nc_path, body.node_id, body.engine, source=body.source)
+    job = _enqueue(nc_path, body.node_id, body.engine, force=body.force)
     return {"status": "queued", "job_id": job["id"],
-            "engine": body.engine, "source": body.source}
+            "engine": body.engine, "force": body.force}
 
 
 class ScanAllRequest(BaseModel):

@@ -1,8 +1,8 @@
 msgid ""
 msgstr ""
-"Project-Id-Version: ocrflow 0.2.0\n"
+"Project-Id-Version: ocrflow 0.3.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-27 15:00+0300\n"
+"POT-Creation-Date: 2026-09-27 20:30+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -15,7 +15,7 @@ msgstr ""
 msgid "Send to OCR"
 msgstr ""
 
-msgid "Re-OCR from original"
+msgid "Re-OCR anyway"
 msgstr ""
 
 msgid "Scan folder (OCR)"
@@ -28,10 +28,10 @@ msgstr ""
 msgid "%n files sent for OCR"
 msgstr ""
 
-msgid "File sent for re-OCR (from original)"
+msgid "File sent for re-OCR"
 msgstr ""
 
-msgid "%n files sent for re-OCR (from original)"
+msgid "%n files sent for re-OCR"
 msgstr ""
 
 msgid "OCR: %s sent, %s failed"

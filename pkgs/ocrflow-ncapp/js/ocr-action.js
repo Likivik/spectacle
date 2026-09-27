@@ -1,10 +1,13 @@
 /**
  * OCR Flow — Files context menu action.
  *
- * Adds "Send to OCR" to single-file context menus and bulk-selection actions
- * bar. NC 28+ Files FileAction API, vanilla JS (loaded via info.xml scripts).
+ * Adds "Send to OCR" / "Re-OCR anyway" / "Scan folder (OCR)" to the
+ * single-file and bulk-selection context menus. NC 28+ Files
+ * FileAction API, vanilla JS (loaded via info.xml scripts).
  *
- * API: POST /apps/ocrflow/api/scan  { fileIds: [...], engine }
+ * API: POST /apps/ocrflow/api/scan         { fileIds: [...], engine, force? }
+ *      POST /apps/ocrflow/api/rescan-force { fileId, engine }      (force=true)
+ *      POST /apps/ocrflow/api/scan-folder  { folder, engine }
  * Auth: Nextcloud session cookie (CSRF token via OC.requestToken).
  */
 (function () {
@@ -26,12 +29,14 @@
 	 * POST a scan request for the given fileIds to the OCS endpoint.
 	 * @param {number[]} fileIds
 	 * @param {string} engine
-	 * @param {string|null} source 'pristine' to re-OCR from the original upload
+	 * @param {boolean} [force=false] when true, bypass the born-digital
+	 *   skip decision AND the recently-processed guard. Used by the
+	 *   "Re-OCR anyway" action.
 	 */
-	async function sendToOcr(fileIds, source, engine) {
+	async function sendToOcr(fileIds, engine, force = false) {
 		const url = OC.generateUrl('/apps/ocrflow/api/scan')
 		const body = { fileIds, engine }
-		if (source) body.source = source
+		if (force) body.force = true
 		try {
 			const resp = await fetch(url, {
 				method: 'POST',
@@ -49,27 +54,64 @@
 			const ok = results.filter(r => r.status === 'queued').length
 			const bad = results.filter(r => r.status === 'error').length
 			if (bad === 0) {
-					OC.Notification.showTemporary(
-						// TRANSLATORS: the singular/plural is keyed off `ok` (count of queued files)
-						n('ocrflow',
-							source === 'pristine'
-								? 'File sent for re-OCR (from original)'
-								: 'File sent for OCR',
-							source === 'pristine'
-								? '%n files sent for re-OCR (from original)'
-								: '%n files sent for OCR', ok),
-						{ type: 'success' }
-					)
-				} else {
-					OC.Notification.showTemporary(
-						t('ocrflow', 'OCR: %s sent, %s failed', [ok, bad]),
-						{ type: 'error' }
-					)
-				}
-			} catch (e) {
-				console.error('[ocrflow] scan request failed', e)
-				OC.Notification.showTemporary(t('ocrflow', 'Could not send for OCR'), { type: 'error' })
+				OC.Notification.showTemporary(
+					// TRANSLATORS: the singular/plural is keyed off `ok` (count of queued files)
+					n('ocrflow',
+						force
+							? 'File sent for re-OCR'
+							: 'File sent for OCR',
+						force
+							? '%n files sent for re-OCR'
+							: '%n files sent for OCR', ok),
+					{ type: 'success' }
+				)
+			} else {
+				OC.Notification.showTemporary(
+					t('ocrflow', 'OCR: %s sent, %s failed', [ok, bad]),
+					{ type: 'error' }
+				)
 			}
+		} catch (e) {
+			console.error('[ocrflow] scan request failed', e)
+			OC.Notification.showTemporary(t('ocrflow', 'Could not send for OCR'), { type: 'error' })
+		}
+	}
+
+	/**
+	 * POST a single-file "Re-OCR anyway" request.
+	 * Bypasses the born-digital skip and recently-processed guards.
+	 * @param {number} fileId
+	 * @param {string} engine
+	 */
+	async function sendRescanForce(fileId, engine) {
+		const url = OC.generateUrl('/apps/ocrflow/api/rescan-force')
+		try {
+			const resp = await fetch(url, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					'requesttoken': OC.requestToken,
+					'OCS-APIRequest': 'true',
+				},
+				body: JSON.stringify({ fileId, engine }),
+			})
+			const data = await resp.json()
+			const payload = data?.ocs?.data ?? data
+			if (payload?.error) {
+				OC.Notification.showTemporary(
+					t('ocrflow', 'Folder scan failed: %s', [payload.error]),
+					{ type: 'error' }
+				)
+				return
+			}
+			OC.Notification.showTemporary(
+				t('ocrflow', 'File sent for re-OCR'),
+				{ type: 'success' }
+			)
+		} catch (e) {
+			console.error('[ocrflow] rescan-force request failed', e)
+			OC.Notification.showTemporary(t('ocrflow', 'Could not send for OCR'), { type: 'error' })
+		}
 	}
 
 	/**
@@ -109,33 +151,36 @@
 
 	// ---- NC 28+ Files API (viewer/cells) ----
 	if (window.OCP?.Files?.registerFileAction) {
+		// Send to OCR: webhook decides whether OCR is actually needed
+		// (born-digital skip via pdf-inspector, recent-process guard).
+		// For deliberate re-OCRs, use the "Re-OCR anyway" action below.
 		OCP.Files.registerFileAction({
 			id: 'ocrflow-send',
 			displayName: () => t('ocrflow', 'Send to OCR'),
 			icon: () => 'icon-filetype-text',
-			// only files, not folders
 			enabled: (nodes) => nodes.every(isOcrable),
-			// single + bulk via the selection actions bar
 			exec: async (file) => {
-				await sendToOcr([file.fileid], null, 'auto')
+				await sendToOcr([file.fileid], 'auto', false)
 				return null // stay in files list
 			},
 			execBulk: async (files) => {
-				await sendToOcr(files.map(f => f.fileid), null, 'auto')
+				await sendToOcr(files.map(f => f.fileid), 'auto', false)
 				return null
 			},
 			order: -5,
 		})
 
-		// Re-OCR a file from its original (pristine) upload — fixes bad text
-		// layers by OCR-ing the first version and writing a new version back.
+		// Re-OCR anyway — bypass the born-digital skip and recently
+		// processed guards. Single-file only (deliberate re-OCR is
+		// intentionally low-volume to avoid accidentally re-OCRing
+		// large selections).
 		OCP.Files.registerFileAction({
-			id: 'ocrflow-reocr-pristine',
-			displayName: () => t('ocrflow', 'Re-OCR from original'),
+			id: 'ocrflow-reocr-force',
+			displayName: () => t('ocrflow', 'Re-OCR anyway'),
 			icon: () => 'icon-history',
-			enabled: (nodes) => nodes.every(isOcrable),
+			enabled: (nodes) => nodes.length === 1 && nodes.every(isOcrable),
 			exec: async (file) => {
-				await sendToOcr([file.fileid], 'pristine', 'auto')
+				await sendRescanForce(file.fileid, 'auto')
 				return null
 			},
 			order: -4,

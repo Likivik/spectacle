@@ -4,8 +4,8 @@
     <id>ocrflow</id>
     <name>OCR Flow</name>
     <summary>Send files and folders to the OCR pipeline (Google Vision, tesseract, MiniMax) from the Files context menu</summary>
-    <description><![CDATA[Adds "Send to OCR", "Re-OCR from original", and "Scan folder" actions to the Files context menu (single and multi-select). Files are queued to the nc-ocr-flow service running on the same host; progress is visible at /panel on port 8095.]]></description>
-    <version>0.2.0</version>
+    <description><![CDATA[Adds "Send to OCR", "Re-OCR anyway", and "Scan folder" actions to the Files context menu (single and multi-select). Files are queued to the nc-ocr-flow service running on the same host; progress is visible at /panel on port 8095.]]></description>
+    <version>0.3.0</version>
     <licence>agpl</licence>
     <author mail="kirilllipskii@gmail.com" homepage="https://filepath.ru">Likivik</author>
     <namespace>OcrFlow</namespace>

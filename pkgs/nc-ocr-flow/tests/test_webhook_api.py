@@ -98,13 +98,13 @@ def test_rescan_trashbin_rejected(client):
 def test_rescan_enqueues(client):
     r = client.post(
         "/rescan",
-        json={"path": "/likivik/files/Work/a.pdf", "engine": "vlm"},
+        json={"path": "/likivik/files/Work/a.pdf", "engine": "minimax"},
         headers=h(),
     )
     assert r.status_code == 200
     d = r.json()
     assert d["status"] == "queued"
-    assert d["engine"] == "vlm"
+    assert d["engine"] == "minimax"
     assert d["job_id"] >= 1
 
 
@@ -172,7 +172,7 @@ def test_scan_all_enqueues_pdfs_skips_ocrd(client, monkeypatch):
 
     r = client.post(
         "/scan-all",
-        json={"folder": "Work", "engine": "auto", "skip_ocrd": True},
+        json={"folder": "Work", "engine": "google", "skip_ocrd": True},
         headers=h(),
     )
     assert r.status_code == 200

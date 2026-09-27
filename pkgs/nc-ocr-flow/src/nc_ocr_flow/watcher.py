@@ -1,6 +1,6 @@
 """Inotify watcher: picks up new files in NC data dir, routes to OCR.
 
-  - PDF → process_pdf (tesseract + Surya fallback)
+  - PDF → process_pdf (engine resolved from NC_OCR_ENGINE env, default "google")
   - Image → classify → document? → img2pdf → process_pdf → replace
   - Image → photo? → skip (stays in NC untouched)
 """

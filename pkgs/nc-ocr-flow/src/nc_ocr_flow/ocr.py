@@ -1,18 +1,27 @@
-"""Hybrid OCR pipeline: tesseract-first, Surya VLM fallback, sandwich PDF.
+"""Thin orchestrator: picks an engine, runs it, embeds the text layer.
 
-Pipeline:
-  1. ocrmypdf --skip-text --language rus+eng --tsv  (tesseract pass)
-     - Pages with existing text (born-digital) are skipped automatically
-     - Pages without text get tesseract OCR → sandwich PDF with text layer
-     - TSV file written with per-word confidence scores
-  2. Parse TSV → per-page 10th-percentile confidence
-  3. Pages with conf_p10 < 70 or chars < 40 → Surya VLM fallback
-  4. Surya returns blocks with bbox + text (91 languages, including Russian)
-  5. For VLM pages: remove tesseract text layer, insert Surya text as invisible layer
-  6. Save PDF (NC versioning preserves original)
+Three engines — ``google`` (default), ``tesseract``, ``minimax`` — are
+implemented under ``nc_ocr_flow.engines``. Each engine exposes a
+``process_pdf(pdf_path, output_pdf=None)`` returning a
+``ProcessResult`` whose ``engine_used`` field records which engine
+actually ran.
 
-API:
-    process_pdf(input_path, output_path) -> ProcessResult
+This module:
+
+  - Resolves the engine name (env ``NC_OCR_ENGINE`` or explicit arg).
+  - Dispatches to ``engines.<name>_engine.process_pdf``.
+  - For engines that return per-page ``OcrResult``s (google, minimax),
+    embeds them onto the PDF via the shared helper
+    ``_embed_ocr_text``.
+  - Keeps the shared helpers (_render_page_png, _generate_tsv,
+    _parse_tsv, born-digital detection) that engines and the
+    monkey backend still need.
+  - Exposes ``ProcessResult`` with the new ``engine_used`` field and
+    ``page_results`` list.
+
+The single knob is ``NC_OCR_ENGINE`` ∈ {``google``, ``tesseract``,
+``minimax``}. There is no L2/L3 escalation routing here — each
+engine is selected and run once.
 """
 from __future__ import annotations
 
@@ -24,24 +33,23 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .ocr_models import OcrBlock, OcrResult
+
 log = logging.getLogger(__name__)
 
-# Per-page quality gates
+# Per-page quality gates (kept for the historical tesseract-quality path;
+# unused by engines but exported for tests / external callers).
 PER_PAGE_CONF_FLOOR = 70.0
 PER_PAGE_MIN_CHARS = 40
 
-# L2 handwriting router (WritingtypeAPI DenseNet). When enabled
-# (NC_OCR_L2_ROUTER=1) every non-skipped page is classified first;
-# handwritten/combination pages go straight to the VLM tier regardless of
-# tesseract confidence. Typed pages keep the conf-based decision.
-L2_ROUTER_ENABLED = os.environ.get("NC_OCR_L2_ROUTER", "1") == "1"
-
 # Font for invisible text layer (must support Cyrillic)
-# On NixOS: dejavu_fonts, noto-fonts, etc.
 FONT_PATH = os.environ.get(
     "NC_OCR_FONT_PATH",
     "/run/current-system/sw/share/X11/fonts/DejaVuSans.ttf",
 )
+
+
+# --- Public dataclasses ----------------------------------------------------
 
 
 @dataclass
@@ -55,17 +63,172 @@ class PageMeta:
 @dataclass
 class ProcessResult:
     output_pdf: str
-    tesseract_pages: list[int] = field(default_factory=list)
+    engine_used: str = "google"
+    # Engines that produce a searchable text layer (google, minimax)
+    # populate this list; the tesseract engine leaves it empty because
+    # ocrmypdf writes the text layer directly into the PDF.
+    page_results: list[OcrResult] = field(default_factory=list)
+    # 0-indexed pages where ocrmypdf/tesseract wrote a text layer.
+    tess_pages: list[int] = field(default_factory=list)
+    # 0-indexed pages routed to a VLM-style engine (google whole-doc
+    # is whole-doc so all pages are "vlm"; minimax is per-page).
     vlm_pages: list[int] = field(default_factory=list)
+    # 0-indexed pages where the engine failed and the page is text-less.
     vlm_failed_pages: list[int] = field(default_factory=list)
     # L2 router verdicts: {page_idx: {"label","confidence","escalate"}}
+    # Retained as an empty default; engine may populate if it runs L2.
     l2_pages: dict[int, dict] = field(default_factory=dict)
 
 
-# --- ocrmypdf (tesseract pass) -----------------------------------------------
+# --- Main entry point -----------------------------------------------------
+
+
+def process_pdf(
+    input_path: str | Path,
+    output_path: str | Path | None = None,
+    engine: str | None = None,
+) -> ProcessResult:
+    """Run OCR on a single PDF.
+
+    Args:
+        input_path:  Source PDF.
+        output_path: Destination PDF (default: <input>.ocr.pdf).
+        engine:      One of ``"google"`` (default), ``"tesseract"``,
+                     ``"minimax"``. If None, the ``NC_OCR_ENGINE`` env
+                     var is consulted.
+
+    Returns:
+        ``ProcessResult`` with ``output_pdf``, ``engine_used``,
+        ``page_results``, ``tess_pages``, ``vlm_pages``,
+        ``vlm_failed_pages``. Raises ``ValueError`` for an unknown
+        engine.
+    """
+    from .engines import resolve_engine, get_process_pdf
+
+    chosen = resolve_engine(engine)
+    engine_process = get_process_pdf(chosen)
+
+    input_pdf = Path(input_path)
+    out_pdf = (
+        Path(output_path) if output_path else input_pdf.with_suffix(".ocr.pdf")
+    )
+
+    log.info("process_pdf: engine=%s input=%s output=%s",
+             chosen, input_pdf, out_pdf)
+
+    # Hand off to the engine. Engines that produce OcrResults
+    # (google, minimax) need the orchestrator to embed the text layer
+    # and save the PDF; tesseract writes a layer directly via ocrmypdf.
+    engine_result = engine_process(
+        str(input_pdf),
+        str(out_pdf),
+    )
+
+    # Normalize engine output into our ProcessResult.
+    return _finalize(engine_result, chosen, str(out_pdf))
+
+
+def _finalize(engine_result: ProcessResult, engine: str, out_pdf: str) -> ProcessResult:
+    """Embed per-page OcrResults into the PDF (if the engine produced
+    any) and finalize the ``ProcessResult``.
+    """
+    import fitz
+
+    page_results = engine_result.page_results or []
+    if not page_results:
+        # Tesseract engine: ocrmypdf already wrote the text layer; we
+        # only need to ensure the file at out_pdf exists. Some engines
+        # may write directly to out_pdf; trust them.
+        if Path(out_pdf).exists():
+            return ProcessResult(
+                output_pdf=out_pdf,
+                engine_used=engine,
+                page_results=[],
+                tess_pages=list(engine_result.tess_pages),
+                vlm_pages=list(engine_result.vlm_pages),
+                vlm_failed_pages=list(engine_result.vlm_failed_pages),
+                l2_pages=dict(engine_result.l2_pages),
+            )
+        # No file written and no page_results → nothing to do.
+        return ProcessResult(
+            output_pdf=out_pdf,
+            engine_used=engine,
+            page_results=[],
+            tess_pages=[],
+            vlm_pages=[],
+            vlm_failed_pages=[],
+            l2_pages={},
+        )
+
+    # Engines that produce OcrResults need the orchestrator to embed
+    # the text layer + save.
+    doc = fitz.open(out_pdf)
+    try:
+        for page_idx, res in enumerate(page_results):
+            if res.blocks:
+                _embed_ocr_text(doc, page_idx, res)
+        # saveIncr writes a new revision to the same file (PyMuPDF's
+        # standard "save incrementally" path). If the file didn't exist
+        # before, fall back to a full save.
+        try:
+            doc.saveIncr()
+        except Exception:
+            doc.save(out_pdf, garbage=4, deflate=True)
+    finally:
+        doc.close()
+
+    return ProcessResult(
+        output_pdf=out_pdf,
+        engine_used=engine,
+        page_results=page_results,
+        tess_pages=list(engine_result.tess_pages),
+        vlm_pages=list(engine_result.vlm_pages),
+        vlm_failed_pages=list(engine_result.vlm_failed_pages),
+        l2_pages=dict(engine_result.l2_pages),
+    )
+
+
+# --- TSV / quality helpers (kept for callers + tests) ----------------------
+
+
+def _needs_vlm(page_meta: PageMeta) -> bool:
+    return (
+        page_meta.confidence_p10 < PER_PAGE_CONF_FLOOR
+        or page_meta.char_count < PER_PAGE_MIN_CHARS
+    )
+
+
+def _render_page_png(pdf_path: Path, page_idx: int, dpi: int = 200) -> bytes:
+    """Render a single PDF page to PNG bytes using pdftoppm (poppler)."""
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+        tmp_path = Path(tmp.name)
+    try:
+        subprocess.run(
+            ["pdftoppm", "-png", "-r", str(dpi),
+             "-f", str(page_idx + 1), "-l", str(page_idx + 1),
+             str(pdf_path), str(tmp_path.with_suffix(""))],
+            check=True, capture_output=True, timeout=60,
+        )
+        # pdftoppm appends "-N.png"
+        pngs = list(tmp_path.parent.glob(f"{tmp_path.stem}-*.png"))
+        if not pngs:
+            # Some versions use different naming
+            pngs = list(tmp_path.parent.glob(f"{tmp_path.stem}*.png"))
+        if not pngs:
+            raise FileNotFoundError(
+                f"pdftoppm produced no output for page {page_idx}"
+            )
+        return pngs[0].read_bytes()
+    finally:
+        for f in tmp_path.parent.glob(f"{tmp_path.stem}*"):
+            try:
+                f.unlink()
+            except OSError:
+                pass
+
 
 def _run_ocrmypdf(input_pdf: Path, output_pdf: Path, tsv_path: Path) -> None:
-    """Run ocrmypdf with tesseract, produce sandwich PDF + sidecar text."""
+    """Run ocrmypdf with tesseract; write sandwich PDF + sidecar text."""
     cmd = [
         "ocrmypdf",
         "--skip-text",       # skip pages with existing text (born-digital)
@@ -81,7 +244,9 @@ def _run_ocrmypdf(input_pdf: Path, output_pdf: Path, tsv_path: Path) -> None:
     result = subprocess.run(cmd, check=False, capture_output=True, timeout=600)
     if result.returncode != 0:
         log.error("ocrmypdf stderr: %s", result.stderr.decode(errors="replace"))
-        raise subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
+        raise subprocess.CalledProcessError(
+            result.returncode, cmd, result.stdout, result.stderr
+        )
 
 
 def _generate_tsv(pdf_path: Path, tsv_path: Path) -> None:
@@ -93,7 +258,10 @@ def _generate_tsv(pdf_path: Path, tsv_path: Path) -> None:
     import fitz
     tsv_path.parent.mkdir(parents=True, exist_ok=True)
     doc = fitz.open(str(pdf_path))
-    all_lines = ["level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext"]
+    all_lines = [
+        "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\t"
+        "left\ttop\twidth\theight\tconf\ttext"
+    ]
     for page_idx in range(len(doc)):
         page = doc[page_idx]
         pix = page.get_pixmap(dpi=200)
@@ -160,67 +328,8 @@ def _parse_tsv(tsv_path: Path | str) -> dict[int, PageMeta]:
     return pages
 
 
-def _needs_vlm(page_meta: PageMeta) -> bool:
-    return (
-        page_meta.confidence_p10 < PER_PAGE_CONF_FLOOR
-        or page_meta.char_count < PER_PAGE_MIN_CHARS
-    )
+# --- Sandwich PDF embedding (PyMuPDF) -------------------------------------
 
-
-# --- Page rendering ----------------------------------------------------------
-
-def _render_page_png(pdf_path: Path, page_idx: int, dpi: int = 200) -> bytes:
-    """Render a single PDF page to PNG bytes using pdftoppm (poppler)."""
-    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-        tmp_path = Path(tmp.name)
-    try:
-        subprocess.run(
-            ["pdftoppm", "-png", "-r", str(dpi),
-             "-f", str(page_idx + 1), "-l", str(page_idx + 1),
-             str(pdf_path), str(tmp_path.with_suffix(""))],
-            check=True, capture_output=True, timeout=60,
-        )
-        # pdftoppm appends "-N.png"
-        pngs = list(tmp_path.parent.glob(f"{tmp_path.stem}-*.png"))
-        if not pngs:
-            # Some versions use different naming
-            pngs = list(tmp_path.parent.glob(f"{tmp_path.stem}*.png"))
-        if not pngs:
-            raise FileNotFoundError(f"pdftoppm produced no output for page {page_idx}")
-        return pngs[0].read_bytes()
-    finally:
-        for f in tmp_path.parent.glob(f"{tmp_path.stem}*"):
-            try:
-                f.unlink()
-            except OSError:
-                pass
-
-
-# --- Surya VLM OCR -----------------------------------------------------------
-
-def _surya_ocr_page(png_bytes: bytes, backend: str | None = None):
-    """Call the configured VLM backend for a page.
-
-    backend (explicit) overrides NC_OCR_VLM_BACKEND env.
-    monkey   = MonkeyOCRv2-B on serenity GPU (tier-2, typed pages, free)
-    minimax  = MiniMax-M3 tool-use JSON (tier-3, handwritten/photographed)
-    surya    = Surya only.
-    No cross-backend fallback at this layer: failures propagate to the
-    caller which decides tier fallback.
-    """
-    backend = (backend or os.environ.get("NC_OCR_VLM_BACKEND", "monkey")).strip().lower()
-    if backend == "surya":
-        from .surya_client import ocr_page
-        return ocr_page(png_bytes)
-    if backend == "monkey":
-        from .monkey_client import ocr_page
-        return ocr_page(png_bytes)
-
-    from .minimax_client import ocr_page_minimax
-    return ocr_page_minimax(png_bytes)
-
-
-# --- Sandwich PDF embedding (PyMuPDF) ----------------------------------------
 
 def _get_font():
     """Get a Unicode font for invisible text (supports Cyrillic)."""
@@ -239,79 +348,74 @@ def _get_font():
     return fitz.Font("helv")
 
 
-def _embed_surya_text(doc, page_idx: int, surya_result) -> None:
-    """Replace tesseract text layer on a page with Surya's text.
+def _embed_ocr_text(doc, page_idx: int, ocr_result: OcrResult) -> None:
+    """Replace existing text layer on a page with engine OCR text.
 
-    1. Remove existing text (tesseract's) via redaction, keep images
-    2. Insert Surya text as invisible text (render_mode=3) with proper font sizing
+    1. Remove existing text (tesseract's, or stale) via redaction, keep
+       images (the original rasterized page must remain visible).
+    2. Insert OCR text as invisible text (render_mode=3) with font
+       sized to fit each block bbox.
+
+    The ``OcrResult.blocks`` carry bboxes in PNG-image pixels (the
+    resolution the engine ran on); we map them to PDF-point coords
+    using ``page.rect / ocr_result.page_(width|height)``.
     """
     import fitz
 
     page = doc[page_idx]
     font = _get_font()
 
-    # Step 1: Remove ALL tesseract text from page, keep images
+    # Step 1: Remove existing text from page, keep images.
     page.add_redact_annot(page.rect)
     page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
 
-    # Step 2: Insert font into page (after redactions, which rebuild content)
+    # Step 2: Insert font into page (after redactions rebuild content).
     if font.buffer:
-        page.insert_font(fontname="surya-font", fontbuffer=font.buffer)
-        fontname = "surya-font"
+        page.insert_font(fontname="ocr-font", fontbuffer=font.buffer)
+        fontname = "ocr-font"
     else:
         fontname = "helv"
 
-    # Step 3: Scale Surya bboxes (image pixels) to PDF coordinates (points)
+    # Step 3: Scale image-pixel bboxes to PDF-point coords.
     page_w = page.rect.width
     page_h = page.rect.height
-    scale_x = page_w / surya_result.page_width if surya_result.page_width > 0 else 1
-    scale_y = page_h / surya_result.page_height if surya_result.page_height > 0 else 1
+    sx = page_w / ocr_result.page_width if ocr_result.page_width > 0 else 1
+    sy = page_h / ocr_result.page_height if ocr_result.page_height > 0 else 1
 
-    for block in surya_result.blocks:
+    for block in ocr_result.blocks:
         if not block.text:
             continue
 
-        # Scale bbox to PDF coordinates
-        x0 = block.bbox[0] * scale_x
-        y0 = block.bbox[1] * scale_y
-        x1 = block.bbox[2] * scale_x
-        y1 = block.bbox[3] * scale_y
+        x0 = block.bbox[0] * sx
+        y0 = block.bbox[1] * sy
+        x1 = block.bbox[2] * sx
+        y1 = block.bbox[3] * sy
         bbox = fitz.Rect(x0, y0, x1, y1)
 
-        # Single-block backends (MiniMax-M3) return multi-line text with one
-        # full-page bbox. insert_text draws a single run — a 3000-char line
-        # overflows the page width and lands outside the media box, so
-        # get_text() returns almost nothing. Split into lines and lay them
-        # out vertically inside the block bbox.
+        # Multi-line blocks: lay each line out vertically inside the bbox.
         lines = block.text.split("\n")
-        line_bboxes = []
         if len(lines) > 1:
             n = len(lines)
             step = bbox.height / max(n, 1)
-            for i, line in enumerate(lines):
-                lb = fitz.Rect(bbox.x0, bbox.y0 + i * step,
-                               bbox.x1, bbox.y0 + (i + 1) * step)
-                line_bboxes.append((line, lb))
+            line_bboxes = [
+                (
+                    ln,
+                    fitz.Rect(bbox.x0, bbox.y0 + i * step,
+                              bbox.x1, bbox.y0 + (i + 1) * step),
+                )
+                for i, ln in enumerate(lines)
+            ]
         else:
-            line_bboxes.append((block.text, bbox))
+            line_bboxes = [(block.text, bbox)]
 
         for text, lb in line_bboxes:
             if not text:
                 continue
-            # Calculate font size to fit bbox width
             tl = font.text_length(text, fontsize=1)
-            if tl > 0:
-                fontsize = lb.width / tl
-            else:
-                fontsize = 10
-
-            # Clamp font size to reasonable range
+            fontsize = lb.width / tl if tl > 0 else 10
             fontsize = max(4, min(fontsize, 72))
 
-            # Insert invisible text at bottom-left of bbox
-            # render_mode=3 = invisible (not rendered, but selectable/searchable)
             pos = fitz.Point(lb.x0, lb.y1)
-            # Adjust for descenders (g, y, p, etc.)
             if font.descender < 0:
                 pos.y += abs(font.descender) * fontsize * 0.3
 
@@ -323,167 +427,23 @@ def _embed_surya_text(doc, page_idx: int, surya_result) -> None:
                     render_mode=3,  # invisible
                 )
             except Exception as exc:
-                log.warning("text insert failed on page %d, block bbox=%s: %s",
-                            page_idx, block.bbox, exc)
+                log.warning(
+                    "text insert failed on page %d, block bbox=%s: %s",
+                    page_idx, block.bbox, exc,
+                )
 
 
-# --- main entry point --------------------------------------------------------
-
-def process_pdf(
-    input_path: str | Path,
-    output_path: str | Path | None = None,
-    engine: str = "auto",
-) -> ProcessResult:
-    """Run the full hybrid OCR pipeline on a single PDF.
-
-    1. Tesseract (ocrmypdf) → sandwich PDF + TSV confidence
-    2. Low-confidence pages → Surya VLM → re-embed text layer
-
-    Args:
-        input_path: Source PDF (or image converted to PDF)
-        output_path: Destination PDF (default: input with .ocr.pdf suffix)
-        engine: "auto" (default, tesseract-first with VLM fallback),
-                "tesseract" (VLM fallback disabled), or "vlm" (force VLM
-                on all non-skipped pages)
-
-    Returns:
-        ProcessResult with output path, tesseract/VLM page lists.
-    """
-    import fitz
-
-    input_pdf = Path(input_path)
-    output_pdf = (
-        Path(output_path) if output_path
-        else input_pdf.with_suffix(".ocr.pdf")
-    )
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        tmp = Path(tmpdir)
-        tsv_path = tmp / "ocr.tsv"
-
-        # Pass 1: tesseract
-        _run_ocrmypdf(input_pdf, output_pdf, tsv_path)
-        _generate_tsv(output_pdf, tsv_path)
-        page_meta = _parse_tsv(tsv_path)
-
-    # Detect pages that already had text (ocrmypdf --skip-text skipped them)
-    import fitz
-    pre_ocr_doc = fitz.open(str(input_pdf))
-    skipped_pages = set()
-    num_pages = len(pre_ocr_doc)
-    for page_idx in range(num_pages):
-        page_text = pre_ocr_doc[page_idx].get_text().strip()
-        if len(page_text) > 20:
-            skipped_pages.add(page_idx)
-    pre_ocr_doc.close()
-
-    # Identify pages needing VLM (skip pages ocrmypdf already skipped)
-    vlm_pages = []
-    l2_pages: dict[int, dict] = {}
-
-    # L2 handwriting router: classify every non-skipped page once.
-    # handwritten/combination → force VLM (typed gate bypassed);
-    # typewritten → keep conf-based decision.
-    if L2_ROUTER_ENABLED and engine != "tesseract":
-        try:
-            from .writingtype_client import classify_page_writingtype, model_available
-            if model_available():
-                for page_idx in range(num_pages):
-                    if page_idx in skipped_pages:
-                        continue
-                    try:
-                        png = _render_page_png(input_pdf, page_idx, dpi=100)
-                        wt = classify_page_writingtype(png)
-                        l2_pages[page_idx] = {
-                            "label": wt.label,
-                            "confidence": round(wt.confidence, 3),
-                            "escalate": wt.escalate,
-                        }
-                        if wt.escalate and page_idx not in vlm_pages:
-                            vlm_pages.append(page_idx)
-                    except Exception as exc:
-                        log.warning("L2 router failed on page %d: %s", page_idx, exc)
-            else:
-                log.warning("L2 router enabled but model missing: %s",
-                            os.environ.get("NC_OCR_WRITINGTYPE_MODEL",
-                                           "/etc/static/nc-ocr/writing_type_v1.onnx"))
-        except ImportError as exc:
-            log.warning("L2 router import failed: %s", exc)
-
-    if engine == "vlm":
-        # Force VLM on every page tesseract touched (skip born-digital pages)
-        for page_idx in range(num_pages):
-            if page_idx in skipped_pages:
-                continue
-            if page_idx not in vlm_pages:
-                vlm_pages.append(page_idx)
-    elif engine == "tesseract":
-        pass  # VLM fallback disabled
-    else:  # auto
-        for page_idx in range(num_pages):
-            if page_idx in skipped_pages:
-                continue
-            if page_idx in vlm_pages:
-                continue  # already escalated by L2
-            meta = page_meta.get(page_idx + 1)  # TSV uses 1-indexed pages
-            if meta is None or _needs_vlm(meta):
-                vlm_pages.append(page_idx)
-
-    log.info("tesseract pages: %d, vlm pages: %d",
-             len(page_meta), len(vlm_pages))
-
-    # Pass 2: VLM for bad pages. Two tiers:
-    #   tier-2 (typed pages): NC_OCR_VLM_BACKEND (monkey = free GPU)
-    #   tier-3 (L2-escalated handwritten/combination): NC_OCR_ESCALATION_BACKEND
-    #           (minimax M3 tool-use JSON, paid API) — with fallback to tier-2
-    #           on API failure so escalated pages still get a VLM layer.
-    vlm_failed_pages = []
-    tier2_backend = os.environ.get("NC_OCR_VLM_BACKEND", "monkey")
-    tier3_backend = os.environ.get("NC_OCR_ESCALATION_BACKEND", "minimax")
-    if vlm_pages:
-        doc = fitz.open(str(output_pdf))
-
-        for page_idx in vlm_pages:
-            escalated = l2_pages.get(page_idx, {}).get("escalate", False)
-            backend = tier3_backend if escalated else tier2_backend
-            try:
-                log.info("VLM OCR page %d (backend=%s, escalated=%s)",
-                         page_idx, backend, escalated)
-                png = _render_page_png(output_pdf, page_idx)
-                surya_result = _surya_ocr_page(png, backend=backend)
-                _embed_surya_text(doc, page_idx, surya_result)
-            except Exception as exc:
-                # Escalated page: fall back to tier-2 (free) so it still
-                # gets a VLM layer; typed pages keep the tesseract layer.
-                if escalated:
-                    log.warning("tier-3 failed for page %d (%s), falling back to tier-2",
-                                page_idx, exc)
-                    try:
-                        png = _render_page_png(output_pdf, page_idx)
-                        surya_result = _surya_ocr_page(png, backend=tier2_backend)
-                        _embed_surya_text(doc, page_idx, surya_result)
-                        continue
-                    except Exception as exc2:
-                        log.warning("tier-2 fallback also failed for page %d: %s",
-                                    page_idx, exc2)
-                else:
-                    log.warning("VLM failed for page %d: %s", page_idx, exc)
-                vlm_failed_pages.append(page_idx)
-
-        # Save with incremental update (preserves tesseract pages)
-        doc.saveIncr()
-        doc.close()
-
-    return ProcessResult(
-        output_pdf=str(output_pdf),
-        tesseract_pages=sorted(m.page_idx for m in page_meta.values()),
-        vlm_pages=sorted(vlm_pages),
-        vlm_failed_pages=vlm_failed_pages,
-        l2_pages=l2_pages,
-    )
+# Backwards-compat alias — some external callers may still import the
+# old name. Internal callers must use _embed_ocr_text.
+_embed_surya_text = _embed_ocr_text
 
 
 __all__ = [
-    "ProcessResult", "PageMeta", "process_pdf",
+    "ProcessResult", "PageMeta",
+    "process_pdf",
     "PER_PAGE_CONF_FLOOR", "PER_PAGE_MIN_CHARS",
+    "FONT_PATH",
+    "_render_page_png", "_run_ocrmypdf", "_generate_tsv", "_parse_tsv",
+    "_needs_vlm", "_get_font",
+    "_embed_ocr_text",
 ]

@@ -1,9 +1,7 @@
 """Tests for the L2 handwriting router (WritingtypeAPI) integration."""
-import json
-
 import pytest
 
-from nc_ocr_flow import ocr as ocr_mod
+from nc_ocr_flow import ocr as ocr_mod  # noqa: F401  (kept for engine smoke tests)
 from nc_ocr_flow import writingtype_client as wt
 
 
@@ -71,77 +69,12 @@ def _png(w=320, h=440):
     return buf.getvalue()
 
 
-def test_process_pdf_l2_router_escalates(monkeypatch, tmp_path):
-    """L2 router verdict forces a page into vlm_pages regardless of conf."""
-    from pathlib import Path
-
-    # 2-page PDF, no text (scan-like)
-    import fitz
-    src = tmp_path / "scan.pdf"
-    d = fitz.open()
-    d.new_page(width=595, height=842)
-    d.new_page(width=595, height=842)
-    d.save(str(src))
-    d.close()
-
-    # fake ocrmypdf+tesseract pass: copy input, empty TSV
-    monkeypatch.setattr(ocr_mod, "_run_ocrmypdf",
-                        lambda i, o, t: Path(o).write_bytes(Path(i).read_bytes()))
-    monkeypatch.setattr(ocr_mod, "_generate_tsv",
-                        lambda o, t: t.write_text(""))
-
-    # L2: page 0 typed, page 1 handwritten
-    verdicts = iter([
-        wt.WritingTypeResult("typewritten", 0.9, {}, False, 5.0),
-        wt.WritingTypeResult("handwritten", 0.85, {}, True, 5.0),
-    ])
-    monkeypatch.setattr(wt, "model_available", lambda: True)
-    monkeypatch.setattr(wt, "classify_page_writingtype", lambda png: next(verdicts))
-
-    # VLM embed: no-op
-    monkeypatch.setattr(ocr_mod, "_render_page_png", lambda *a, **k: b"png")
-    monkeypatch.setattr(ocr_mod, "_surya_ocr_page", lambda png: _fake_result())
-
-    class _Doc:
-        def __len__(self):
-            return 2
-
-        def __getitem__(self, i):
-            return self
-
-        def get_text(self):
-            return ""
-
-        def saveIncr(self):
-            pass
-
-        def close(self):
-            pass
-
-    monkeypatch.setattr(fitz, "open", lambda *a, **k: _Doc())
-
-    res = ocr_mod.process_pdf(str(src), engine="auto")
-    # page 1 escalated by L2; page 0 has no tesseract meta (empty TSV) →
-    # conf gate also fires. L2 adds escalation on top, never removes.
-    assert res.vlm_pages == [0, 1]
-    assert res.l2_pages[0]["label"] == "typewritten"
-    assert res.l2_pages[0]["escalate"] is False
-    assert res.l2_pages[1]["escalate"] is True
-
-
 class _FakeBlock:
-    def __init__(self):
-        self.bbox = (0.0, 0.0, 100.0, 100.0)
-        self.text = "test"
-        self.confidence = 0.9
-        self.label = "text"
+    pass
 
 
 class _FakeResult:
-    def __init__(self):
-        self.blocks = [_FakeBlock()]
-        self.page_width = 100.0
-        self.page_height = 100.0
+    pass
 
 
 def _fake_result():

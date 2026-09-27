@@ -34,12 +34,13 @@
         set -eu
         export NC_OCR_NC_PASSWORD_FILE="$CREDENTIALS_DIRECTORY/nc-ocr-password"
         export NC_OCR_WEBHOOK_SECRET_FILE="$CREDENTIALS_DIRECTORY/nc-ocr-webhook-secret"
-        export NC_OCR_MINIMAX_KEY_FILE="$CREDENTIALS_DIRECTORY/minimax-api-key"
+        export GOOGLE_APPLICATION_CREDENTIALS="$CREDENTIALS_DIRECTORY/google-ocr-key"
         if [ ! -d "${ocrVenv}" ] || [ ! -f "${ocrVenv}/.installed" ] || [ "${ocrVenv}/.installed" -ot "${ncOcrFlowSrc}/src/nc_ocr_flow/webhook_server.py" ] || [ "${ocrVenv}/.installed" -ot "${ncOcrFlowSrc}/src/nc_ocr_flow/ocr.py" ]; then
           echo "Creating OCR venv..."
           rm -rf "${ocrVenv}"
           ${pkgs.python312}/bin/python3.12 -m venv ${ocrVenv}
           ${ocrVenv}/bin/pip install --no-cache-dir pymupdf pillow requests img2pdf numpy onnxruntime fastapi uvicorn pydantic
+          ${ocrVenv}/bin/pip install --no-cache-dir google-cloud-vision google-cloud-storage
           ${ocrVenv}/bin/pip install --no-cache-dir --no-deps ${ncOcrFlowSrc}
           touch ${ocrVenv}/.installed
         fi
@@ -98,7 +99,7 @@
 
       # --- OCR webhook receiver service ---
       systemd.services.nc-ocr-webhook = {
-        description = "Nextcloud OCR webhook receiver (tesseract + Surya fallback)";
+        description = "Nextcloud OCR webhook receiver (google-vision + tesseract fallback)";
         after = [ "nextcloud-setup.service" "network.target" ];
         wants = [ "nextcloud-setup.service" ];
         wantedBy = [ "multi-user.target" ];
@@ -110,16 +111,13 @@
           # NOT admin — a user/password mismatch caused 401s and silently
           # blocked all OCR processing, 2026-09-03).
           NC_OCR_NC_USER = "likivik";
-          NC_OCR_SURYA_URL = "http://serenity:8084";
-          # Tier-2 VLM backend (typed scan pages): monkey (MonkeyOCRv2-B on
-          # serenity GPU, free) | minimax | surya. Default monkey.
-          NC_OCR_VLM_BACKEND = "monkey";
-          # Tier-3 escalation backend (L2 handwritten/combination pages):
-          # minimax M3 tool-use JSON. Paid API, only on escalated pages.
-          NC_OCR_ESCALATION_BACKEND = "minimax";
-          # L2 handwriting router (WritingtypeAPI DenseNet): 1=on (default)
-          NC_OCR_L2_ROUTER = "1";
-          NC_OCR_WRITINGTYPE_MODEL = "/etc/static/nc-ocr/writing_type_v1.onnx";
+          # Engine: google (default) = Google Cloud Vision whole-doc OCR;
+          # tesseract = local ocrmypdf fallback. minimax available via
+          # NC_OCR_ENGINE=minimax. Surya/monkey/L2 routing removed 2026-09.
+          NC_OCR_ENGINE = "google";
+          # Google Cloud Vision (service-account key via CREDENTIALS_DIRECTORY)
+          NC_OCR_GOOGLE_PROJECT = "spectacle-xandria";
+          NC_OCR_GOOGLE_BUCKET = "ocr-project-tmp";
           NC_OCR_LISTEN_HOST = "127.0.0.1";
           NC_OCR_LISTEN_PORT = "8095";
           NC_OCR_FONT_PATH = "${pkgs.dejavu_fonts}/share/fonts/truetype/DejaVuSans.ttf";
@@ -139,11 +137,11 @@
           LoadCredential = let
             webdavPass = config.sops.secrets."nextcloud/ocr-webdav-password".path;
             webhookSecret = config.sops.secrets."nextcloud/ocr-webhook-secret".path;
-            minimaxKey = config.sops.secrets."nextcloud/minimax-api-key".path;
+            googleKey = config.sops.secrets."nextcloud/ocr-google-key".path;
           in [
             "nc-ocr-password:${webdavPass}"
             "nc-ocr-webhook-secret:${webhookSecret}"
-            "minimax-api-key:${minimaxKey}"
+            "google-ocr-key:${googleKey}"
           ];
         };
 

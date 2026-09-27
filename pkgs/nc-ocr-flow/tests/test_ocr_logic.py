@@ -194,24 +194,14 @@ def test_font_has_buffer_or_name():
     assert font.buffer is not None or font.name == "helv"
 
 
-# --- Surya server model binding ----------------------------------------------
+# --- Surya server model binding (deleted in v0.3 three-engine refactor) ---
 
-def test_surya_server_models_at_module_level():
-    """Surya server models must be at module level for FastAPI/Pydantic."""
-    from nc_ocr_flow.surya_server import OcrRequest, OcrResponse, BlockOut
-    # These should be real classes, not ForwardRef
-    assert hasattr(OcrRequest, "model_fields")
-    assert "image_b64" in OcrRequest.model_fields
-    assert hasattr(OcrResponse, "model_fields")
-    assert hasattr(BlockOut, "model_fields")
-
-
-def test_surya_request_validation():
-    """OcrRequest validates image_b64 field."""
-    from nc_ocr_flow.surya_server import OcrRequest
-    req = OcrRequest(image_b64="dGVzdA==")
-    assert req.image_b64 == "dGVzdA=="
-
+# The standalone Surya /ocr + /detect server (nc_ocr_flow.surya_server)
+# was replaced by the three-engine architecture (google|tesseract|minimax).
+# These tests are removed because their target module no longer exists;
+# engine-specific smoke tests live in tests/test_minimax_structured.py,
+# tests/test_monkey_client.py, and the engine modules' own docstring
+# examples.
 
 # --- Webhook server ----------------------------------------------------------
 

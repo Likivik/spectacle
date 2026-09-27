@@ -1,10 +1,13 @@
-"""Tests for M3 tool-use structured blocks in minimax_client."""
+"""Tests for M3 tool-use structured blocks in minimax_client (shim → engine)."""
 import base64
 import json
 
 import pytest
 
 from nc_ocr_flow import minimax_client as mc
+from nc_ocr_flow.engines import minimax_engine as engine
+# The shim re-exports _blocks_from_toolcall, _html_table_to_text, and
+# ocr_page_minimax; the actual implementations live in minimax_engine.
 from nc_ocr_flow.minimax_client import (
     _blocks_from_toolcall,
     _html_table_to_text,
@@ -100,9 +103,12 @@ def test_ocr_page_minimax_structured(monkeypatch):
             "usage": {"prompt_tokens": 100, "completion_tokens": 50},
         }
 
-    monkeypatch.setattr(mc, "_chat", fake_chat)
+    # Patch the engine module's _chat (where the implementation lives),
+    # not the shim — the shim only re-exports symbols, so patching the
+    # shim's attribute doesn't change what ocr_page_minimax calls.
+    monkeypatch.setattr(engine, "_chat", fake_chat)
     monkeypatch.setenv("NC_OCR_MINIMAX_KEY", "test-key")
-    res = mc.ocr_page_minimax(png)
+    res = engine.ocr_page_minimax(png)
     # tool_choice forced
     assert captured["body"]["tool_choice"]["function"]["name"] == "write_ocr_blocks"
     assert len(res.blocks) == 1
@@ -130,10 +136,19 @@ def test_ocr_page_minimax_fallback_plain(monkeypatch):
             "usage": {},
         }
 
-    monkeypatch.setattr(mc, "_chat", fake_chat)
+    monkeypatch.setattr(engine, "_chat", fake_chat)
     monkeypatch.setenv("NC_OCR_MINIMAX_KEY", "test-key")
-    res = mc.ocr_page_minimax(png)
+    res = engine.ocr_page_minimax(png)
     assert calls["n"] == 2  # structured attempt + plain retry
     assert len(res.blocks) == 1
     assert "строка 1" in res.blocks[0].text
     assert res.blocks[0].label == "minimax-plain"
+
+
+def test_minimax_client_shim_re_exports_ocr_page_minimax():
+    """Backwards-compat: nc_ocr_flow.minimax_client.ocr_page_minimax still works."""
+    from nc_ocr_flow import minimax_client
+    assert minimax_client.ocr_page_minimax is engine.ocr_page_minimax
+    assert minimax_client._blocks_from_toolcall is engine._blocks_from_toolcall
+    assert minimax_client._html_table_to_text is engine._html_table_to_text
+    assert minimax_client.MiniMaxError is engine.MiniMaxError

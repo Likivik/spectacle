@@ -152,6 +152,12 @@
         sopsFile = ../../../secrets/poweredge/secrets.yaml;
         owner = "nextcloud"; group = "nextcloud"; mode = "0400";
       };
+      # Google Cloud Vision service-account JSON key (whole-doc OCR engine).
+      # Project spectacle-xandria; SA ocr-worker@spectacle-xandria.iam.gserviceaccount.com.
+      sops.secrets."nextcloud/ocr-google-key" = {
+        sopsFile = ../../../secrets/poweredge/secrets.yaml;
+        owner = "nextcloud"; group = "nextcloud"; mode = "0400";
+      };
 
       services.tailscale.authKeyFile =
         config.sops.secrets."tailscale/auth-key".path;

@@ -17,7 +17,8 @@ from nc_ocr_flow.line_geometry import (
 
 @dataclass(frozen=True)
 class FakeLine:
-    """Mimics surya_client.DetectionLine; keeps tests independent."""
+    """Mimics a DetectionLine shape; keeps tests independent of any
+    particular detection backend."""
     bbox: tuple[float, float, float, float]
     polygon: tuple | None = None
     confidence: float | None = 0.5
@@ -173,19 +174,6 @@ def test_imports_clean():
         "pair_lines_by_reading_order",
     ]:
         assert hasattr(line_geometry, name), f"missing export: {name}"
-
-
-def test_works_with_real_detection_line_objects():
-    """Accepts real nc_ocr_flow.surya_client.DetectionLine instances."""
-    from nc_ocr_flow.surya_client import DetectionLine
-    line = DetectionLine(
-        bbox=(0.0, 0.0, 10.0, 20.0),
-        polygon=((0.0, 0.0), (10.0, 0.0), (10.0, 20.0), (0.0, 20.0)),
-        confidence=0.5,
-    )
-    result = pair_lines_by_reading_order([line], [TextBlock("ok")])
-    assert isinstance(result.pairs[0], LineTextPair)
-    assert result.pairs[0].body == "ok"
 
 
 # --- Region-aware pairing ----------------------------------------------------
@@ -425,18 +413,3 @@ def test_region_imports_clean():
     from nc_ocr_flow import line_geometry
     assert hasattr(line_geometry, "pair_lines_by_region")
     assert callable(line_geometry.pair_lines_by_region)
-
-
-def test_region_real_detection_line_objects():
-    """Accepts real nc_ocr_flow.surya_client.DetectionLine instances."""
-    from nc_ocr_flow.line_geometry import pair_lines_by_region
-    from nc_ocr_flow.surya_client import DetectionLine
-    line = DetectionLine(
-        bbox=(0.0, 0.0, 100.0, 20.0),
-        polygon=((0.0, 0.0), (100.0, 0.0), (100.0, 20.0), (0.0, 20.0)),
-        confidence=0.5,
-    )
-    block = _BlockWithBbox("hello", bbox=(0, 0, 100, 20))
-    result = pair_lines_by_region([line], [block])
-    assert isinstance(result.pairs[0], LineTextPair)
-    assert result.pairs[0].body == "hello"

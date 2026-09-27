@@ -3,7 +3,7 @@
 Flow:
   1. NC webhook POST → NodeCreatedEvent / NodeWrittenEvent
   2. Download file via WebDAV GET
-  3. PDF → ocr.py (tesseract + Surya fallback)
+  3. PDF → ocr.py (one of google|tesseract|minimax engines)
      Image → classify → document? → img2pdf → ocr.py → upload as .pdf
   4. Upload result via WebDAV PUT (NC creates new version automatically)
   5. Loop prevention: skip files we just processed (in-memory ID set + TTL)
@@ -230,8 +230,12 @@ def _stamp_metadata(
     doc.close()
 
 
-def _process_file(nc_path: str, node_id: int, engine: str = "auto") -> dict:
-    """Download, OCR, upload back. Returns result dict."""
+def _process_file(nc_path: str, node_id: int, engine: str | None = None) -> dict:
+    """Download, OCR, upload back. Returns result dict.
+
+    ``engine`` defaults to ``None`` → orchestrator resolves via
+    ``NC_OCR_ENGINE`` env var (default: "google").
+    """
     ext = Path(nc_path).suffix.lower()
     filename = Path(nc_path).name
 
@@ -259,9 +263,9 @@ def _process_file(nc_path: str, node_id: int, engine: str = "auto") -> dict:
             # Stamp PDF metadata: engine, timestamp, pages per engine
             _stamp_metadata(
                 Path(result.output_pdf),
-                engine=engine,
+                engine=result.engine_used,
                 vlm_pages=result.vlm_pages,
-                tess_pages=result.tesseract_pages,
+                tess_pages=result.tess_pages,
                 vlm_failed=result.vlm_failed_pages,
                 l2_pages=result.l2_pages,
             )
@@ -283,9 +287,9 @@ def _process_file(nc_path: str, node_id: int, engine: str = "auto") -> dict:
             # Stamp PDF metadata: engine, timestamp, pages per engine
             _stamp_metadata(
                 Path(result.output_pdf),
-                engine=engine,
+                engine=result.engine_used,
                 vlm_pages=result.vlm_pages,
-                tess_pages=result.tesseract_pages,
+                tess_pages=result.tess_pages,
                 vlm_failed=result.vlm_failed_pages,
                 l2_pages=result.l2_pages,
             )
@@ -358,8 +362,11 @@ def _ocr_worker() -> None:
 threading.Thread(target=_ocr_worker, daemon=True, name="ocr-worker").start()
 
 
-def _enqueue(nc_path: str, node_id: int, engine: str = "auto") -> dict:
-    """Create a job record and enqueue for processing."""
+def _enqueue(nc_path: str, node_id: int, engine: str | None = None) -> dict:
+    """Create a job record and enqueue for processing.
+
+    ``engine`` defaults to None → orchestrator resolves via env.
+    """
     job = {
         "id": next(_job_seq),
         "path": nc_path,
@@ -467,7 +474,7 @@ async def status(
 class RescanRequest(BaseModel):
     path: str                    # NC-internal path: /<user>/files/<rel>
     node_id: int = 0
-    engine: str = "auto"         # auto | tesseract | vlm
+    engine: str | None = None    # google|tesseract|minimax; None → env
 
 
 @app.post("/rescan")
@@ -482,7 +489,7 @@ async def rescan(
     ext = Path(nc_path).suffix.lower()
     if ext not in PROCESSABLE_EXTS:
         raise HTTPException(status_code=422, detail=f"unsupported ext: {ext}")
-    if body.engine not in ("auto", "tesseract", "vlm"):
+    if body.engine is not None and body.engine not in ("google", "tesseract", "minimax"):
         raise HTTPException(status_code=422, detail=f"invalid engine: {body.engine}")
     if "files_trashbin" in nc_path or "files_versions" in nc_path:
         raise HTTPException(status_code=422, detail="cannot rescan trashbin/versions")
@@ -498,7 +505,7 @@ async def rescan(
 
 class ScanAllRequest(BaseModel):
     folder: str = ""             # NC-relative folder to scan ("Work/1-Аренда"); "" = all
-    engine: str = "auto"         # auto | tesseract | vlm
+    engine: str | None = None    # google|tesseract|minimax; None → env
     skip_ocrd: bool = True       # skip files already OCR'd by this service
 
 
@@ -514,7 +521,7 @@ async def scan_all(
     sequential in the single worker (queue Depth visible in /status).
     """
     _check_secret(x_webhook_secret)
-    if body.engine not in ("auto", "tesseract", "vlm"):
+    if body.engine is not None and body.engine not in ("google", "tesseract", "minimax"):
         raise HTTPException(status_code=422, detail=f"invalid engine: {body.engine}")
 
     # PROPFIND the folder (depth infinity) for PDFs/images

@@ -7,5 +7,6 @@ return [
         ['name' => 'ocr#scan', 'url' => '/api/scan', 'verb' => 'POST'],
         ['name' => 'ocr#scanFolder', 'url' => '/api/scan-folder', 'verb' => 'POST'],
         ['name' => 'ocr#rescanForce', 'url' => '/api/rescan-force', 'verb' => 'POST'],
+        ['name' => 'page#actionScript', 'url' => '/js/action-script', 'verb' => 'GET'],
     ],
 ];

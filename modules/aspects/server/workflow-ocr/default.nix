@@ -19,7 +19,7 @@
 
       # nc-ocr-flow source — Python deps installed via uv venv
       ncOcrFlowSrc = ../../../../pkgs/nc-ocr-flow;
-      ocrVenv = "/var/lib/nc-ocr/venv";
+      ocrVenv = "/var/lib/nc-ocr/venv-v3";
 
       # L2 handwriting router model (WritingtypeAPI DenseNet-121, Apache-2.0)
       # https://github.com/DALAI-project/WritingtypeAPI

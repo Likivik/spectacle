@@ -25,6 +25,10 @@ class Application extends App implements IBootstrap {
     }
 
     public function boot(IBootContext $context): void {
-        // Nothing needed at boot; FileActions are registered client-side (js/ocr-action.js).
+        // Load the Files context-menu actions JS. Modern NC (28+) injects
+        // app scripts server-side via Util::addScript — the <scripts> block
+        // in info.xml is NOT honored for the Files Vue app (verified on
+        // NC 34: actions silently never registered).
+        \OCP\Util::addScript('ocrflow', 'ocr-action');
     }
 }

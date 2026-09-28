@@ -2,15 +2,16 @@
 /**
  * OCR Flow — Nextcloud app bootstrap.
  *
- * Injects the Files context-menu action JS. We serve the script from a
- * ROUTE (see PageController::actionScript / GET /apps/ocrflow/action-script)
- * rather than a static file, because NixOS `services.nextcloud.extraApps`
- * mounts apps under the `/nix-apps` URL namespace: a static `/apps/<app>/js`
- * URL 404s for extraApps apps while a registered route resolves fine. Serving
- * via a route is hosting-agnostic (works on any NC install, not just NixOS).
+ * Loads the Files context-menu action JS. We inject it via the
+ * LoadAdditionalScriptsEvent (the pattern Nextcloud's own files_reminders /
+ * files_lock apps use) pointing at a ROUTE we serve (PageController), because
+ * under NixOS services.nextcloud.extraApps the static /apps/<app>/js/* path
+ * 404s while routes resolve.
  */
 namespace OCA\OcrFlow\AppInfo;
 
+use OCA\Files\Event\LoadAdditionalScriptsEvent;
+use OCA\OcrFlow\Listener\LoadAdditionalScriptsListener;
 use OCP\AppFramework\App;
 use OCP\AppFramework\Bootstrap\IBootContext;
 use OCP\AppFramework\Bootstrap\IBootstrap;
@@ -24,12 +25,16 @@ class Application extends App implements IBootstrap {
     }
 
     public function register(IRegistrationContext $context): void {
-        // Admin settings section is registered declaratively in
-        // appinfo/info.xml (<settings><admin>...</admin></settings>).
+        // Load the Files context-menu actions when the Files page renders
+        // (same event files_reminders/files_lock listen to).
+        $context->registerEventListener(
+            LoadAdditionalScriptsEvent::class,
+            LoadAdditionalScriptsListener::class
+        );
     }
 
     public function boot(IBootContext $context): void {
-        // Load the Files context-menu action JS from a route-served script.
-        \OCP\Util::addScript('ocrflow', 'action-script');
+        // Nothing needed at boot; the FileActions JS is injected via
+        // LoadAdditionalScriptsEvent on the Files page.
     }
 }

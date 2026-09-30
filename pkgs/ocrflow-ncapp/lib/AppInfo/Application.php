@@ -33,6 +33,9 @@ class Application extends App implements IBootstrap {
     }
 
     public function boot(IBootContext $context): void {
+        // DEBUG PROBE: prove whether NC runs this app's boot() at all.
+        // Remove after the Files action-loading mystery is closed.
+        @file_put_contents('/tmp/ocrflow-boot.log', date('c') . " boot\n", FILE_APPEND);
         // Loads /apps/ocrflow/js/action-script (a route we serve). addInitScript
         // guarantees the file-action registration runs in the front-end init
         // phase, before the Files app mounts — avoiding the race that plagues

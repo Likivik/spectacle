@@ -33,13 +33,14 @@ class Application extends App implements IBootstrap {
     }
 
     public function boot(IBootContext $context): void {
-        // DEBUG PROBE: prove whether NC runs this app's boot() at all.
-        // Remove after the Files action-loading mystery is closed.
-        @file_put_contents('/tmp/ocrflow-boot.log', date('c') . " boot\n", FILE_APPEND);
-        // Loads /apps/ocrflow/js/action-script (a route we serve). addInitScript
-        // guarantees the file-action registration runs in the front-end init
-        // phase, before the Files app mounts — avoiding the race that plagues
-        // addScript-loaded file actions (nextcloud/server#56020).
-        Util::addInitScript('ocrflow', 'action-script');
+        // Loads the Files context-menu action JS. addInitScript runs the
+        // script in the front-end init phase, before the Files app mounts —
+        // the reliable path for file-action registration (avoids the random
+        // missing-action race of addScript-loaded scripts, nextcloud/server#56020).
+        // The file js/ocr-action.js is shipped with the app and served from
+        // the extraApps store path. (JSResourceLocator resolves init scripts
+        // to static files under the app's js/ dir, so the name here MUST match
+        // the on-disk file — there is no route indirection.)
+        Util::addInitScript('ocrflow', 'ocr-action');
     }
 }

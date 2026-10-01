@@ -33,14 +33,15 @@ class Application extends App implements IBootstrap {
     }
 
     public function boot(IBootContext $context): void {
-        // Loads the Files context-menu action JS. addInitScript runs the
-        // script in the front-end init phase, before the Files app mounts —
-        // the reliable path for file-action registration (avoids the random
-        // missing-action race of addScript-loaded scripts, nextcloud/server#56020).
-        // The file js/ocr-action.js is shipped with the app and served from
-        // the extraApps store path. (JSResourceLocator resolves init scripts
-        // to static files under the app's js/ dir, so the name here MUST match
-        // the on-disk file — there is no route indirection.)
-        Util::addInitScript('ocrflow', 'ocr-action');
+        // Loads the Files context-menu actions. The JS is a vite bundle
+        // (frontend/src -> js/ocrflow-main.mjs, @nextcloud/vite-config):
+        // NC 34 file actions register via `import { registerFileAction } from
+        // '@nextcloud/files'`, which resolves only inside a bundle — a raw
+        // browser ESM throws "Failed to resolve module specifier".
+        // addInitScript emits /nix-apps/ocrflow/js/ocrflow-main.mjs (loaded
+        // as type=module because of the .mjs extension). The name MUST match
+        // the on-disk bundle file (JSResourceLocator resolves static files,
+        // not routes).
+        Util::addInitScript('ocrflow', 'ocrflow-frontend-main');
     }
 }

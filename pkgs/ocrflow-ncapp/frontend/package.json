@@ -1,0 +1,20 @@
+{
+  "name": "ocrflow-frontend",
+  "version": "0.3.0",
+  "private": true,
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "watch": "vite build --watch"
+  },
+  "dependencies": {
+    "@nextcloud/files": "^4.0.0",
+    "@nextcloud/l10n": "^3.2.0"
+  },
+  "devDependencies": {
+    "@nextcloud/vite-config": "^1.7.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.10"
+  }
+}

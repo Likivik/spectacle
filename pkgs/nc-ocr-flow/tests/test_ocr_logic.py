@@ -194,15 +194,6 @@ def test_font_has_buffer_or_name():
     assert font.buffer is not None or font.name == "helv"
 
 
-# --- Surya server model binding (deleted in v0.3 three-engine refactor) ---
-
-# The standalone Surya /ocr + /detect server (nc_ocr_flow.surya_server)
-# was replaced by the three-engine architecture (google|tesseract|minimax).
-# These tests are removed because their target module no longer exists;
-# engine-specific smoke tests live in tests/test_minimax_structured.py,
-# tests/test_monkey_client.py, and the engine modules' own docstring
-# examples.
-
 # --- Webhook server ----------------------------------------------------------
 
 def test_webdav_url_parsing():

@@ -18,8 +18,8 @@ or replaced. Use the original pages-needing-OCR distinction at the
 service layer (pdf_classify / ``_needs_ocr_decision``) to decide
 whether to run this engine at all.
 
-This engine is the historical "fast lane"; it does NOT touch the L2
-writingtype router (handwriting escalation belongs to minimax).
+This engine is the historical "fast lane"; it does no handwriting
+escalation (that is minimax's job).
 """
 from __future__ import annotations
 
@@ -51,7 +51,7 @@ def process_pdf(pdf_path: str | os.PathLike,
       tess_pages  = list of 0-indexed page numbers that received a
                     tesseract layer (i.e. non born-digital pages).
       vlm_pages   = []   (no per-page VLM tier in this engine)
-      l2_pages    = {}   (no writingtype escalation)
+      l2_pages    = {}   (no handwriting escalation)
     """
     pdf_path = str(pdf_path)
     out_path = Path(output_pdf) if output_pdf else Path(tempfile.mkdtemp()) / "tess.pdf"

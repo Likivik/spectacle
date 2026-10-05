@@ -144,6 +144,26 @@
           ];
         };
 
+        # /Storage/Git lives on the fast scratch SSD (/panther) via a bind mount.
+        #
+        # Why: git/jj are metadata-heavy (thousands of small files in .git/objects,
+        # the index, and .jj's store), and /Storage is a spinning disk. Binding keeps
+        # every path in the fleet identical (/Storage/Git/...) so docs, CI, scripts,
+        # autopull timers and other sessions need no changes.
+        #
+        # The original ZFS copy is deliberately left in place underneath the mount:
+        # it costs ~2.8G on a pool with hundreds of GB free and behaves as a
+        # de-facto snapshot if the scratch SSD ever dies. To reclaim it you must
+        # stop the mount first, or you will delete the SSD copy instead.
+        #
+        # x-systemd.requires-mounts-for orders this after /panther, so the source
+        # is always mounted before the bind.
+        fileSystems."/Storage/Git" = {
+          device = "/panther/Git";
+          fsType = "none";
+          options = [ "bind" "x-systemd.requires-mounts-for=/panther" ];
+        };
+
         fileSystems."/" = {
           device = "/dev/disk/by-uuid/812b6d5f-dc5d-4ee7-a576-e4644011d1c3";
           fsType = "ext4";

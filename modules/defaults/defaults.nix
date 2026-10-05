@@ -14,6 +14,18 @@ in
   den.default.nixos.system.stateVersion = "25.11"; # set Nixpkgs version you start with, never change for proper backward compatability
   den.default.networking.firewall.enable = true; # enable firewall everywhere
   den.default.os.nixpkgs.overlays = [ graphitiMcpOverlay ];
+
+  # VM resources belong on the build-vm variant, NOT on the host config:
+  # virtualisation/build-vm.nix imports qemu-vm.nix only inside
+  # `virtualisation.vmVariant`, so a host-level `virtualisation.memorySize` does
+  # not exist (nixpkgs#196755). Setting memorySize here feeds BOTH the `-m` flag
+  # and the memfd shared-memory backend, which QEMU requires to match - which is
+  # why the old `QEMU_OPTS="-m 8192"` launcher flag aborted the VM outright.
+  # mkDefault so a RAM-tight host can override downwards.
+  den.default.nixos.virtualisation.vmVariant.virtualisation = {
+    memorySize = lib.mkDefault 8192;
+    cores = lib.mkDefault 4;
+  };
 	flake.den = den;
 
   /* ------------------------------------------------------------------------

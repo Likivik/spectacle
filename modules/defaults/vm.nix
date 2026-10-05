@@ -35,7 +35,7 @@
               echo "💻 Starting VM for ${hostname}"
 
               export QEMU_NET_OPTS="hostfwd=tcp::2222-:22" # forward SSH port locally
-              export QEMU_OPTS="-m 8192 -device virtio-gpu-gl -display gtk,gl=on" # allocate 8GB, use virtio-gpu-gl with OpenGL for proper KDE rendering
+              export QEMU_OPTS="-device virtio-gpu-gl -display gtk,gl=on" # GPU/OpenGL for KDE rendering; RAM+cores come from virtualisation.vmVariant (modules/defaults/defaults.nix), NOT from a QEMU flag
               ${conf.config.system.build.vm}/bin/run-${conf.config.networking.hostName}-vm "$@"
             '';
           }

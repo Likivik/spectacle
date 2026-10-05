@@ -11,8 +11,11 @@ Cite/document what you found when it shapes a decision.
 
 ## Repo Location
 
-- **Erebus**: `/Storage/Git/spectacle` — primary workspace (jj repo, local edits, agents run here)
-- **Serenity**: `/Storage/Git/spectacle` — auto-pulls every 5 min
+- **Serenity**: `/Storage/Git/spectacle` — **the host the Hermes agent runs on** (moved
+  there from Erebus on 2026-10-05; see `/var/lib/hermes/flip-to-serenity.sh`). Builds,
+  tests, VM smoke gates and deploys happen here.
+- **Erebus**: `/Storage/Git/spectacle` — edit-only scratch (jj repo). Its Hermes gateway is
+  masked and it has no space: **never build here**, heavy Nix work belongs on Serenity.
 - **Traversal**: `/Storage/Git/spectacle` — auto-pulls every 5 min
 
 ## VCS: Jujutsu (jj)
@@ -53,11 +56,22 @@ This repo uses **jj** (Jujutsu) on top of git. jj is the primary VCS.
    #    needed when bumping packages that might build from source.)
    nix build .#nixosConfigurations.<host>.config.system.build.toplevel --dry-run
 
-   # 2. Push only AFTER dry-build passes
+   # 2. Serenity only: boot the WHOLE new host in a VM before anything touches
+   #    disk. Builds the real toplevel and asserts: no failed system units
+   #    outside a documented allowlist, the hermes user units (gateway,
+   #    dashboard, graphiti), linger + the user bus, and that the upstream
+   #    `systemd-run --user --scope` primitive works (cron dispatch needs it).
+   #    ~5-10 min; prints SERENITY_SMOKE_PASS or SERENITY_SMOKE_FAIL.
+   #    Note: it inherits everything except real hardware/secrets, so a green
+   #    gate means the config boots healthy - not that the TPM unseals or the
+   #    disks/zpool are fine. SKIP this only if you are not changing serenity.
+   nix run .#serenity-smoke
+
+   # 3. Push only AFTER dry-build (and the smoke gate) passes
    jj bookmark set dev -r @ && jj git push --all
 
-   # 3. Deploy — LOCAL if you're on the target host, REMOTE otherwise:
-   # Erebus (local — agents run here).
+   # 4. Deploy — LOCAL if you're on the target host, REMOTE otherwise.
+   #    Serenity is the LOCAL host now (the agent runs on it).
    #
    # ⚠ Agents: do NOT run a bare `sudo nixos-rebuild switch` from your own
    # shell. You run inside the hermes-gateway.service cgroup, and when the
@@ -71,21 +85,30 @@ This repo uses **jj** (Jujutsu) on top of git. jj is the primary VCS.
    #   - wrap in `bash -lc`: nixos-rebuild's activation runs
    #     `switch-to-configuration test`, which needs coreutils (`test`) +
    #     systemctl on PATH — absent from systemd-run's minimal env.
-   sudo systemd-run --collect --unit=nixos-rebuild-erebus \
+   sudo systemd-run --collect --unit=nixos-rebuild-serenity \
      --working-directory=/Storage/Git/spectacle \
-     bash -lc 'exec nixos-rebuild switch --flake path:/Storage/Git/spectacle#erebus'
+     bash -lc 'exec nixos-rebuild switch --flake path:/Storage/Git/spectacle#serenity'
 
    # (A human on a real root shell may use the plain `sudo nixos-rebuild
-   #  switch --flake .#erebus` — the cgroup hazard is agent-specific.)
+   #  switch --flake .#serenity` — the cgroup hazard is agent-specific.)
 
-   # Serenity / Traversal / Poweredge (remote)
-   nixos-rebuild switch --flake .#serenity --build-host likivik@serenity --target-host likivik@serenity --elevate=sudo
+   # Erebus / Traversal / Poweredge (remote)
+   nixos-rebuild switch --flake .#erebus --build-host likivik@erebus --target-host likivik@erebus --elevate=sudo
    nixos-rebuild switch --flake .#traversal --build-host likivik@traversal --target-host likivik@traversal --elevate=sudo
    nixos-rebuild switch --flake .#poweredge --build-host likivik@poweredge --target-host likivik@poweredge --elevate=sudo
    ```
 
    Gotchas:
-   - Local = `sudo nixos-rebuild ...` with no `--host`. Remote = `--build-host` + `--target-host` + `--elevate=sudo`.
+   - Local = `sudo nixos-rebuild ...` with no `--host` — but as an *agent* detach it
+     (`sudo systemd-run --collect --unit=nixos-rebuild-<host> ...`, see above). Remote =
+     `--build-host` + `--target-host` + `--elevate=sudo`.
+   - ⚠ If the deploy bumps nixpkgs the **kernel changes** (6.18.49 → 6.18.55 in the
+     2026-10-06 bump). `switch` activates userspace only: the running kernel cannot load
+     the new module tree (nvidia, ZFS), so the box is in a half-state until reboot. Prefer
+     `nixos-rebuild boot` + reboot, or reboot right after the switch. The VM smoke gate
+     validates exactly that fresh-boot path — a switch does not exercise it.
+   - To avoid a reboot entirely, bump **only** the input you need (e.g. `nix flake update
+     hermes-agent`) and leave nixpkgs pinned: userspace-only changes take effect on switch.
    - `--elevate=sudo` is required for remote deploys (NOPASSWD sudo on `likivik`); old form `--use-remote-sudo` is obsolete.
    - `--flake .#<hostname>` must match the *target*, never the calling host.
 

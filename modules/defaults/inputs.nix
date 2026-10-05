@@ -41,8 +41,23 @@
       url = "github:nix-community/disko";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # Upstream, pinned to a RELEASE TAG. The tag matters: flake.lock is the only
+    # thing that would otherwise move this input, and a tag pin is what keeps a
+    # plain  from silently walking the agent forward.
+    #
+    # v2026.9.24 (Hermes 0.21.5) is the floor for the restart-safe cron fix
+    # (upstream #111484, first shipped v2026.9.21): before it a SUCCESSFUL
+    # systemd-scope probe was cached permanently, so once the user bus vanished
+    # every cron tick still wrapped its worker in ,
+    # exited 1, and 100% of scheduled jobs failed forever. Do not pin below
+    # v2026.9.21 — the  check guards this.
+    #
+    # We used to carry a 2-commit deps fork (otel 1.43 pin + langfuse extra);
+    # both went upstream, so the fork is gone. Do NOT re-declare this input in
+    # an aspect — two definitions conflict and break 
+    # (and its check-flake-file guard) outright.
     hermes-agent = {
-      url = "github:NousResearch/hermes-agent";
+      url = "github:NousResearch/hermes-agent/v2026.9.24";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     llm-agents = {

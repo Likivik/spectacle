@@ -1,12 +1,5 @@
 { inputs, den, lib, ... }:
 {
-  flake-file.inputs = {
-    hermes-agent = {
-      url = "github:Likivik/hermes-agent";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-  };
-
   den.aspects.server.hermes-agent = {
     nixos = { config, pkgs, lib, ... }: let
       # Upstream v0.21.1: otel 1.39.1 suffices (mcp 2.0.0 requires >=1.28; no
@@ -131,6 +124,14 @@
           shell = pkgs.bash;
           subUidRanges = [{ startUid = 165536; count = 65536; }];
           subGidRanges = [{ startGid = 165536; count = 65536; }];
+          # nix-maid declares maid-activation.service host-wide, so *every* user gets
+          # the unit, while system.build.all-maid only links a bundle for users whose
+          # `maid` is non-null (nix-maid: maidUsers = filterAttrs (... maid != null)).
+          # The unit hardcodes $all-maid/nix-maid-$USER/bin/activate, so for a user
+          # with no maid config it execs a path that was never built -> exit 127.
+          # An empty config is all it takes: the bundle exists, and the unit becomes
+          # a no-op. (Not a class question - hermes isn't a den user.)
+          maid = { };
         };
 
         environment.systemPackages = [ hermes-pkg ];

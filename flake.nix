@@ -1,4 +1,4 @@
-# DO-NOT-EDIT. This file was auto-generated using github:vic/flake-file.
+# DO-NOT-EDIT. This file was auto-generated using github:denful/flake-file.
 # Use `nix run .#write-flake` to regenerate it.
 {
   outputs = inputs: inputs.flake-parts.lib.mkFlake { inherit inputs; } (inputs.import-tree ./modules);
@@ -22,18 +22,15 @@
     };
     graphiti-mcp-workspace = {
       url = "path:./pkgs/graphiti/mcp-workspace";
-      inputs.nixpkgs.follows = "nixpkgs";
-      inputs.pyproject-nix.follows = "pyproject-nix";
-      inputs.uv2nix.follows = "uv2nix";
-      inputs.pyproject-build-systems.follows = "pyproject-build-systems";
+      inputs = {
+        nixpkgs.follows = "nixpkgs";
+        pyproject-build-systems.follows = "pyproject-build-systems";
+        pyproject-nix.follows = "pyproject-nix";
+        uv2nix.follows = "uv2nix";
+      };
     };
     hermes-agent = {
-      # Dropped our 2-commit deps fork (otel 1.43 pin + langfuse extra) — both
-      # obsolete upstream: otel 1.39.1 suffices (mcp 2.0.0 needs >=1.28; nothing
-      # uses TraceFlags.RANDOM_TRACE_ID), langfuse moved to bundled opt-in
-      # plugin (plugins/observability/langfuse) with lazy-install into
-      # HERMES_LAZY_INSTALL_TARGET. Pinned to release v0.21.1 (2026.9.7).
-      url = "github:NousResearch/hermes-agent/v2026.9.7";
+      url = "github:NousResearch/hermes-agent/v2026.9.24";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     hermes-webui = {
@@ -48,7 +45,7 @@
     hypr-dynamic-cursors.url = "github:VirtCode/hypr-dynamic-cursors/8c1679b87c54e97145cae83e622956d720e88bef";
     hyprland.url = "github:hyprwm/Hyprland/v0.52.0";
     hyprland-plugins.url = "github:hyprwm/hyprland-plugins/v0.52.0";
-    import-tree.url = "github:vic/import-tree";
+    import-tree.url = "github:denful/import-tree";
     llm-agents = {
       url = "github:numtide/llm-agents.nix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -69,26 +66,30 @@
     };
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     nixpkgs-master.url = "github:NixOS/nixpkgs/master";
+    pyproject-build-systems = {
+      url = "github:pyproject-nix/build-system-pkgs";
+      inputs = {
+        nixpkgs.follows = "nixpkgs";
+        pyproject-nix.follows = "pyproject-nix";
+        uv2nix.follows = "uv2nix";
+      };
+    };
     pyproject-nix = {
       url = "github:pyproject-nix/pyproject.nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    pyproject-build-systems = {
-      url = "github:pyproject-nix/build-system-pkgs";
-      inputs.nixpkgs.follows = "nixpkgs";
-      inputs.pyproject-nix.follows = "pyproject-nix";
-      inputs.uv2nix.follows = "uv2nix";
-    };
     quadlet-nix.url = "github:SEIAROTg/quadlet-nix";
-    uv2nix = {
-      url = "github:pyproject-nix/uv2nix";
-      inputs.nixpkgs.follows = "nixpkgs";
-      inputs.pyproject-nix.follows = "pyproject-nix";
-    };
     sops-nix = {
       url = "github:Mic92/sops-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     torrserver.url = "github:YouROK/TorrServer";
+    uv2nix = {
+      url = "github:pyproject-nix/uv2nix";
+      inputs = {
+        nixpkgs.follows = "nixpkgs";
+        pyproject-nix.follows = "pyproject-nix";
+      };
+    };
   };
 }

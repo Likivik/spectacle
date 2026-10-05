@@ -200,14 +200,13 @@
           "email/gmail/account2/app-password" = { sopsFile = ../../../secrets/serenity/hermes-secrets.yaml; owner = "hermes"; group = "hermes"; mode = "0400"; };
         };
 
-        # ── Cutover guard (Stage A) ──────────────────────────────────────
-        # The messaging pollers must stay DOWN until the Telegram tokens are
-        # removed from erebus — two pollers on one token silently split
-        # updates. Nothing else depends on them, so the imported state is
-        # live and inspectable (webui, dashboard, CLI) before the flip.
-        # Stage B: drop these two overrides and start the units.
-        systemd.user.services."hermes-gateway".wantedBy = lib.mkForce [ ];
-        systemd.user.services."hermes-gateway-salem".wantedBy = lib.mkForce [ ];
+        # ── Cutover complete (Stage B, 2026-10-05) ───────────────────────
+        # Erebus is stopped AND masked, so the gateways may start here again.
+        # The Stage-A  overrides are deliberately
+        # gone: a reboot on this host must bring the messaging control plane
+        # up by itself. If the poller ever moves back to erebus, re-add them
+        # there-first and mask this side, in that order — two pollers on one
+        # token silently split updates.
 
         # Open UDP 41641 (WireGuard endpoint) at the global firewall level.
         # Interface-scoped rules are useless here: peer punches arrive from the
@@ -262,7 +261,11 @@
         fileSystems."/Storage/Git" = {
           device = "/panther/Git";
           fsType = "none";
-          options = [ "bind" "x-systemd.requires-mounts-for=/panther" ];
+          # Bind mounts inherit the parent mount flags, and the /panther user
+          # option implies noexec - so every repo under /Storage/Git was
+          # non-executable (./gradlew -> Permission denied, exit 126). exec
+          # applies to the bind only; /panther stays noexec,nosuid,nodev.
+          options = [ "bind" "exec" "x-systemd.requires-mounts-for=/panther" ];
         };
 
         fileSystems."/" = {
@@ -316,25 +319,12 @@
         # The Wayland unattended-login fix never landed; if it's needed again
         # use a pinned rev with the vendor fix or gnome-remote-desktop.
 
-        # Auto-pull spectacle repo every 5 min
-        systemd.services.spectacle-autopull = {
-          description = "Pull spectacle repo from origin";
-          after = [ "network-online.target" ];
-          wants = [ "network-online.target" ];
-          serviceConfig = {
-            Type = "oneshot";
-            User = "likivik";
-            ExecStart = "${pkgs.git}/bin/git -C /Storage/Git/spectacle pull --ff-only origin dev";
-          };
-        };
-
-        systemd.timers.spectacle-autopull = {
-          wantedBy = [ "timers.target" ];
-          timerConfig = {
-            OnBootSec = "2min";
-            OnUnitActiveSec = "5min";
-          };
-        };
+        # Auto-pull was removed here on 2026-10-06. The Hermes agent now runs on
+        # Serenity and does its work in its own jj workspace, so a blind
+        # `git pull --ff-only origin dev` into /Storage/Git/spectacle buys nothing
+        # and can fight whatever a session has in the canonical checkout. Deploys
+        # are explicit: dry-build -> serenity-smoke -> detached nixos-rebuild.
+        # (Traversal still autopulls its own checkout.)
 
         # KRDP — KDE Remote Desktop (RDP server, Wayland-native)
         systemd.user.services.krdp = {

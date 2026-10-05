@@ -8,6 +8,51 @@
         # Config still evaluates + builds (the "won't break Hermes on deploy" guard).
         erebus-build = inputs.self.nixosConfigurations.erebus.config.system.build.toplevel;
 
+        # Serenity toplevel eval+build guard. Serenity hosts the agent and the
+        # dev/build/CI load now, so a config that stops evaluating here costs
+        # more than elsewhere. Same shape as erebus-build.
+        serenity-build = inputs.self.nixosConfigurations.serenity.config.system.build.toplevel;
+
+        # Hermes cron dispatch fix (upstream #111484, first shipped v2026.9.21).
+        #
+        # Pre-fix, a SUCCESSFUL scope probe was cached permanently
+        # ("if _SYSTEMD_SCOPE_AVAILABLE is True: return True"); only the failure
+        # verdict expired. So once the user D-Bus bus vanished, every cron tick
+        # still wrapped its worker in `systemd-run --user --scope`, exited 1, and
+        # the gateway blamed the worker: 100% of scheduled jobs failed with
+        # "Restart-safe cron worker dispatch failed", forever, with no incident
+        # recorded. v2026.9.24 re-probes on a 60s TTL and degrades to unscoped
+        # dispatch instead of failing every tick. Pin rationale lives in
+        # modules/defaults/inputs.nix.
+        #
+        # Hermetic and instant: the fix is plain source in the pinned agent, so
+        # this catches a re-pin below v2026.9.21 without needing a VM boot.
+        hermes-cron-dispatch-fix =
+          let
+            hermes-pkg = (inputs.hermes-agent.packages.${pkgs.system}.minimal).override {
+              extraDependencyGroups = [ "messaging" ];
+            };
+          in
+          pkgs.runCommand "hermes-cron-dispatch-fix" { } ''
+            src=$(find ${hermes-pkg} ${hermes-pkg.hermesVenv} -name process_registry.py -print -quit 2>/dev/null)
+            if [ -z "$src" ]; then
+              echo "FAIL: process_registry.py not found in the pinned hermes-agent" >&2
+              exit 1
+            fi
+            echo "checking $src"
+            if ! grep -q '_SYSTEMD_SCOPE_PROBE_TTL_SECONDS' "$src"; then
+              echo "FAIL: the scope-probe re-probe fix is missing (pre-#111484)." >&2
+              echo "      A successful probe would be cached forever again, so every" >&2
+              echo "      cron tick fails once the user bus vanishes." >&2
+              exit 1
+            fi
+            if ! grep -q 'GatewayChildDispatch' "$src"; then
+              echo "FAIL: degraded (unscoped) dispatch fallback missing (pre-#111484)." >&2
+              exit 1
+            fi
+            touch "$out"
+          '';
+
         # Forgejo aspect: boots a VM with the real forgejo module and asserts the
         # deployable contract — service active, data dirs created/owned, parent
         # dir readable (users group), sandbox ReadWritePaths exposes it, HTTP on
@@ -345,6 +390,86 @@
           program =
             "${pkgs.writeShellScript "erebus-telegram" ''
               exec ${run-vm} -nographic "$@"
+            ''}";
+        };
+
+      # Full-host serenity boot smoke test: boots the ENTIRE serenity config in
+      # QEMU and asserts (a) no FAILED system unit outside an explicit allowlist,
+      # (b) every systemd.user.services entry the config declares exists for
+      # hermes, (c) the declarative linger file, and (d) that
+      # systemd-run --user --scope SUCCEEDS as hermes — the primitive
+      # restart-safe cron dispatch needs (upstream #111484 broke exactly this).
+      # See tests/serenity-smoke.nix for what is neutralised and why.
+      #   nix run .#serenity-smoke
+      apps.serenity-smoke =
+        let
+          vm = inputs.self.nixosConfigurations.serenity.extendModules {
+            modules = [ (import ../../tests/serenity-smoke.nix) ];
+          };
+          run-vm = "${vm.config.system.build.vm}/bin/run-serenity-vm";
+        in
+        {
+          type = "app";
+          # program must be a string; writeShellScript emits one file at out.
+          # Boots the whole host; the probe (tests/serenity-smoke-probe.sh) runs
+          # in-guest, reports on the serial console and powers the VM off, so this
+          # exits on its own. Report markers: SERENITY_SMOKE_PASS/FAIL.
+          program =
+            "${pkgs.writeShellScript "serenity-smoke" ''
+              set -eu
+              IMG="$PWD/serenity.qcow2"
+
+              # Two QEMUs cannot share the disk image. A previous VM may still be
+              # shutting down (qemu takes a few seconds to release it), so clean
+              # up rather than fail: TERM, wait, then KILL, then continue. This
+              # scan runs as the invoking user - the only identity that can read
+              # the fds of its own qemu processes.
+              if [ -e "$IMG" ]; then
+                for attempt in 1 2 3 4 5 6 7 8 9 10; do
+                  HOLDERS=""
+                  for p in /proc/[0-9]*; do
+                    for f in "$p"/fd/*; do
+                      case "$(readlink "$f" 2>/dev/null)" in
+                        *"$IMG") HOLDERS="$HOLDERS ''${p#/proc/}" ;;
+                      esac
+                    done
+                  done
+                  [ -z "''${HOLDERS// /}" ] && break
+                  for holder in $HOLDERS; do
+                    if [ "$attempt" -le 3 ]; then
+                      kill "$holder" 2>/dev/null || true
+                    else
+                      kill -9 "$holder" 2>/dev/null || true
+                    fi
+                  done
+                  sleep 2
+                done
+                if [ -n "''${HOLDERS// /}" ]; then
+                  echo "refusing to start: $IMG still held by$HOLDERS after cleanup" >&2
+                  exit 1
+                fi
+              fi
+
+              echo "=== booting the WHOLE serenity host in QEMU (report follows) ==="
+              RC=0
+              ${run-vm} -nographic "$@" || RC=$?
+
+              # The guest powers itself off when the probe finishes. If a QEMU
+              # survives anyway (interrupted run), release the disk image here:
+              # the next run would otherwise refuse to start on the write lock.
+              # This scan runs as the invoking user, which is the only way it can
+              # read the fds of its own qemu processes.
+              for p in /proc/[0-9]*; do
+                for f in "$p"/fd/*; do
+                  case "$(readlink "$f" 2>/dev/null)" in
+                    *"$IMG")
+                      echo "cleaning up leftover VM process ''${p#/proc/}" >&2
+                      kill "''${p#/proc/}" 2>/dev/null || true
+                      ;;
+                  esac
+                done
+              done
+              exit "$RC"
             ''}";
         };
 

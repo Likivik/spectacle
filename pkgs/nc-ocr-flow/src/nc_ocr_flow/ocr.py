@@ -14,8 +14,7 @@ This module:
     embeds them onto the PDF via the shared helper
     ``_embed_ocr_text``.
   - Keeps the shared helpers (_render_page_png, _generate_tsv,
-    _parse_tsv, born-digital detection) that engines and the
-    monkey backend still need.
+    _parse_tsv, born-digital detection) that engines still need.
   - Exposes ``ProcessResult`` with the new ``engine_used`` field and
     ``page_results`` list.
 
@@ -431,11 +430,6 @@ def _embed_ocr_text(doc, page_idx: int, ocr_result: OcrResult) -> None:
                     "text insert failed on page %d, block bbox=%s: %s",
                     page_idx, block.bbox, exc,
                 )
-
-
-# Backwards-compat alias — some external callers may still import the
-# old name. Internal callers must use _embed_ocr_text.
-_embed_surya_text = _embed_ocr_text
 
 
 __all__ = [

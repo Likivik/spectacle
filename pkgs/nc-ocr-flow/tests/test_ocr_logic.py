@@ -10,7 +10,7 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 from nc_ocr_flow.ocr import (
-    PageMeta, _parse_tsv, _needs_vlm, _embed_surya_text,
+    PageMeta, _parse_tsv, _needs_vlm,
     _get_font, FONT_PATH,
     PER_PAGE_CONF_FLOOR, PER_PAGE_MIN_CHARS,
 )

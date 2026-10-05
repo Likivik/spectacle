@@ -84,8 +84,8 @@
             DynamicUser = true; StateDirectory = "llama-cpp-reranker";
           };
         };
-        # gemma-vision DISABLED — replaced by olmocr-vision (port 8083).
-        # Keep this stanza as a reference; new VLM lives in modules/aspects/server/olmocr-vision.
+        # gemma-vision DISABLED — superseded by olmocr-vision (port 8083).
+        # The olmocr-vision aspect was removed 2026-10; stanza kept as reference.
         #
         # systemd.services.llama-gemma-vision = {
         #   description = "llama.cpp gemma-3-4b-it vision (on-demand OCR)";
@@ -141,21 +141,6 @@
               "https://huggingface.co/TheOSExplorer/bge-reranker-v2-m3-Q2_K-GGUF/resolve/main/bge-reranker-v2-m3-q2_k.gguf"
             mv "$RERANK.tmp" "$RERANK"
           fi; chmod 644 "$RERANK"
-          GEMMA="${modelsDir}/gemma-3-4b-it-q2_k.gguf"
-          if [ ! -f "$GEMMA" ]; then
-            # bartowski/google_gemma-3-4b-it-GGUF repo filenames DO use the
-            # `google_` prefix (same as mmproj). Verified via
-            # https://huggingface.co/api/models/bartowski/google_gemma-3-4b-it-GGUF/tree/main
-            ${pkgs.curl}/bin/curl -L --fail -o "$GEMMA.tmp" \
-              "https://huggingface.co/bartowski/google_gemma-3-4b-it-GGUF/resolve/main/google_gemma-3-4b-it-Q2_K.gguf"
-            mv "$GEMMA.tmp" "$GEMMA"
-          fi; chmod 644 "$GEMMA"
-          MMPROJ="${modelsDir}/mmproj-gemma-3-4b-it-f16.gguf"
-          if [ ! -f "$MMPROJ" ]; then
-            ${pkgs.curl}/bin/curl -L --fail -o "$MMPROJ.tmp" \
-              "https://huggingface.co/bartowski/google_gemma-3-4b-it-GGUF/resolve/main/mmproj-google_gemma-3-4b-it-f16.gguf"
-            mv "$MMPROJ.tmp" "$MMPROJ"
-          fi; chmod 644 "$MMPROJ"
         '';
       })
     ];

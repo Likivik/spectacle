@@ -16,9 +16,6 @@
       den.aspects.firefox
 
       den.aspects.server.nc-rag
-      den.aspects.server.olmocr-vision
-      den.aspects.server.surya-server
-      den.aspects.server.monkey-server
       den.aspects.server.forgejo
       den.aspects.server.sops
     ];

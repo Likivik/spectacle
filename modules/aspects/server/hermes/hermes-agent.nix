@@ -35,7 +35,6 @@
       graphitiConfig = import ./_graphiti.nix { inherit config pkgs lib; };
       llamaConfig = import ./_llama.nix { inherit config pkgs lib; };
       graphitiMemoryConfig = import ./_hermes-graphiti.nix { inherit config pkgs lib; extraProfiles = extraHermesProfiles; };
-      searxngConfig = import ./_searxng.nix { inherit config pkgs lib; };
       playwrightConfig = import ./_playwright.nix { inherit config pkgs lib; };
       litellmConfig = import ./_litellm.nix { inherit config pkgs lib; };
 
@@ -109,7 +108,6 @@
       graphitiConfig
       llamaConfig
       graphitiMemoryConfig
-      searxngConfig
       playwrightConfig
       litellmConfig
       (lib.mkIf (extraHermesProfiles != []) {

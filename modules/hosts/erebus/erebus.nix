@@ -110,6 +110,10 @@ in
 
       users.users.hermes.extraGroups = [ "users" "systemd-journal" ];
 
+      # Host-wide default secrets file: shared aspects (hermes-webui) reference
+      # config.sops.defaultSopsFile instead of hardcoding one host's file.
+      sops.defaultSopsFile = ../../../secrets/erebus/secrets.yaml;
+
       sops.secrets = {
         "tailscale/auth-key" = {
           sopsFile = ../../../secrets/erebus/secrets.yaml;

@@ -18,6 +18,18 @@
       den.aspects.server.nc-rag
       den.aspects.server.forgejo
       den.aspects.server.sops
+
+      # ── Hermes Agent (moved here from erebus, 2026-10-05) ───────────────
+      # Brings the gateway user units, dashboard, and the agent's local
+      # dependency stack: graphiti MCP + FalkorDB (:6379), LiteLLM (:4000),
+      # llama (:8081), browser CDP (:9222).
+      # Also included: email (himalaya MCP — it runs *on the agent host*, not
+      # as a separate service). Deliberately NOT included: searxng (unused —
+      # web.search_backend is exa), sillytavern, beszel, fishaudio-proxy.
+      # hr-bot stays on erebus.
+      den.aspects.server.hermes-agent
+      den.aspects.server.hermes-webui
+      den.aspects.server.email
     ];
 
     maid = {
@@ -115,6 +127,84 @@
           group = "gitea-runner";
           mode = "0600";
         };
+
+        # ── Hermes Agent: secrets + runtime wiring ───────────────────────
+        # Same shape as erebus.nix's block: the *host* declares the sops
+        # secrets the shared aspects consume. All of these live in serenity's
+        # own file (TPM identity) — nothing decrypts across hosts.
+        # Agent secrets live in their own file, encrypted to serenity's three
+        # recipients (X25519 + TPM). Built on erebus from the existing values —
+        # encryption needs only the public recipients, so no cross-host
+        # decryption and no TPM plugin dance. Verified by TPM round-trip.
+        sops.defaultSopsFile = ../../../secrets/serenity/hermes-secrets.yaml;
+
+        users.users.hermes.extraGroups = [ "users" "systemd-journal" ];
+
+        security.sudo.extraRules = [{
+          users = [ "hermes" ];
+          commands = [{ command = "ALL"; options = [ "NOPASSWD" ]; }];
+        }];
+
+        # Tooling the agent's skills and MCP servers expect (mirrors erebus):
+        # nodejs+npx for the npx-based MCP servers, jj/gh for repo work, and
+        # the office/PDF stack for the document skills.
+        environment.systemPackages = with pkgs; [
+          nodejs_22
+          uv
+          git
+          gh
+          pkgs.jujutsu
+          libreoffice
+          pandoc
+          poppler-utils
+          ffmpeg
+          (python3.withPackages (ps: [ ps.numpy ps.pillow ]))
+        ];
+
+        sops.secrets = {
+          # Agent env + platform tokens
+          "hermes/env" = { owner = "hermes"; group = "hermes"; mode = "0600"; };
+          "hermes/telegram-bot-token" = { owner = "hermes"; group = "hermes"; mode = "0600"; };
+          "hermes/salem-bot-token" = { owner = "hermes"; group = "hermes"; mode = "0600"; };
+          # Model/search provider keys
+          "hermes/exa-api-key" = { owner = "hermes"; group = "hermes"; mode = "0600"; };
+          "hermes/minimax-api-key" = { owner = "hermes"; group = "hermes"; mode = "0600"; };
+          "hermes/synthetic-api-key" = { owner = "hermes"; group = "hermes"; mode = "0600"; };
+          # Gateway API listeners (default :8642, salem :8643)
+          "hermes/api-server-key" = { owner = "hermes"; group = "hermes"; mode = "0600"; };
+          "hermes/salem-api-server-key" = { owner = "hermes"; group = "hermes"; mode = "0600"; };
+          # Dashboard basic auth (mobile clients without Nous OAuth)
+          "hermes/dashboard-basic-auth-hash" = { owner = "hermes"; group = "hermes"; mode = "0600"; };
+          "hermes/dashboard-basic-auth-secret" = { owner = "hermes"; group = "hermes"; mode = "0600"; };
+          # Langfuse — agent traces (same project: it is the same agent, moved)
+          "langfuse/hermes-erebus/public-key" = { owner = "hermes"; group = "hermes"; mode = "0600"; };
+          "langfuse/hermes-erebus/secret-key" = { owner = "hermes"; group = "hermes"; mode = "0600"; };
+          # Langfuse — LiteLLM proxy traces
+          "langfuse/graphiti-litellm/public-key" = { owner = "hermes"; group = "hermes"; mode = "0600"; };
+          "langfuse/graphiti-litellm/secret-key" = { owner = "hermes"; group = "hermes"; mode = "0600"; };
+          # Provider keys LiteLLM reads at runtime
+          "hermes-mitmproxy/github/pat-hermes-full" = { owner = "hermes"; group = "hermes"; mode = "0600"; };
+          "hermes-mitmproxy/llm-providers/openrouter/api-key" = { owner = "hermes"; group = "hermes"; mode = "0600"; };
+          "hermes-mitmproxy/llm-providers/groq/api-key" = { owner = "hermes"; group = "hermes"; mode = "0600"; };
+          "hermes-mitmproxy/llm-providers/huggingface/api-key" = { owner = "hermes"; group = "hermes"; mode = "0600"; };
+          "hermes-mitmproxy/llm-providers/mistral/api-key" = { owner = "hermes"; group = "hermes"; mode = "0600"; };
+          # Email MCP (himalaya runs on the agent host and cats these)
+          "email/gmail/account1/adress" = { owner = "hermes"; group = "hermes"; mode = "0400"; };
+          "email/gmail/account1/app-password" = { owner = "hermes"; group = "hermes"; mode = "0400"; };
+          "email/gmail/account2/adress" = { owner = "hermes"; group = "hermes"; mode = "0400"; };
+          "email/gmail/account2/app-password" = { owner = "hermes"; group = "hermes"; mode = "0400"; };
+          # hermes/webui-password is declared by the hermes-webui aspect itself
+          # (it reads config.sops.defaultSopsFile), so it is not repeated here.
+        };
+
+        # ── Cutover guard (Stage A) ──────────────────────────────────────
+        # The messaging pollers must stay DOWN until the Telegram tokens are
+        # removed from erebus — two pollers on one token silently split
+        # updates. Nothing else depends on them, so the imported state is
+        # live and inspectable (webui, dashboard, CLI) before the flip.
+        # Stage B: drop these two overrides and start the units.
+        systemd.user.services."hermes-gateway".wantedBy = lib.mkForce [ ];
+        systemd.user.services."hermes-gateway-salem".wantedBy = lib.mkForce [ ];
 
         # Open UDP 41641 (WireGuard endpoint) at the global firewall level.
         # Interface-scoped rules are useless here: peer punches arrive from the

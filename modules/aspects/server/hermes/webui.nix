@@ -42,7 +42,10 @@
         # deliberately not in nix — same treatment as pocketrisu on :443).
 
         sops.secrets."hermes/webui-password" = {
-          sopsFile = ../../../../secrets/erebus/secrets.yaml;
+          # Host default — this aspect is shared by every host that includes it,
+          # so it must not hardcode one host's secrets file (that bug meant a
+          # second host would decrypt erebus's file or fail to find the key).
+          sopsFile = config.sops.defaultSopsFile;
           owner = "hermes";
           group = "hermes";
           mode = "0400";

@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # Stage B cutover: move the Hermes agent's messaging pollers erebus -> serenity.
 #
+# TIMING: ~35-45 min end to end (the delta backup and the rsync top-up dominate).
+# The bot is only offline from step 3 — about 1-2 minutes.
+#
 # WHY THIS IS A SEPARATE, MANUAL STEP
 #   Two gateways polling the same Telegram token do not conflict loudly — they
-#   silently split updates between them. So the order is strict: stop the poller
-#   on erebus FIRST, then start the one on serenity. Nothing else in the agent
-#   stack cares about the move.
+#   split updates between them. So the order is strict: stop the poller on
+#   erebus FIRST, then start the one on serenity.
 #
 # WHY THE ZIP ALONE IS NOT ENOUGH (verified 2026-10-05)
 #   `hermes backup` silently skips files it cannot store. Measured gaps against
@@ -15,10 +17,18 @@
 #   exclusions. History loss in state.db is acceptable; skills/profiles/config
 #   are procedure, so we top those up with rsync, which has no such limit.
 #
+# WHY THE UNMASK IN STEP 4 IS MANDATORY
+#   wantedBy = [ ] parks a unit at boot but does NOT survive a nixos-rebuild
+#   activation: switch-to-configuration restarts post-activation units that
+#   consume changed secrets. That is exactly how serenity's gateway started and
+#   polled during stage A (Telegram logged a getUpdates conflict and the
+#   serenity side backed off). While parked it is therefore MASKED at user level
+#   (~/.config/systemd/user/<unit> -> /dev/null), which outranks the unit file
+#   nixos writes to /etc/systemd/user/ and so survives switches.
+#
 # PRECONDITIONS (checked below)
 #   1. serenity's host config is deployed (hermes user exists, units installed).
-#   2. serenity's gateway units are installed but PARKED
-#      (wantedBy = mkForce []).
+#   2. serenity's gateway units are installed, PARKED and MASKED.
 #   3. Your shell is NOT the gateway's own session — this stops it.
 
 set -euo pipefail
@@ -28,7 +38,7 @@ H=/var/lib/hermes/.hermes
 STAMP=$(date +%Y%m%d-%H%M%S)
 WORK=/tmp/hermes-cutover-$STAMP
 # Small, procedure-bearing state. Deliberately excluded: state.db (huge, comes
-# via the zip), cache/, lazy-packages/, sessions-tmp junk.
+# via the zip), cache/, lazy-packages/.
 TOPUP="skills plugins mcp-servers profiles cron memories webui-state sessions config.yaml auth.json"
 
 say() { printf '\n=== %s ===\n' "$*"; }
@@ -43,11 +53,15 @@ ctl() {  # systemctl --user for the hermes account; arg 1 = ssh|local
 }
 
 say "0. preflight"
+# Must run AS THE HERMES USER: the home is drwx------ hermes, so as anyone else
+# both `hermes backup` and the local rsync reads fail with permission denied.
+# Hence:  sudo -u hermes bash /Storage/Git/spectacle/bin/hermes-cutover-to-serenity
+[ "$(id -un)" = hermes ] || fail "run me as the hermes user: sudo -u hermes bash $0"
 command -v hermes >/dev/null || fail "no hermes CLI here"
 ssh -o ConnectTimeout=10 "$SERENITY" true || fail "serenity unreachable"
 ssh -o ConnectTimeout=10 "$SERENITY" "test -d $H" || fail "serenity has no $H — deploy stage A first"
 echo "  erebus pollers:   $(ctl local is-active hermes-gateway 2>/dev/null || echo unknown)"
-echo "  serenity pollers: $(ctl ssh is-active hermes-gateway 2>/dev/null || echo 'parked (expected)')"
+echo "  serenity pollers: $(ctl ssh is-enabled hermes-gateway 2>/dev/null || echo unknown) (masked = expected while parked)"
 
 say "1. final delta backup on erebus (live — pollers still up here)"
 mkdir -p "$WORK"
@@ -55,38 +69,51 @@ hermes backup -o "$WORK/hermes-cutover.zip"
 ls -lh "$WORK/hermes-cutover.zip"
 
 say "2. transfer + import on serenity (its pollers are parked, so this is safe)"
+ssh -o ConnectTimeout=10 "$SERENITY" "sudo -n chown hermes:hermes $WORK/hermes-cutover.zip" 2>/dev/null || true
 scp -q "$WORK/hermes-cutover.zip" "$SERENITY:$WORK/hermes-cutover.zip"
-ssh -o ConnectTimeout=10 "$SERENITY" "sudo -n -u hermes HERMES_HOME=$H hermes import --force $WORK/hermes-cutover.zip 2>&1 | tail -4"
+ssh -o ConnectTimeout=10 "$SERENITY" "sudo -n chown hermes:hermes $WORK/hermes-cutover.zip; sudo -n -u hermes HERMES_HOME=$H hermes import --force $WORK/hermes-cutover.zip 2>&1 | tail -4"
 
 say "2b. top up what the zip silently skipped (see header)"
 cd "$H"
+# Ownership first: aspect activation creates some of these as root, which made
+# rsync fail partway (mkdir Permission denied) and left profiles/mcp-servers empty.
+ssh -o ConnectTimeout=10 "$SERENITY" "sudo -n chown -R hermes:hermes $H"
 rsync -a --ignore-missing-args --rsync-path="sudo -n -u hermes rsync" \
   $TOPUP "$SERENITY:$H/"
-echo "--- verify the gaps are closed ---"
-echo "  erebus  skills: $(find skills -type f | wc -l) files / $(find skills -name SKILL.md | wc -l) SKILL.md"
-echo "  serenity skills: $(ssh -o ConnectTimeout=10 "$SERENITY" "sudo -n -u hermes sh -c 'cd $H && find skills -type f | wc -l; find skills -name SKILL.md | wc -l'" | paste -sd' / ')"
+echo "--- verify the gaps are closed (counts must match) ---"
+for d in skills plugins mcp-servers profiles cron memories sessions webui-state; do
+  printf '  %-14s erebus=%-7s serenity=%s\n' "$d" \
+    "$(find "$d" -type f 2>/dev/null | wc -l)" \
+    "$(ssh -o ConnectTimeout=10 "$SERENITY" "sudo -n -u hermes find $H/$d -type f 2>/dev/null | wc -l")"
+done
 
 say "2c. agent health on serenity (before any token moves)"
-ssh -o ConnectTimeout=10 "$SERENITY" "sudo -n -u hermes HERMES_HOME=$H hermes doctor 2>&1 | tail -12"
+ssh -o ConnectTimeout=10 "$SERENITY" "sudo -n -u hermes HERMES_HOME=$H hermes status 2>&1 | head -20"
+
+say "2d. the knowledge graph (FalkorDB lives outside ~/.hermes — the zip never carries it)"
+ssh -o ConnectTimeout=10 "$SERENITY" "sudo -n podman exec falkordb redis-cli GRAPH.LIST 2>&1 | head -5"
 
 say "3. stop the pollers on erebus (the bot is offline from here)"
 ctl local stop hermes-gateway hermes-gateway-salem
 ctl local is-active hermes-gateway || true
 
-say "4. start the pollers on serenity"
+say "4. start the pollers on serenity (unmask is mandatory — see header)"
+ctl ssh unmask hermes-gateway hermes-gateway-salem
 ctl ssh start hermes-gateway hermes-gateway-salem
 sleep 8
 ctl ssh is-active hermes-gateway hermes-gateway-salem || true
 
 say "5. verify — a Telegram round-trip, not just 'active'"
-ssh -o ConnectTimeout=10 "$SERENITY" "sudo -n journalctl -u 'hermes-gateway*' -n 25 --no-pager 2>/dev/null | tail -18" || true
+ssh -o ConnectTimeout=10 "$SERENITY" "sudo -n -u hermes XDG_RUNTIME_DIR=/run/user/\$(id -u hermes) journalctl --user -u hermes-gateway -n 25 --no-pager 2>/dev/null | tail -18" || true
 
 cat <<EOF
 
 === DONE — verify by talking to the bot, then make it declarative ===
 
 Rollback (seconds):
-  ssh $SERENITY 'sudo -n -u hermes XDG_RUNTIME_DIR=/run/user/\$(id -u hermes) systemctl --user stop hermes-gateway hermes-gateway-salem'
+  # stop + re-mask serenity's pollers FIRST, or a rerun double-polls
+  ssh $SERENITY 'sudo -n -u hermes XDG_RUNTIME_DIR=/run/user/\$(id -u hermes) systemctl --user stop hermes-gateway hermes-gateway-salem; sudo -n -u hermes XDG_RUNTIME_DIR=/run/user/\$(id -u hermes) systemctl --user mask hermes-gateway hermes-gateway-salem'
+  # then hand the bot back to erebus
   sudo -n -u hermes XDG_RUNTIME_DIR=/run/user/\$(id -u hermes) systemctl --user start hermes-gateway hermes-gateway-salem
 
 Then, so a reboot cannot resurrect the old poller:

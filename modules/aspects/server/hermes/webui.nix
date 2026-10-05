@@ -35,14 +35,16 @@
           agent.package = hermes-pkg;
           agent.dir = agent-site-packages;
           # Password auth — required before any tailscale exposure.
-          # The webui runs the agent in-process, so it needs the SAME provider
-          # credentials the gateway unit gets. Without /run/secrets/hermes/env
-          # every model call fails with HTTP 401 "Invalid API Key" — the webui
-          # previously only had the password file. Any host using this aspect
-          # must therefore declare "hermes/env" (both erebus and serenity do).
+          # The webui runs the agent IN-PROCESS, so it needs the same env the
+          # gateway unit gets — otherwise model calls fail HTTP 401 "Invalid API
+          # Key" (it only had the password file, so e.g. the MiniMax key was
+          # missing while the gateway had it). sops-env is generated into the
+          # agent's home by the hermes-agent aspect (0600 hermes), so it exists
+          # wherever both aspects are enabled.
           environmentFiles = [
             "/run/secrets/hermes/webui-password"
             "/run/secrets/hermes/env"
+            "/var/lib/hermes/.hermes/sops-env"
           ];
         };
 

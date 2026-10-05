@@ -35,7 +35,15 @@
           agent.package = hermes-pkg;
           agent.dir = agent-site-packages;
           # Password auth — required before any tailscale exposure.
-          environmentFiles = [ "/run/secrets/hermes/webui-password" ];
+          # The webui runs the agent in-process, so it needs the SAME provider
+          # credentials the gateway unit gets. Without /run/secrets/hermes/env
+          # every model call fails with HTTP 401 "Invalid API Key" — the webui
+          # previously only had the password file. Any host using this aspect
+          # must therefore declare "hermes/env" (both erebus and serenity do).
+          environmentFiles = [
+            "/run/secrets/hermes/webui-password"
+            "/run/secrets/hermes/env"
+          ];
         };
 
         # tailscale serve exposes 8444 → 127.0.0.1:8787 (node-local state,

@@ -140,11 +140,6 @@
 
         users.users.hermes.extraGroups = [ "users" "systemd-journal" ];
 
-        security.sudo.extraRules = [{
-          users = [ "hermes" ];
-          commands = [{ command = "ALL"; options = [ "NOPASSWD" ]; }];
-        }];
-
         # Tooling the agent's skills and MCP servers expect (mirrors erebus):
         # nodejs+npx for the npx-based MCP servers, jj/gh for repo work, and
         # the office/PDF stack for the document skills.
@@ -219,10 +214,18 @@
           "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDLeI2EqFsNLBPNIi/neXss0yZ3Q0vLevkiK5gfF5Fc+Zo0i9Nf0JPPkq3ak+uc5wJvumSvMAgO+gUUxDbQ6ieMZKCU6HSEhcQvjiHKczyYx+mDxxz6TXnd9TQRUFwmM/u/5kocl9PIwzjDnEdC/84H4sKiv9tmCy6Lv97VpdTYwkYerNWPm3wiapfGROHcS1WjKFOTD7+S++SQLDzir07W509b15HzgiP0Mk7Jdcc3axfIVl/FykGUQeYEFCram0XHvlDIB4yCb9rFxVACQXvUFgXLLb942lvoKeg5d2HbOxLXRVFlJJCnJlYQB3aKis983zjNmZ18Pm21YYvG6vmH traversal-likivik-2024-07-rsa"
         ];
 
-        security.sudo.extraRules = [{
-          users = [ "likivik" ];
-          commands = [{ command = "ALL"; options = [ "NOPASSWD" ]; }];
-        }];
+        security.sudo.extraRules = [
+          {
+            users = [ "likivik" ];
+            commands = [{ command = "ALL"; options = [ "NOPASSWD" ]; }];
+          }
+          # The agent operates the fleet from this host too (its gateway runs as
+          # the hermes user), so it gets the same NOPASSWD the erebus install has.
+          {
+            users = [ "hermes" ];
+            commands = [{ command = "ALL"; options = [ "NOPASSWD" ]; }];
+          }
+        ];
 
         fileSystems."/panther" = {
           device = "/dev/disk/by-uuid/b1f69b8f-cc97-4879-9942-ac8df1e0f6d8";

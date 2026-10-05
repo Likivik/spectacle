@@ -165,8 +165,12 @@ def _ocr_pdf(pdf_path: str) -> list[OcrResult]:
         gcs_source=vision.GcsSource(uri=gcs_uri),
         mime_type="application/pdf",
     )
+    # Output goes to a run-specific prefix. The bucket may be a shared
+    # production bucket, and a shared "out/" would let one run consume (and
+    # delete) another run's JSON after any retry/crash.
+    out_prefix = f"out/{obj_name}/"
     output_config = vision.OutputConfig(
-        gcs_destination=vision.GcsDestination(uri=f"gs://{bucket}/out/"),
+        gcs_destination=vision.GcsDestination(uri=f"gs://{bucket}/{out_prefix}"),
         batch_size=1,
     )
 
@@ -184,20 +188,23 @@ def _ocr_pdf(pdf_path: str) -> list[OcrResult]:
     op_result = _wait_for_operation(op, timeout_s=_BATCH_TIMEOUT_S)
     del op_result  # async-GCS output is read from the bucket, not inline
 
-    # Async batch writes one or more JSON files under gs://<bucket>/out/.
+    # Async batch writes one or more JSON files under our run prefix.
     # Read them all and aggregate per-page by context.pageNumber (the
     # proven skill flow: batch_size=1 may produce multiple JSON files).
-    out = _aggregate_json_results(bucket, obj_name)
-
-    # Best-effort cleanup of the GCS output dir.
+    try:
+        out = _aggregate_json_results(bucket, out_prefix)
+    finally:
+        # The uploaded PDF is a full copy of the user's document and the
+        # JSON outputs are dead weight: leave nothing behind.
+        _delete_batch_objects(bucket, obj_name, out_prefix)
     _cleanup_bucket(bucket)
     return out
 
 
-def _aggregate_json_results(bucket: str, src_obj: str) -> list[OcrResult]:
+def _aggregate_json_results(bucket: str, prefix: str) -> list[OcrResult]:
     """Download Vision's per-file JSON outputs + aggregate by page.
 
-    Vision writes one JSON per file/page under ``out/`` in the bucket.
+    Vision writes one JSON per file/page under the run's ``prefix``.
     Each response carries ``context.pageNumber``; we key pages by that so
     results are ordered by real page index regardless of JSON-file count.
     """
@@ -205,7 +212,6 @@ def _aggregate_json_results(bucket: str, src_obj: str) -> list[OcrResult]:
     from google.cloud import storage as _gs  # lazy, same as _ocr_pdf
 
     storage_client = _gs.Client(project=_project_id(_get_client()))
-    prefix = "out/"
     blobs = [b for b in storage_client.list_blobs(bucket, prefix=prefix)
              if b.name.endswith(".json")]
     if not blobs:
@@ -373,6 +379,24 @@ def _ensure_batch_bucket(client) -> str:
     b.create()
     _batch_bucket = name
     return name
+
+
+def _delete_batch_objects(bucket: str, obj_name: str, out_prefix: str) -> None:
+    """Best-effort: drop the uploaded PDF + any JSON left under the run prefix.
+
+    The uploaded PDF is a full copy of the user's document; leaving it behind
+    means every OCR'd file is retained in GCS forever. Only these objects are
+    touched — never the bucket itself.
+    """
+    try:
+        from google.cloud import storage  # type: ignore[import-not-found]
+        gs = storage.Client(project=_project_id(_get_client()))
+        gs.bucket(bucket).blob(obj_name).delete()
+        for blob in gs.list_blobs(bucket, prefix=out_prefix):
+            blob.delete()
+        log.info("vision: cleaned gs://%s/%s (+ %s)", bucket, obj_name, out_prefix)
+    except Exception as exc:  # noqa: BLE001 — best-effort cleanup
+        log.warning("vision: batch cleanup failed (gs://%s/%s): %s", bucket, obj_name, exc)
 
 
 def _cleanup_bucket(name: str | None) -> None:

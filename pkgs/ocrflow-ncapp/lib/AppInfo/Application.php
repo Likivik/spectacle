@@ -13,10 +13,13 @@
  */
 namespace OCA\OcrFlow\AppInfo;
 
+use OCA\OcrFlow\BackgroundJob\PollOcrStatus;
+use OCA\OcrFlow\Notification\Notifier;
 use OCP\AppFramework\App;
 use OCP\AppFramework\Bootstrap\IBootContext;
 use OCP\AppFramework\Bootstrap\IBootstrap;
 use OCP\AppFramework\Bootstrap\IRegistrationContext;
+use OCP\BackgroundJob\IJobList;
 use OCP\Util;
 
 class Application extends App implements IBootstrap {
@@ -27,9 +30,13 @@ class Application extends App implements IBootstrap {
     }
 
     public function register(IRegistrationContext $context): void {
-        // Admin settings section is registered declaratively in
-        // appinfo/info.xml (<settings><admin>...</admin></settings>).
-        // Nothing else to register here — the action JS is loaded in boot().
+        // Admin + personal settings sections are registered declaratively in
+        // appinfo/info.xml (<settings>…</settings>); the action JS is loaded
+        // in boot().
+        //
+        // Notifications for finished/failed OCR jobs (bell + mobile push) are
+        // raised by the PollOcrStatus background job and presented by Notifier.
+        $context->registerNotifierService(Notifier::class);
     }
 
     public function boot(IBootContext $context): void {
@@ -43,5 +50,13 @@ class Application extends App implements IBootstrap {
         // the on-disk bundle file (JSResourceLocator resolves static files,
         // not routes).
         Util::addInitScript('ocrflow', 'ocrflow-frontend-main');
+
+        // Schedule the status poller. info.xml <background-jobs> only inserts
+        // jobs on app install/update; this guard makes in-place upgrades work.
+        /** @var IJobList $jobList */
+        $jobList = $context->getServerContainer()->get(IJobList::class);
+        if (!$jobList->has(PollOcrStatus::class, null)) {
+            $jobList->add(PollOcrStatus::class);
+        }
     }
 }

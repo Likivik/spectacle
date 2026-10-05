@@ -10,6 +10,7 @@ Flow:
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import tempfile
@@ -18,7 +19,7 @@ import time
 from pathlib import Path
 
 import requests
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
@@ -63,6 +64,70 @@ _PROCESSED_TTL = 300  # 5 minutes
 # resets on restart; scan-all uses it to skip already-done files)
 _ocrd_paths: set[str] = set()
 _ocrd_lock = threading.Lock()
+
+
+# --- Durable OCR index (survives restarts) ---------------------------------
+# Maps NC path -> {status, engine, reason, node_id, finished}. Written to the
+# systemd StateDirectory (STATE_DIRECTORY=/var/lib/nc-ocr) so the "how many
+# scanned / with which engine" metrics stay accurate across restarts. The
+# in-memory _ocrd_paths set is rebuilt from it on startup.
+
+def _state_dir() -> Path:
+    d = os.environ.get("NC_OCR_STATE_DIR") or os.environ.get("STATE_DIRECTORY", "")
+    d = d.split(":")[0] if d else ""
+    return Path(d) if d else Path("/var/lib/nc-ocr")
+
+
+_INDEX_FILE = _state_dir() / "ocr_index.json"
+_ocr_index: dict[str, dict] = {}
+_index_lock = threading.Lock()
+
+
+def _load_index() -> None:
+    global _ocr_index
+    try:
+        if _INDEX_FILE.exists():
+            _ocr_index = json.loads(_INDEX_FILE.read_text())
+            with _ocrd_lock:
+                _ocrd_paths.update(
+                    p for p, m in _ocr_index.items() if m.get("status") == "done"
+                )
+            log.info("loaded OCR index: %d entries from %s", len(_ocr_index), _INDEX_FILE)
+    except Exception as exc:  # never block startup on a bad index
+        log.warning("could not load OCR index %s: %s", _INDEX_FILE, exc)
+
+
+def _save_index() -> None:
+    try:
+        _INDEX_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = _INDEX_FILE.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(_ocr_index))
+        tmp.replace(_INDEX_FILE)
+    except Exception as exc:
+        log.warning("could not save OCR index: %s", exc)
+
+
+def _index_record(nc_path: str, status: str, engine: str | None,
+                  reason: str | None, node_id: int = 0,
+                  size: int | None = None, etag: str | None = None) -> None:
+    """Record the outcome for a path.
+
+    ``size``/``etag`` are the fingerprint of the file *as we left it* after
+    processing. The NC app compares them with the live file to detect that
+    the user replaced the file since we OCR'd it — otherwise a stale
+    ``done`` would keep hiding the "Send to OCR" action forever.
+    """
+    with _index_lock:
+        _ocr_index[nc_path] = {
+            "status": status,
+            "engine": engine if status == "done" else None,
+            "reason": reason,
+            "node_id": node_id,
+            "finished": time.time(),
+            "size": size,
+            "etag": etag,
+        }
+        _save_index()
 
 
 def _is_recently_processed(node_id: int) -> bool:
@@ -197,6 +262,56 @@ def _webdav_delete(nc_path: str) -> None:
     log.info("WebDAV DELETE %s", url)
     resp = requests.delete(url, auth=(NC_USER, NC_PASSWORD), timeout=30)
     resp.raise_for_status()
+
+
+def _propfind_size_etag(nc_path: str) -> tuple[int | None, str | None]:
+    """One raw PROPFIND → (size, etag)."""
+    import re as _re
+
+    url = _webdav_url(nc_path)
+    body = (
+        '<?xml version="1.0" encoding="utf-8"?>'
+        '<d:propfind xmlns:d="DAV:"><d:prop>'
+        '<d:getcontentlength/><d:getetag/>'
+        '</d:prop></d:propfind>'
+    )
+    try:
+        resp = requests.request(
+            "PROPFIND", url, data=body,
+            auth=(NC_USER, NC_PASSWORD),
+            headers={"Depth": "0", "Content-Type": "application/xml"},
+            timeout=60,
+        )
+        if resp.status_code >= 400:
+            return None, None
+        m_len = _re.search(r"<[^>]*getcontentlength>(\d+)<", resp.text)
+        m_etag = _re.search(r"<[^>]*getetag>([^<]+)<", resp.text)
+        size = int(m_len.group(1)) if m_len else None
+        # Sabre returns the etag as an XML-escaped quoted string: &quot;abc&quot;
+        etag = m_etag.group(1).strip().replace("&quot;", "").strip('"') if m_etag else None
+        return size, etag
+    except Exception as exc:
+        log.debug("PROPFIND %s failed: %s", nc_path, exc)
+        return None, None
+
+
+def _webdav_stat(nc_path: str, attempts: int = 3) -> tuple[int | None, str | None]:
+    """PROPFIND a file until two consecutive reads agree → (size, etag).
+
+    Called right after we upload the OCR'd result, so the pair describes the
+    file exactly as we left it. A single read is not enough: Nextcloud can
+    still be settling the write and hand back the *previous* size/etag, which
+    would make every processed file look modified afterwards. Returns
+    (None, None) if the path is gone (e.g. an image we converted to PDF).
+    """
+    prev: tuple[int | None, str | None] = (None, None)
+    for i in range(attempts):
+        cur = _propfind_size_etag(nc_path)
+        if cur[0] is not None and cur == prev:
+            return cur
+        prev = cur
+        time.sleep(1.5)
+    return prev
 
 
 # --- OCR processing ---
@@ -416,6 +531,7 @@ def _process_file(nc_path: str, node_id: int, engine: str | None = None,
 
             return {
                 "path": nc_path, "output": pdf_nc_path,
+                "engine": result.engine_used,
                 "vlm_pages": result.vlm_pages,
             }
 
@@ -451,6 +567,7 @@ def _process_file(nc_path: str, node_id: int, engine: str | None = None,
 
             return {
                 "path": nc_path, "output": nc_path,
+                "engine": result.engine_used,
                 "vlm_pages": result.vlm_pages,
             }
 
@@ -515,10 +632,33 @@ def _ocr_worker() -> None:
             if job["status"] == "done":
                 with _ocrd_lock:
                     _ocrd_paths.add(item["nc_path"])
+            # Persist outcome (incl. the engine that actually ran) so the
+            # metrics survive a service restart.
+            job_result = job.get("result")
+            engine_used = None
+            if isinstance(job_result, dict):
+                engine_used = job_result.get("engine")
+            # Fingerprint the file as we left it (size + etag), so the NC
+            # app can tell a still-valid "done" from a replaced file.
+            size_after, etag_after = (None, None)
+            if job["status"] in ("done", "skipped"):
+                size_after, etag_after = _webdav_stat(item["nc_path"])
+            _index_record(
+                item["nc_path"],
+                job["status"],
+                engine_used or job.get("engine"),
+                job.get("reason") or job.get("error"),
+                node_id or 0,
+                size=size_after,
+                etag=etag_after,
+            )
             _ocr_queue.task_done()
 
 
 threading.Thread(target=_ocr_worker, daemon=True, name="ocr-worker").start()
+
+# Restore the durable index before serving traffic.
+_load_index()
 
 
 def _enqueue(nc_path: str, node_id: int, engine: str | None = None,
@@ -640,6 +780,89 @@ async def status(
         "queued": queued,
         "running": running,
         "history": finished[::-1],  # newest first
+    }
+
+
+@app.get("/states")
+async def states(
+    paths: list[str] = Query(default=[]),
+    all_files: int = Query(default=0, alias="all"),
+    x_webhook_secret: str | None = Header(None, alias="X-Webhook-Secret"),
+):
+    """Per-file OCR state — drives which file action the NC app shows.
+
+    One entry per requested NC path we know about; ``status`` is one of
+    queued | running | done | skipped | error. The recorded ``size``/``etag``
+    fingerprint lets the NC app decide whether a ``done`` is still valid
+    (the user may have replaced the file since we OCR'd it).
+    """
+    _check_secret(x_webhook_secret)
+    # Keys are NC-internal paths ("/<uid>/files/<rel>") exactly as the
+    # webhook delivers them — do not normalise, or nothing will match.
+    want = {p for p in paths if p}
+
+    out: dict[str, dict] = {}
+    with _index_lock:
+        if all_files:
+            out = {p: dict(m) for p, m in _ocr_index.items()}
+        else:
+            for p in want:
+                m = _ocr_index.get(p)
+                if m:
+                    out[p] = dict(m)
+
+    # A live queue entry is more accurate than the last recorded outcome.
+    with _jobs_lock:
+        live = [j for j in _jobs.values() if j["status"] in ("queued", "running")]
+    for j in live:
+        p = str(j.get("path") or "")
+        if all_files or p in want:
+            rec = out.setdefault(p, {})
+            rec["status"] = j["status"]
+            rec["job_id"] = j["id"]
+            rec["finished"] = j.get("finished") or rec.get("finished")
+
+    return {"states": out, "unknown": sorted(want - set(out))}
+
+
+@app.get("/stats")
+async def stats(
+    x_webhook_secret: str | None = Header(None, alias="X-Webhook-Secret"),
+):
+    """Aggregate OCR metrics from the durable index.
+
+    ``scanned`` counts distinct files OCR'd by this service; ``by_engine``
+    breaks that down by the engine that actually ran; ``skipped`` are files
+    we deliberately did not OCR (born-digital PDFs, non-document photos).
+    The caller (NC app) supplies the denominator — the total number of
+    OCR-able files — because only Nextcloud knows the file tree.
+    """
+    _check_secret(x_webhook_secret)
+    with _index_lock:
+        idx = list(_ocr_index.values())
+
+    scanned = [m for m in idx if m.get("status") == "done"]
+    skipped = [m for m in idx if m.get("status") == "skipped"]
+    errors = [m for m in idx if m.get("status") == "error"]
+
+    by_engine: dict[str, int] = {}
+    for m in scanned:
+        e = (m.get("engine") or "unknown") or "unknown"
+        by_engine[e] = by_engine.get(e, 0) + 1
+
+    skip_reasons: dict[str, int] = {}
+    for m in skipped:
+        r = m.get("reason") or "unknown"
+        skip_reasons[r] = skip_reasons.get(r, 0) + 1
+
+    return {
+        "service": "nc-ocr-flow",
+        "indexed": len(idx),
+        "scanned": len(scanned),
+        "skipped": len(skipped),
+        "errors": len(errors),
+        "by_engine": by_engine,
+        "skip_reasons": skip_reasons,
     }
 
 

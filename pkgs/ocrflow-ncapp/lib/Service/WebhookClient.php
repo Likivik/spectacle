@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace OCA\OcrFlow\Service;
 
-use OCA\OcrFlow\AppInfo\AppInfo;
 use OCP\Http\Client\IClientService;
 use OCP\IConfig;
 use Psr\Log\LoggerInterface;
@@ -25,7 +24,9 @@ final class WebhookClient
 
     public function baseUrl(): string
     {
-        $url = $this->config->getAppValue(AppInfo::APP_ID, 'webhook_url', '');
+        // Written to config.php by config:system:set ocrflow_url (see
+        // workflow-ocr default.nix); fall back to localhost.
+        $url = $this->config->getSystemValue('ocrflow_url', '');
         if ($url === '') {
             $url = 'http://127.0.0.1:8095';
         }
@@ -34,7 +35,9 @@ final class WebhookClient
 
     public function secret(): string
     {
-        return $this->config->getAppValue(AppInfo::APP_ID, 'webhook_secret', '');
+        // config.php key is ocrflow_secret (config:system:set), NOT the
+        // oc_appconfig webhook_secret.  getSystemValue reads config.php.
+        return (string)$this->config->getSystemValue('ocrflow_secret', '');
     }
 
     /**
@@ -114,6 +117,46 @@ final class WebhookClient
         return $this->get('/status', ['limit' => $limit]);
     }
 
+    /**
+     * Aggregate OCR metrics from the service's durable index
+     * (scanned / skipped / per-engine breakdown).
+     */
+    public function stats(): array
+    {
+        return $this->get('/stats');
+    }
+
+    /**
+     * Per-file OCR state (queued|running|done|skipped|error) for NC-internal
+     * paths. Drives which Files action is offered for a file.
+     *
+     * Sent as repeated ``paths=`` params: FastAPI parses a list query that
+     * way, and does not understand PHP's ``paths[0]=`` array notation.
+     *
+     * @param string[] $paths
+     * @param bool $all  true → the whole index (keyed by NC path). Used by the
+     *                   Files actions: they must know the state of every file
+     *                   before the list renders, not just the visible rows.
+     */
+    public function states(array $paths = [], bool $all = false): array
+    {
+        if ($all) {
+            return $this->getRaw('/states', 'all=1');
+        }
+        $paths = array_values(array_filter(
+            array_map(static fn ($p) => (string)$p, $paths),
+            static fn ($p) => $p !== ''
+        ));
+        if (count($paths) === 0) {
+            return ['ok' => true, 'status' => 200, 'body' => ['states' => []]];
+        }
+        $query = implode('&', array_map(
+            static fn ($p) => 'paths=' . rawurlencode($p),
+            $paths
+        ));
+        return $this->getRaw('/states', $query);
+    }
+
     private function post(string $path, array $payload): array
     {
         $url = $this->baseUrl() . $path;
@@ -135,9 +178,15 @@ final class WebhookClient
 
     private function get(string $path, array $query = []): array
     {
+        return $this->getRaw($path, $query ? http_build_query($query) : '');
+    }
+
+    /** GET with a pre-built query string (for repeated params). */
+    private function getRaw(string $path, string $queryString = ''): array
+    {
         $url = $this->baseUrl() . $path;
-        if ($query) {
-            $url .= '?' . http_build_query($query);
+        if ($queryString !== '') {
+            $url .= '?' . $queryString;
         }
         try {
             $client = $this->clientService->newClient();

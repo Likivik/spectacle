@@ -6,7 +6,10 @@
  */
 namespace OCA\OcrFlow\Controller;
 
+use OCA\OcrFlow\Service\FileStateService;
+use OCA\OcrFlow\Service\StatsService;
 use OCA\OcrFlow\Service\WebhookClient;
+use OCP\AppFramework\Http\DataResponse;
 use OCP\AppFramework\OCSController;
 use OCP\Files\IRootFolder;
 use OCP\IRequest;
@@ -16,6 +19,8 @@ class OcrController extends OCSController {
     private IRootFolder $rootFolder;
     private IUserSession $userSession;
     private WebhookClient $webhook;
+    private StatsService $statsService;
+    private FileStateService $fileStateService;
 
     public function __construct(
         string $appName,
@@ -23,11 +28,25 @@ class OcrController extends OCSController {
         IRootFolder $rootFolder,
         IUserSession $userSession,
         WebhookClient $webhook,
+        StatsService $statsService,
+        FileStateService $fileStateService,
     ) {
         parent::__construct($appName, $request);
         $this->rootFolder = $rootFolder;
         $this->userSession = $userSession;
         $this->webhook = $webhook;
+        $this->statsService = $statsService;
+        $this->fileStateService = $fileStateService;
+    }
+
+    /**
+     * Read the raw request body (JSON) and decode it.
+     * @return array<string, mixed>
+     */
+    private function parseBody(): array {
+        $raw = (string)file_get_contents('php://input');
+        $decoded = json_decode($raw, true);
+        return is_array($decoded) ? $decoded : [];
     }
 
     /**
@@ -37,14 +56,13 @@ class OcrController extends OCSController {
      * Body: { "fileIds": [123, 456], "engine": "google"|"tesseract"|"minimax", "force": bool? }
      * Returns: { results: [{ fileId, path, status, jobId?|error? }] }
      */
-    public function scan(): array {
+    public function scan(): DataResponse {
         $userId = $this->userSession->getUser()?->getUID();
         if ($userId === null) {
-            return ['results' => [], 'error' => 'not logged in'];
+            return new DataResponse(['results' => [], 'error' => 'not logged in']);
         }
 
-        $body = json_decode($this->request->getParam('body', '{}'), true)
-            ?? $this->request->getParams();
+        $body = $this->parseBody();
         $fileIds = $body['fileIds'] ?? [];
         $engine = in_array($body['engine'] ?? 'auto', ['auto', 'google', 'tesseract', 'minimax'], true)
             ? $body['engine'] ?? 'auto' : 'auto';
@@ -55,10 +73,10 @@ class OcrController extends OCSController {
         $force = filter_var($body['force'] ?? false, FILTER_VALIDATE_BOOLEAN);
 
         if (!is_array($fileIds) || count($fileIds) === 0) {
-            return ['results' => [], 'error' => 'fileIds required'];
+            return new DataResponse(['results' => [], 'error' => 'fileIds required']);
         }
         if (count($fileIds) > 100) {
-            return ['results' => [], 'error' => 'too many files (max 100 per request)'];
+            return new DataResponse(['results' => [], 'error' => 'too many files (max 100 per request)']);
         }
 
         $userFolder = $this->rootFolder->getUserFolder($userId);
@@ -87,7 +105,7 @@ class OcrController extends OCSController {
             );
         }
 
-        return ['results' => $results];
+        return new DataResponse(['results' => $results]);
     }
 
     /**
@@ -99,30 +117,29 @@ class OcrController extends OCSController {
      *
      * Body: { "fileId": 123, "engine": "google"|"tesseract"|"minimax" }
      */
-    public function rescanForce(): array {
+    public function rescanForce(): DataResponse {
         $userId = $this->userSession->getUser()?->getUID();
         if ($userId === null) {
-            return ['error' => 'not logged in'];
+            return new DataResponse(['error' => 'not logged in']);
         }
 
-        $body = json_decode($this->request->getParam('body', '{}'), true)
-            ?? $this->request->getParams();
+        $body = $this->parseBody();
         $fileId = (int)($body['fileId'] ?? 0);
         $engine = in_array($body['engine'] ?? 'auto', ['auto', 'google', 'tesseract', 'minimax'], true)
             ? $body['engine'] ?? 'auto' : 'auto';
 
         if ($fileId <= 0) {
-            return ['error' => 'fileId required'];
+            return new DataResponse(['error' => 'fileId required']);
         }
 
         $userFolder = $this->rootFolder->getUserFolder($userId);
         $nodes = $userFolder->getById($fileId);
         if (count($nodes) === 0) {
-            return ['error' => 'file not found'];
+            return new DataResponse(['error' => 'file not found']);
         }
         $node = $nodes[0];
         if ($node instanceof \OCP\Files\Folder) {
-            return ['error' => 'is a folder'];
+            return new DataResponse(['error' => 'is a folder']);
         }
 
         $relPath = $userFolder->getRelativePath($node->getPath());
@@ -130,7 +147,7 @@ class OcrController extends OCSController {
 
         // force=true is the whole point of this endpoint.
         $res = $this->webhook->rescan($ncPath, $fileId, $engine, /*force=*/true);
-        return ['job' => $res['body'] ?? null, 'force' => true];
+        return new DataResponse(['job' => $res['body'] ?? null, 'force' => true]);
     }
 
     /**
@@ -141,23 +158,88 @@ class OcrController extends OCSController {
      * PROPFINDs it and enqueues every processable file inside.
      * Body: { "folder": "Work/1-Аренда", "engine": ... } ("" = whole storage)
      */
-    public function scanFolder(): array {
+    public function scanFolder(): DataResponse {
         $userId = $this->userSession->getUser()?->getUID();
         if ($userId === null) {
-            return ['error' => 'not logged in'];
+            return new DataResponse(['error' => 'not logged in']);
         }
 
-        $body = json_decode($this->request->getParam('body', '{}'), true)
-            ?? $this->request->getParams();
+        $body = $this->parseBody();
         $folder = trim((string)($body['folder'] ?? ''));
         $engine = in_array($body['engine'] ?? 'auto', ['auto', 'google', 'tesseract', 'minimax'], true)
             ? $body['engine'] ?? 'auto' : 'auto';
 
         // Only allow folders inside this user's storage (no traversal)
         if ($folder !== '' && (str_contains($folder, '..') || str_starts_with($folder, '/'))) {
-            return ['error' => 'invalid folder'];
+            return new DataResponse(['error' => 'invalid folder']);
         }
 
-        return $this->webhook->scanFolder($folder, $engine === 'auto' ? null : $engine);
+        return new DataResponse($this->webhook->scanFolder($folder, $engine === 'auto' ? null : $engine));
+    }
+
+    /**
+     * @NoCSRFRequired
+     * @NoAdminRequired
+     *
+     * Live OCR queue + history for the personal settings panel.
+     * Proxies the nc-ocr-flow /status endpoint (the secret stays server-side).
+     */
+    public function status(): DataResponse {
+        if ($this->userSession->getUser() === null) {
+            return new DataResponse(['error' => 'not logged in']);
+        }
+        return new DataResponse($this->webhook->status(25));
+    }
+
+    /**
+     * @NoCSRFRequired
+     * @NoAdminRequired
+     *
+     * Aggregate OCR metrics for the personal settings panel:
+     * files scanned / remaining / skipped and the per-engine breakdown.
+     */
+    public function stats(): DataResponse {
+        $userId = $this->userSession->getUser()?->getUID();
+        if ($userId === null) {
+            return new DataResponse(['error' => 'not logged in']);
+        }
+        return new DataResponse($this->statsService->collect($userId));
+    }
+
+    /**
+     * @NoCSRFRequired
+     * @NoAdminRequired
+     *
+     * Per-file OCR state for the Files actions: decides whether "Send to OCR"
+     * or "Re-OCR anyway" is the right entry for each file.
+     *
+     * Body: { "fileIds": [123, 456] }
+     * Returns: { states: { "<fileId>": { state, engine?, reason?, finished? } } }
+     * where state ∈ never | queued | running | done | skipped | error | failed.
+     */
+    public function filestates(): DataResponse {
+        $userId = $this->userSession->getUser()?->getUID();
+        if ($userId === null) {
+            return new DataResponse(['states' => [], 'error' => 'not logged in']);
+        }
+
+        $body = $this->parseBody();
+
+        // The Files actions ask for the whole map once per page load: they
+        // must answer synchronously while the list renders, and a per-row
+        // fetch always lands too late (the Files app memoises `enabled`).
+        if (!empty($body['all'])) {
+            return new DataResponse(['states' => $this->fileStateService->allStates()]);
+        }
+
+        $fileIds = $body['fileIds'] ?? [];
+        if (!is_array($fileIds) || count($fileIds) === 0) {
+            return new DataResponse(['states' => []]);
+        }
+        if (count($fileIds) > 200) {
+            $fileIds = array_slice($fileIds, 0, 200);
+        }
+
+        return new DataResponse(['states' => $this->fileStateService->statesFor($userId, $fileIds)]);
     }
 }

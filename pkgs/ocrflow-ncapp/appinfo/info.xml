@@ -5,7 +5,7 @@
     <name>OCR Flow</name>
     <summary>Send files and folders to the OCR pipeline (Google Vision, tesseract, MiniMax) from the Files context menu</summary>
     <description><![CDATA[Adds "Send to OCR", "Re-OCR anyway", and "Scan folder" actions to the Files context menu (single and multi-select). Files are queued to the nc-ocr-flow service running on the same host; progress is visible at /panel on port 8095.]]></description>
-    <version>0.3.0</version>
+    <version>0.8.0</version>
     <licence>agpl</licence>
     <author mail="kirilllipskii@gmail.com" homepage="https://filepath.ru">Likivik</author>
     <namespace>OcrFlow</namespace>
@@ -20,10 +20,10 @@
     </types>
     <settings>
         <admin>OCA\OcrFlow\Settings\Admin</admin>
+        <personal>OCA\OcrFlow\Settings\Personal</personal>
+        <personal-section>OCA\OcrFlow\Settings\PersonalSection</personal-section>
     </settings>
-    <!-- Load the Files context-menu actions; the l10n/ JS is loaded
-         automatically by Nextcloud for the user's locale. -->
-    <scripts>
-        <js>js/ocr-action.js</js>
-    </scripts>
+    <background-jobs>
+        <job>OCA\OcrFlow\BackgroundJob\PollOcrStatus</job>
+    </background-jobs>
 </info>

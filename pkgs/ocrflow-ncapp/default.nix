@@ -19,7 +19,7 @@
 let
   frontend = buildNpmPackage {
     pname = "ocrflow-frontend";
-    version = "0.3.0";
+    version = "0.8.0";
     src = ./frontend;
     npmDepsHash = "sha256-TX+Zn1gNj/gzaHFCcvWsabK5We3tIS1NQCrph9LKkLU=";
     installPhase = ''
@@ -30,10 +30,11 @@ let
     '';
   };
 in
-runCommand "nextcloud-app-ocrflow-0.3.0" { } ''
+runCommand "nextcloud-app-ocrflow-0.8.0" { } ''
   mkdir -p $out
   cp -r ${./appinfo} $out/appinfo
   cp -r ${./lib} $out/lib
   cp -r ${./l10n} $out/l10n
+  cp -r ${./templates} $out/templates
   cp -r ${frontend}/js $out/js
 ''

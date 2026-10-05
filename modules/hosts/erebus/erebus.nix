@@ -110,6 +110,16 @@ in
 
       users.users.hermes.extraGroups = [ "users" "systemd-journal" ];
 
+      # Lets serenity's agent stop THIS host's Telegram poller during a cutover,
+      # so the two never poll one token together (they would not conflict
+      # loudly — they would split updates). sshd's StrictModes refuses
+      # ~/.ssh/authorized_keys here because /var/lib/hermes is mode 2770
+      # (group-writable), so the key goes in the other path sshd trusts,
+      # /etc/ssh/authorized_keys.d/%u — which is also the declarative one.
+      users.users.hermes.openssh.authorizedKeys.keys = [
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAxgjvMCf4tUu9geCOifsHdlMK9md9D0ykkcxca47WeD hermes@serenity->erebus (flip)"
+      ];
+
       sops.secrets = {
         # hermes-webui consumes this as an EnvironmentFile. Declared per host
         # (the shared aspect cannot name a host's secrets file).

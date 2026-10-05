@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# Flip the Telegram poller from erebus to serenity.
+#
+# RUN ON SERENITY, as the hermes user, from a NON-gateway context — the webui or
+# a plain shell. Not from inside hermes-gateway.service: stopping units from
+# inside a unit's own cgroup is how you wedge it.
+#
+# Order is strict: stop erebus's poller FIRST, then start this host's. Two
+# gateways on one Telegram token do not conflict loudly — they split updates.
+# Telegram queues pending updates while nobody polls, so the gap is lossless.
+set -uo pipefail
+
+say() { printf '\n=== %s ===\n' "$*"; }
+die() { printf '\nABORT: %s\n' "$*" >&2; exit 1; }
+units="hermes-gateway hermes-gateway-salem"
+
+export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+
+say "0. guard"
+if systemctl --user is-active --quiet hermes-gateway; then
+  die "hermes-gateway is already active here — the flip is either done already,
+       or you are running me from inside the gateway, which would kill me mid-run.
+       Check systemctl --user is-active hermes-gateway from a shell or the webui."
+fi
+
+say "1. reach erebus"
+ssh -o ConnectTimeout=10 -o BatchMode=yes erebus 'id -un' >/dev/null 2>&1 \
+  || die "cannot ssh to erebus as $(id -un). Authorize this host's hermes key in
+          /var/lib/hermes/.ssh/authorized_keys on erebus first."
+echo "  erebus poller right now: $(ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 erebus 'export XDG_RUNTIME_DIR=/run/user/$(id -u); systemctl --user is-active hermes-gateway' 2>/dev/null)"
+
+say "2. stop AND mask the poller on erebus (mask = a reboot cannot resurrect it)"
+ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 erebus "export XDG_RUNTIME_DIR=/run/user/\$(id -u); systemctl --user stop $units; systemctl --user mask $units" 2>&1 | sed 's/^/  /'
+ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 erebus 'export XDG_RUNTIME_DIR=/run/user/$(id -u); systemctl --user is-active hermes-gateway hermes-gateway-salem; systemctl --user is-enabled hermes-gateway hermes-gateway-salem' 2>&1 | sed 's/^/  /'
+
+say "2b. carry the knowledge graph — the only writer-free window"
+# FalkorDB is not in ~/.hermes: `hermes backup` never carries it, and a copy
+# taken while the source still writes goes stale within minutes. So: force the
+# source to flush, stop this host's container (its shutdown-save would clobber
+# the fresh dump with an empty one), copy, restart.
+if ! sudo -n true 2>/dev/null; then
+  die "no passwordless sudo for $(id -un) on this host, so the graph cannot be
+       copied (stopping/starting the falkordb container needs it). Memory would
+       silently be a stale snapshot — refusing to continue."
+fi
+ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 erebus \
+  'sudo -n podman exec falkordb redis-cli SAVE' >/dev/null 2>&1 || die "could not flush erebus's graph"
+sudo -n systemctl stop podman-falkordb
+ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 erebus \
+  'sudo -n tar -C /var/lib/hermes/falkordb-data -cf - .' | sudo -n tar -C /var/lib/hermes/falkordb-data -xf -
+sudo -n systemctl start podman-falkordb
+sleep 12
+echo "  graphs here now: $(sudo -n podman exec falkordb redis-cli GRAPH.LIST 2>/dev/null | grep -v '^$' | paste -sd, -)"
+
+say "3. take over here — unmask first (they are masked while parked)"
+systemctl --user unmask $units 2>&1 | sed 's/^/  /'
+systemctl --user start $units
+sleep 8
+systemctl --user is-active $units | sed 's/^/  /'
+
+say "4. verify"
+systemctl --user is-enabled $units | sed 's/^/  /'
+journalctl --user -u hermes-gateway -n 14 --no-pager 2>/dev/null | tail -12 | sed 's/^/  /'
+
+cat <<'EOF'
+
+Now message the bot on Telegram and confirm the reply comes from serenity.
+(A Telegram round-trip is the only real proof — "active" is not.)
+
+Rollback (seconds):
+  # on serenity: hand the bot back, then re-mask here
+  systemctl --user stop hermes-gateway hermes-gateway-salem
+  systemctl --user mask hermes-gateway hermes-gateway-salem
+  # on erebus: unmask + start again
+  ssh erebus 'export XDG_RUNTIME_DIR=/run/user/$(id -u); systemctl --user unmask hermes-gateway hermes-gateway-salem; systemctl --user start hermes-gateway hermes-gateway-salem'
+EOF

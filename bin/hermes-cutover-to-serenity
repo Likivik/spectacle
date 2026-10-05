@@ -2,7 +2,13 @@
 # Stage B cutover: move the Hermes agent's messaging pollers erebus -> serenity.
 #
 # TIMING: ~35-45 min end to end (the delta backup and the rsync top-up dominate).
-# The bot is only offline from step 3 — about 1-2 minutes.
+# The bot is only offline from step 3 to step 4 — about 2-4 minutes.
+#
+# WHY STEP 3b EXISTS (the graph needs its own sync)
+#   FalkorDB lives outside ~/.hermes, so the zip never carries it, and it is a
+#   live store: the stage-A dump was 14 nodes / 41 edges behind within the hour
+#   of being copied. It is copied between stopping erebus's poller and starting
+#   serenity's — the only window where nothing writes to it.
 #
 # WHY THIS IS A SEPARATE, MANUAL STEP
 #   Two gateways polling the same Telegram token do not conflict loudly — they
@@ -96,6 +102,24 @@ ssh -o ConnectTimeout=10 "$SERENITY" "sudo -n podman exec falkordb redis-cli GRA
 say "3. stop the pollers on erebus (the bot is offline from here)"
 ctl local stop hermes-gateway hermes-gateway-salem
 ctl local is-active hermes-gateway || true
+
+say "3b. final knowledge-graph copy (safe only after erebus stops writing)"
+# FalkorDB is NOT in ~/.hermes: the zip never carries it, so it gets its own
+# sync — and it must land between the two poller transitions. The graph is a
+# live store, and a copy taken while the source is still writing loses whatever
+# it writes afterwards (the stage-A dump was already 14 nodes / 41 edges behind
+# by the time it was checked). The destination's container is stopped first
+# because its shutdown-save would otherwise clobber the fresh dump with an
+# empty one.
+sudo -n podman exec falkordb redis-cli SAVE
+ssh -o ConnectTimeout=10 "$SERENITY" "sudo -n systemctl stop podman-falkordb"
+sudo -n tar -C /var/lib/hermes/falkordb-data -cf - . \
+  | ssh -o ConnectTimeout=10 "$SERENITY" "sudo -n tar -C /var/lib/hermes/falkordb-data -xf -"
+ssh -o ConnectTimeout=10 "$SERENITY" "sudo -n systemctl start podman-falkordb"
+sleep 15
+echo "--- graphs must match (both should list the same names) ---"
+printf '  serenity: %s\n' "$(ssh -o ConnectTimeout=10 "$SERENITY" 'sudo -n podman exec falkordb redis-cli GRAPH.LIST' | grep -v '^$' | paste -sd, -)"
+printf '  erebus:   %s\n' "$(sudo -n podman exec falkordb redis-cli GRAPH.LIST | grep -v '^$' | paste -sd, -)"
 
 say "4. start the pollers on serenity (unmask is mandatory — see header)"
 ctl ssh unmask hermes-gateway hermes-gateway-salem

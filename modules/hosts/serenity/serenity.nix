@@ -142,6 +142,10 @@
 
         users.users.hermes.extraGroups = [ "users" "systemd-journal" ];
 
+        # (The agent's own bge-m3 embedder is skipped on this host inside the
+        # hermes-agent aspect: nc-rag already runs the identical model on :8081,
+        # CUDA-accelerated, so graphiti shares that one instead of a duplicate.)
+
         # Tooling the agent's skills and MCP servers expect (mirrors erebus):
         # nodejs+npx for the npx-based MCP servers, jj/gh for repo work, and
         # the office/PDF stack for the document skills.

@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+# Stage B cutover: move the Hermes agent's messaging pollers erebus -> serenity.
+#
+# WHY THIS IS A SEPARATE, MANUAL STEP
+#   Two gateways polling the same Telegram token do not conflict loudly — they
+#   silently split updates between them. So the order is strict: stop the poller
+#   on erebus FIRST, then start the one on serenity. Nothing else in the agent
+#   stack cares about the move.
+#
+# WHY THE ZIP ALONE IS NOT ENOUGH (verified 2026-10-05)
+#   `hermes backup` silently skips files it cannot store. Measured gaps against
+#   the live home: skills 235/657 files (53 SKILL.md missing!), plugins 277/314,
+#   profiles 139/4106, mcp-servers 132/13018. Cause: 393 files carry pre-1980
+#   mtimes ("ZIP does not support timestamps before 1980"), plus deliberate
+#   exclusions. History loss in state.db is acceptable; skills/profiles/config
+#   are procedure, so we top those up with rsync, which has no such limit.
+#
+# PRECONDITIONS (checked below)
+#   1. serenity's host config is deployed (hermes user exists, units installed).
+#   2. serenity's gateway units are installed but PARKED
+#      (wantedBy = mkForce []).
+#   3. Your shell is NOT the gateway's own session — this stops it.
+
+set -euo pipefail
+
+SERENITY=likivik@serenity
+H=/var/lib/hermes/.hermes
+STAMP=$(date +%Y%m%d-%H%M%S)
+WORK=/tmp/hermes-cutover-$STAMP
+# Small, procedure-bearing state. Deliberately excluded: state.db (huge, comes
+# via the zip), cache/, lazy-packages/, sessions-tmp junk.
+TOPUP="skills plugins mcp-servers profiles cron memories webui-state sessions config.yaml auth.json"
+
+say() { printf '\n=== %s ===\n' "$*"; }
+fail() { printf '\nFAILED: %s\n' "$*" >&2; exit 1; }
+ctl() {  # systemctl --user for the hermes account; arg 1 = ssh|local
+  local where="$1"; shift
+  if [ "$where" = ssh ]; then
+    ssh -o ConnectTimeout=10 "$SERENITY" "sudo -n -u hermes XDG_RUNTIME_DIR=/run/user/\$(id -u hermes) systemctl --user $*"
+  else
+    sudo -n -u hermes XDG_RUNTIME_DIR=/run/user/$(id -u hermes) systemctl --user "$@"
+  fi
+}
+
+say "0. preflight"
+command -v hermes >/dev/null || fail "no hermes CLI here"
+ssh -o ConnectTimeout=10 "$SERENITY" true || fail "serenity unreachable"
+ssh -o ConnectTimeout=10 "$SERENITY" "test -d $H" || fail "serenity has no $H — deploy stage A first"
+echo "  erebus pollers:   $(ctl local is-active hermes-gateway 2>/dev/null || echo unknown)"
+echo "  serenity pollers: $(ctl ssh is-active hermes-gateway 2>/dev/null || echo 'parked (expected)')"
+
+say "1. final delta backup on erebus (live — pollers still up here)"
+mkdir -p "$WORK"
+hermes backup -o "$WORK/hermes-cutover.zip"
+ls -lh "$WORK/hermes-cutover.zip"
+
+say "2. transfer + import on serenity (its pollers are parked, so this is safe)"
+scp -q "$WORK/hermes-cutover.zip" "$SERENITY:$WORK/hermes-cutover.zip"
+ssh -o ConnectTimeout=10 "$SERENITY" "sudo -n -u hermes HERMES_HOME=$H hermes import --force $WORK/hermes-cutover.zip 2>&1 | tail -4"
+
+say "2b. top up what the zip silently skipped (see header)"
+cd "$H"
+rsync -a --ignore-missing-args --rsync-path="sudo -n -u hermes rsync" \
+  $TOPUP "$SERENITY:$H/"
+echo "--- verify the gaps are closed ---"
+echo "  erebus  skills: $(find skills -type f | wc -l) files / $(find skills -name SKILL.md | wc -l) SKILL.md"
+echo "  serenity skills: $(ssh -o ConnectTimeout=10 "$SERENITY" "sudo -n -u hermes sh -c 'cd $H && find skills -type f | wc -l; find skills -name SKILL.md | wc -l'" | paste -sd' / ')"
+
+say "2c. agent health on serenity (before any token moves)"
+ssh -o ConnectTimeout=10 "$SERENITY" "sudo -n -u hermes HERMES_HOME=$H hermes doctor 2>&1 | tail -12"
+
+say "3. stop the pollers on erebus (the bot is offline from here)"
+ctl local stop hermes-gateway hermes-gateway-salem
+ctl local is-active hermes-gateway || true
+
+say "4. start the pollers on serenity"
+ctl ssh start hermes-gateway hermes-gateway-salem
+sleep 8
+ctl ssh is-active hermes-gateway hermes-gateway-salem || true
+
+say "5. verify — a Telegram round-trip, not just 'active'"
+ssh -o ConnectTimeout=10 "$SERENITY" "sudo -n journalctl -u 'hermes-gateway*' -n 25 --no-pager 2>/dev/null | tail -18" || true
+
+cat <<EOF
+
+=== DONE — verify by talking to the bot, then make it declarative ===
+
+Rollback (seconds):
+  ssh $SERENITY 'sudo -n -u hermes XDG_RUNTIME_DIR=/run/user/\$(id -u hermes) systemctl --user stop hermes-gateway hermes-gateway-salem'
+  sudo -n -u hermes XDG_RUNTIME_DIR=/run/user/\$(id -u hermes) systemctl --user start hermes-gateway hermes-gateway-salem
+
+Then, so a reboot cannot resurrect the old poller:
+  serenity.nix : remove the two wantedBy = mkForce [ ] overrides
+  erebus.nix   : add them, and drop searxng/sillytavern/beszel/fishaudio includes
+EOF

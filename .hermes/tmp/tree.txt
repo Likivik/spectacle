@@ -1,0 +1,949 @@
+[book] qezsevJttB1D  Journal
+  [text] ONf85iK3sJei  2026
+    [text] Qzg12gOkt311  08 - August
+      [text] Eduts6zcB0Ak  19 - Wednesday
+[text] 12COPqvGCtJl  Miscellaneous
+  [text] nmDqrNwZeNOT  Day Note Template
+[text] xHAi7Hkev9DW  Trilium Demo
+  [text] kQhA7zkR18jP  Books
+    [text] H1U9XaIT3Ejm  Book template
+      [text] aG1khAIe8FcS  Highlights
+    [text] lyliS2QZgGve  Reviews
+      [text] L1DJLTHZ6TpP  The Mechanical
+        [text] eFLmxrti7i30  Highlights
+    [text] p4krNWyos4Zt  To read
+  [book] o6d5gxjr9HN4  Formatting examples
+    [text] QNrDM6j4Yq7g  Checkbox lists
+    [text] ibCxWk8s7AgC  Code blocks
+    [text] EoukBU5wyOfz  Highlighting
+    [text] ENlmFRRmE1Kb  Math
+    [text] ncWMXTxHOSmJ  School schedule
+  [text] lkJCsEctfGst  Inbox
+    [text] HeVi03P3hfkq  Book to read
+      [spreadsheet] zFGnTrFuqsGV  New note
+    [text] KdOX8j7QZZ5t  Grocery list for today
+    [text] lVTcmGQ2Xxfl  The Last Question
+      [file] 56bAgVs8IzBQ  The Last Question by Issac Asimov.pdf
+    [code] nK5bRtlT5ASb  Flat-Rate LLM API Providers — August 2026 (Markdown)
+    [text] ztBOON3XcLHM  New note
+    [code] 0GeUw9tcJ8qu  Top 4 LLM Provider Options — Sep 2026
+  [text] wi2J9XBucryt  Journal
+    [text] aegiznTslkAv  2021
+      [text] lk6vSpoW08ZB  11 - November
+        [text] zRu7Puotr7Yb  28 - Tuesday
+          [text] PDDm1l7MGfzk  Christmas gift ideas
+          [text] Y4GBkt1kC3kV  Phone call about work project
+          [text] zHzczYxpL7NG  Trusted timestamping
+      [text] fD5wzPt4j4ca  12 - December
+        [text] A0w5PCIJsgSB  18 - Monday
+          [text] KOecMY5zwRkI  Meeting minutes
+          [book] iH4MxHmuTGVC  Photos from the trip
+            [image] FLHU13hV8SvN  01.jpeg
+            [image] Put3ruSpdE5v  02.jpeg
+            [image] 4qt0CZmW1kZB  03.jpeg
+            [image] b4MN9oz2PPw7  04.jpeg
+            [image] c9TIEN5cA2i9  05.jpeg
+            [image] 5jXl6q8bh6MA  06.jpeg
+            [image] mEKMh90mZezB  07.jpeg
+            [image] YPIH1hbP9oYI  08.jpeg
+            [image] jMIBuHUGvgRq  09.jpeg
+            [image] Wymg6yDwfrA4  10.jpeg
+            [image] LAGEg3JoFhKu  11.jpeg
+            [image] vuHTkMnVheEd  12.jpeg
+          [text] 4r5EP6hVQzQt  Send invites for christmas party
+        [text] 4fgzGhIqktuc  19 - Tuesday
+          [text] 4XRYaP5UlhPd  Dentist appointment
+        [text] 2KTZD2Cpbbec  20 - Wednesday
+        [text] 3eMFniGS6huW  21 - Thursday
+          [text] 6eLqWlbFm8Ut  Christmas shopping
+          [text] WLp3a6k5gRor  Office party
+        [text] aA5oUKIFVpIv  22 - Friday
+          [text] qe1nbvqbSGMv  Christmas shopping
+          [text] L1DJLTHZ6TpP  The Mechanical
+            [text] eFLmxrti7i30  Highlights
+        [text] Vbbl37Hgo8NL  23 - Saturday
+        [text] Zmy07L8UOLrE  24 - Sunday - Christmas Eve!
+          [text] 8WSJIPgDqvHL  Buy a board game for Alice
+          [text] hD3DGRWOnZ2c  Buy milk
+        [text] Dsj9GUuYoMZv  30 - Thursday
+      [text] 2YchCvbWLfwb  Epics
+        [text] d1j9Dk1EeYFN  Christmas
+          [text] O91IN740GLUQ  Christmas dinner
+          [text] fpXNoaL5l3IU  Shopping
+            [text] PDDm1l7MGfzk  Christmas gift ideas
+          [text] vlsFYh5BQHhF  Vacation days
+        [text] sl71zVKu6S6u  Vacation
+    [text] UgNb2YjoJu77  Day template
+  [text] GY4tzsffHu6D  Note Types
+    [canvas] MYHEviYXjRRD  Canvas
+    [book] CUwYjfDVIDUS  Geo Map (The Seven Wonders of the World)
+      [text] J9AxjnLrbybf  Chichén Itzá, Mexico
+      [text] mERRJEmlO16j  Christ the Redeemer, Brazil
+      [text] EswOK5Ca48A1  Machu Picchu, Peru
+      [text] J9hbqgACwVpV  Petra, Jordan
+      [text] 8WbbLteEUdA6  The Colosseum, Rome, Italy
+      [text] F5j7A2v0BPhn  The Great Wall of China
+      [text] GXmdJFhjsvrC  The Taj Mahal, India
+    [text] yhSUe0FzAc2D  Markdown
+    [book] TxhXsdkh5jg5  Mermaid Diagrams
+      [mermaid] dxY2q5JNNQxJ  Bar chart
+      [mermaid] eSXIFCsjs9Z2  C4
+      [mermaid] xldWfwItoIaG  Class
+      [mermaid] hjS6eSlrNP7b  Entity Relationship
+      [mermaid] t0qmklKxUfH3  Flow (ELK)
+      [mermaid] 9lbJeWDSMUfq  Flow
+      [mermaid] 75EQQl1rTxvL  Gantt
+      [mermaid] ByPJLh72ttXU  Git
+      [mermaid] DvVmfHklXHcM  Journey
+      [mermaid] 612Z8VUgMnm9  Mind Map
+      [mermaid] CFVWYrFdOWBk  Pie
+      [mermaid] gPAbFz9R8sAn  Sequence
+      [mermaid] 55xuyZLlR7KV  State
+    [mindMap] I3AdI7Y37awN  Mind Map
+  [text] 5nX4VGJo55bH  Scripting examples
+    [code] eNooFXkNV31Q  Custom request handler
+    [render] 0icFdGJX3i2Q  Render note with JSX
+      [code] sNcaFJ5cvmhD  JSX
+        [code] twtXYqGo9GL9  FormElements
+    [book] tL15klM1Moqv  Statistics
+      [render] XJxeTQ0ujGq1  Attribute count
+        [code] xPhXFmdK1100  template
+          [code] qacL25T1rjYl  js
+            [code] E71EtxCbzjmq  renderPieChart
+              [file] XE94FlOD0tQ2  chart.js
+              [file] 5PLKracfXh71  chartjs-plugin-datalabels.min.js
+            [code] fj6vYjLy3WiB  renderTable
+      [render] xcfdrAVLuHv6  Largest notes
+        [code] tdcxFkE3riNa  template
+          [code] QFIVQGFT5a9w  js
+      [render] kMCaXbNsAceL  Most cloned notes
+        [code] 9jsOBdZvLFoD  template
+          [code] 3qr9M4WOLyhZ  js
+      [render] M4TVsGzIpXBR  Most edited notes
+        [code] jkiCaJdTgJXc  template
+          [code] 8TMBwBrhVQxG  js
+      [render] bpInkdjC8pqq  Most linked notes
+        [code] bQWlAQjFAg7j  template
+          [code] aium47Z95Niv  js
+      [render] 5NVkv2j78QT9  Note type count
+        [code] wT2KgZ0mg5Pk  template
+          [code] 6eO00lYJ7AZk  js
+            [code] E71EtxCbzjmq  renderPieChart
+              [file] XE94FlOD0tQ2  chart.js
+              [file] 5PLKracfXh71  chartjs-plugin-datalabels.min.js
+            [code] bUqY725bgzqW  renderTable
+    [text] eje9FXv22ls7  Task manager
+      [code] IjqwmGs28Vv7  Create Launcher
+      [text] jxjK9qHFkfH8  Done
+        [text] HPxJ8MQyQ5sG  Buy a board game for Alice
+        [text] pBqn2ihfzssq  Dentist appointment
+        [text] VBKp7gQrmKNh  Get a gym membership
+      [text] rmMEQtrh4pIz  Implementation
+        [code] k5s5zmMExfM6  attribute changed
+          [code] svdSfQeOl61z  reconcileAssignments
+        [code] hNXghIVvFUrp  createNewTask
+        [code] ck5KAuQrYSUa  CSS
+        [text] rnPTHQSGIO8S  task template
+      [text] lje43z1jp1Kx  Locations
+        [text] x8U1zdfK37XM  gym
+        [text] LVZB6LIC4CgZ  mall
+          [text] DNpIowlIhX1P  Buy some book for Bob
+            [text] T4Wv3SdvBY8A  Maybe Black Swan?
+        [text] I3IjTkg2mOhG  tesco
+          [text] UecdapIgfiTp  Buy milk
+        [text] y4KjDdshmfmb  work
+          [text] ruJuhmCRmmR7  Send invites for christmas party
+      [text] reSzncNSivSk  Tags
+        [text] f1DH88OwK3jG  christmas
+          [text] DNpIowlIhX1P  Buy some book for Bob
+            [text] T4Wv3SdvBY8A  Maybe Black Swan?
+        [text] AYrTgM0aq8dP  groceries
+          [text] UecdapIgfiTp  Buy milk
+        [text] jyC1m646VKnD  health
+        [text] Q96kREGtf0Q3  shopping
+          [text] UecdapIgfiTp  Buy milk
+          [text] DNpIowlIhX1P  Buy some book for Bob
+            [text] T4Wv3SdvBY8A  Maybe Black Swan?
+      [text] jsQ3QSukimfm  TODO
+        [text] UecdapIgfiTp  Buy milk
+        [text] DNpIowlIhX1P  Buy some book for Bob
+          [text] T4Wv3SdvBY8A  Maybe Black Swan?
+        [text] ruJuhmCRmmR7  Send invites for christmas party
+    [render] B0SBhRfbitLp  Weight Tracker
+      [code] iHKj0WQnU9rb  Implementation
+        [code] Lljy0E8eLlzl  JS code
+          [file] XE94FlOD0tQ2  chart.js
+    [code] to7wXqAUDnQC  Word count widget
+  [code] 6xJOoEDCcBSM  Steel Blue
+    [file] ZE5RnqgUEfgZ  eb-garamond-v9-latin-regular.woff2
+    [file] uQ9kBHl0Ek3o  raleway-v12-latin-regular.woff2
+  [text] dxqs8OZWmeWy  Tech
+    [text] pR7QMd4cij3T  Linux
+      [text] f2RnM9o7vaxU  Bash scripting
+        [text] Hl2Tpt2TI9Ew  Bash startup modes
+        [text] zplU7w4XQnmW  While loop
+      [text] 6i4xmKu4diG0  History
+      [text] bK9xN23gNlYF  Ubuntu
+        [text] Vvci6P8okGi9  Unity shortcuts
+    [book] YLX8taHWwpnB  Node.js
+      [text] YSW1EANm2OvN  Intro
+      [text] Z2p1hIhaebVW  Overview
+        [text] iqwTIa4GUWKf  History
+        [text] Gl8MGld77DeD  Industry support
+        [text] oiJL4mh7GjMM  Platform architecture
+      [text] DJAS8HcJ9ur4  Releases
+    [text] cPNMkIzJLL3H  Programming
+      [text] f2RnM9o7vaxU  Bash scripting
+        [text] Hl2Tpt2TI9Ew  Bash startup modes
+        [text] zplU7w4XQnmW  While loop
+      [text] Z8KbhwMFAx0B  Java
+    [text] n0TTSzyaFGKZ  Security
+      [text] zHzczYxpL7NG  Trusted timestamping
+  [text] 8T99EQrV2fOD  Work
+    [text] XG0AWcJw415k  HR
+    [text] Fc1VtoVRGw4r  Processes
+    [text] 95PRueVZr9RM  Projects
+[text] gN2NhjmZTg1p  Code
+  [text] tbiK23Q9QEsy  Code+34d620af-f84e-4da1-9ff2-726ff189cf61
+  [text] ViqHgivDhwcB  Code+34d620af-f84e-4da1-9ff2-726ff189cf61
+    [text] ND1Xz3Qk5AKu  Update+App+Menu+after+editing+.desktop+file+aea78016-260c-49ac-b176-cbaf8e422236
+[text] Vtrq5o7YJxin  Dashboard
+  [text] OC28rkyA3XuB  Dashboard+1f67464f-a282-4609-9b7b-3fa1e8a6738c
+  [text] Kw3MvKqL4Iqo  Dashboard+1f67464f-a282-4609-9b7b-3fa1e8a6738c
+    [text] d77ZDxmMIX7o  Favorite+Narrators+88c84d7b-9e99-4bb5-8274-d29a6155b250
+    [text] 516lM87YeKiH  Music+e2777a44-f22a-44de-be1b-b8469ff88325
+    [text] 7GHwE0uiiIrC  Other+8b2cd85b-9c30-4b18-be02-5255fecdaaef
+    [text] 8wPN2Vk0YHor  AI+Prompts+1f4e3d9d-ebc6-44ad-94dd-4517ab4f9657
+      [text] YcKJIkK62vcT  False+Unknown+77fc4170-cecc-4e19-ba59-a191a62af36d
+      [text] VLkN1areGd52  Liara+from+kindroid+4b13d1c2-02da-4659-b1ea-6f4225b2409a
+      [text] Au9LsMtR3ILW  She+he+is+in+my+cage,+postapocaliptic+sex+slave+++r+fantasy,+or+reverse++7d37577e-cf14-41ce-8731-9633b2804ab4
+      [text] 3XtjKUTY9Jjy  how+to+start+8de378d6-562d-4d02-8f10-6b5ee488e001
+    [text] nxFU1vyBMlCc  Books+from+ADHD+pod,+non-fiction+3087a749-0a96-4813-9733-51e0e0418b1e
+      [text] q4HXit3WWsKx  4+Tendencies+a0ef0e0f-2ec3-436d-a72a-03cc7844efed
+      [text] IqgCbi0x9lrM  4th+realm+@read+61bbbbdc-8e3e-47c4-b85c-105e0307755f
+      [text] VLcB8suWk2Ga  5+Dysfunctions+of+a+Teen+d802488e-e06a-4944-81fb-c9a2cdcacc7d
+      [text] 4EnLArPisNRU  5+Second+Rule+ec00c4aa-217d-4d21-b884-14c9bf49dcab
+      [text] WGNNIguL18TY  7+eves+by+Niel+Stivenson+ebca9405-d48a-47cc-8a2a-2ce62e689615
+      [text] 22S2ssPvq62p  @read+3+felonies+a+day+18688bd6-b737-4ddf-8f44-3c3a8bd353b7
+      [text] g83BW8fYRFM4  @read+rebooting+ai+d7b165da-079e-4cbc-9885-cf1d2adea74c
+      [text] l4grkXnZqkTK  Atomic+Habits+722bcb07-370b-4dc5-99c7-24b8e1833e27
+      [text] YuK9UVNbN4a8  Attached+5ac1fe77-ecd9-421d-88d1-643534073af4
+      [text] aT1X7SldjfSA  Beacon23+book+de1e904f-3ec9-4fd9-bb75-0980fefd179c
+      [text] vSnmCog6ksaD  Berne+Brown+Books+d0b84c41-445d-4ff4-a6ed-55b9ef9518aa
+      [text] eYNBiiguCtZo  Change+your+Questions+-+Change+your+Life+6ae2010a-a119-4c19-bf20-5a21e1dc3c62
+      [text] yoX3GnZKIF3w  Crucial+Conversations+1196f626-6e66-4a9c-bf8e-c50abc38d1af
+      [text] j1IS8PJp1aIx  Dan+Carlin+-+The+end+is+always+near++151fdba8-0c40-4fe1-b807-9e20f62e0997
+      [text] H185aVrINqH7  Dirt++band++@read+ef4d8f20-da4a-4f04-8f7b-74dbab50f8b3
+      [text] 1qDjYjPqRaMF  Emily+Oster+books+on+parenting+s+bdcfc38d-0e50-4276-9278-8a7541d764d1
+      [text] iLRDDkiQbLUL  Long+Earth+bd662b63-bf4f-4b94-9c23-fa146009e739
+      [text] 6PQesXIyxvoB  Make+it+Stick+d727d1fc-6372-408d-ac0b-1b2c38eb75f4
+      [text] Sdhu971VnHip  Meditation+For+Fidgety+Skeptics+e62dce7f-2200-4ac6-aa97-42c777db5d7f
+      [text] QGumhFqDhGZG  Non-violent+Communication+82ce9f4a-110a-4769-a1f6-29825bfff3d1
+      [text] NKBl2iczxhqW  Procrastinate+on+Purpose+a08c32a5-f40d-4adb-a46c-fc2e54637022
+      [text] ngf9ox5WetRY  Rest+by+Alex+Soojung-Kim+Pang+be93dcb8-b5db-435d-9135-18d030fc0af8
+      [text] 7DBAu09el3Ke  The+Art+of+Asking+0b9c24f7-88a6-48f9-9c87-76ab98a37bdb
+      [text] Vb4YZhk73VhG  The+Body+Keeps+Score+33c10468-dc99-4425-96ac-85de710c42e3
+      [text] izHVkXPZGhW9  The+Coaching+Habbit+e4b0eba2-7a95-4aae-ba4b-f6a38c06acde
+      [text] smI2ehIY38v1  The+One+Thing+973485ac-29e9-4370-ab0b-58f5e544e790
+      [text] EmghjWQ3EMt2  The+Productivity+Project+80a59aa2-0f85-4b2c-970a-c591e9ad175e
+      [text] ZBoEjuCOEZwy  culture+code+31d1ea62-b6ef-45c3-a564-aa90dd9e249c
+      [text] LR9JBn3ya2eD  deep+work+b2fd6d32-092b-4e5d-bbd2-2af38503616b
+      [text] WRyq7fo9Kqc9  light+of+other+days++7ecc4ea0-0754-477b-b7b5-f9f2ef237253
+      [text] PJCs2fDxwhi4  light+of+other+days+b3b2261f-989c-489a-b715-76f1b17f3f2c
+      [text] e97f8ZWb21wx  short+history+of+nearly+everything+@read+962a5886-159b-484c-b051-5d058b360b42
+      [text] C6Zbbdtuihgm  spies+among+us+11a8a68c-fc0f-4740-be2c-a2288d1bcd20
+      [text] khtQlpPtj77W  switch+by+heath+brothers+08cebe34-d639-4242-b4e2-b2e056c00a76
+      [text] W4uD6nsDf0HT  tasha+yurik+self+aware+4ed4a6f9-feed-44f0-8249-50c213ccaff8
+      [text] n1BKbQZeE11l  the+armored+saint+dbaab840-c73c-44fc-b831-547bf4ff695b
+      [text] abStvZ8BaqPB  through+the+eyes+of+the+enemy+ade5b18a-e801-4fce-acb4-d24fb3b9c676
+      [text] EFYUOIymtxNx  turtles+all+the+way+down+19a22cc4-e370-41ae-a385-30e4d8e0e729
+      [text] t5v6bMHnE6Av  темные+начала+b720d908-b338-4d36-9019-9ea73cc80c74
+    [text] HLWHcQMCaree  Drinks+bbb4ae29-addc-4be2-988a-f0f509f52255
+      [text] xg6uJzEyJbfW  A.+de+Fussigny+-+Cellar+Blend+30e98b16-f296-4253-911a-dddde2b154c5
+      [text] nYiR4Iu176DP  Altos+Ibéricos+Crianza+2019+Красное+из+Rioja,+Испания+08155961-992f-4809-9761-eff8f20d22be
+      [text] nlzgQJzBaBPq  Little+Grazer+-+Sauvignon+Blanc+7c92bc14-8b57-4357-8b9d-38af92c3a4a5
+      [text] FBAMQ12wOZc3  Marqués+de+Carrión++Reservado+Reserva++Красное+из+Rioja,+Испания+b6e0a602-4a77-4798-b16d-710a9556f91d
+      [text] 2Aj98HOEu2ek  Untitled+Page+f04b8326-1571-4b56-abcd-d9e5dd9146c3
+    [text] OKEWaolCeIFq  Fitness+d03e60d2-fe78-4060-8805-a24cb7149c9c
+    [text] PJTKT8YyggaL  Food+Plan+c74f030b-ef44-47d0-a06c-260aed6bcc24
+      [text] rpYMYYIS8J0P  Meals+115ebdde-ea7f-4c85-a9e3-1a3b1b008631
+      [text] iWoKRhQtIAYj  Recipes+ceda5d4a-5ce7-4a77-a470-9476d81c9d3a
+      [text] Y3MhU9MpHnsa  Whole+Grains+++Цельнозерновые+Крупы+77de4edb-8e06-411c-add9-6cca1f13ad09
+    [text] mkdaukxlK33T  Games+16a70861-9466-4ab1-83f8-1bb3ccfd3a1d
+      [text] pjObNspKlCgL  Crusader+Kings+3+9ef1dc2b-3ac1-4ddf-a4d4-eacbba8c1fda
+      [text] 1PtefItl5IdH  Death+must+die+-survivorslike+17e509f0-235c-43e8-9c28-04789013e32a
+      [text] LzrEr8UNZmxs  Expedition+33+2d4411c2-5f96-459e-bb27-cd9cc8e36db8
+      [text] yI7GpeSPu7jh  Goose+game+37a51a3a-36c3-4dfc-9a1f-bb7b3295ad5d
+      [text] ukbycyKi51N9  HUNT+showdown+f15f86f0-1200-4253-af65-84e3759c8ec8
+      [text] Vv1R19tYN9nJ  Halls+of+torment+ac5f5bd3-8c30-42b4-9ee2-d92f229cd272
+      [text] XWD1KaX8vEPv  HoloCure+a55310f4-411a-4d3b-a49e-7f054f2b48e2
+      [text] 2z1BkpafJsuf  Inkbound+ef54160a-70bd-465f-87c0-c725581987d7
+      [text] ZP0yhBrez6dM  Loddlenaut+6c187c75-ec34-489b-8ef7-b71b4460370c
+      [text] pPWEHK3QJssI  NieR:Automata+d82ad6ea-46e2-4210-82d4-ed14f042d2f5
+      [text] nyCQCKflDwUU  Nuke+Skysmoker++character++a735a648-b874-437c-8af3-ab6a692d889c
+      [text] lHiqAnUmzesG  Old+World+f626e2fd-cd66-43c4-a607-ea20c62e2c9b
+      [text] 2SKUtTfeL21A  Ravens+watch+-+Beau's+recommend+fb86a37f-c044-4fdf-a456-2ea461fc1549
+      [text] 4sg9Du4SsLzE  Satisfactory+2f15adba-347a-4170-8cfb-eaed791de58d
+      [text] 38d8PQimOH32  Space+Heaven+d48f3080-5f9b-479a-b2a0-6a8c5c229257
+      [text] kYCoisjdmYDh  Starsector+s+41fdee30-0b44-4b21-994a-bc5a6bd09ce3
+      [text] lJwsQIgKD61N  Throne+Breaker+Gwint+RPG++c6654c05-d3f9-4659-b0cf-487f85639b00
+      [text] YfIXSTM3Jxw6  Untitled+Page+3af4d787-2145-425c-822f-de91bb982d17
+      [text] Zv0n8ecct3HS  Untitled+Page+911a8f47-e95f-4171-a999-898c4cbe0878
+      [text] bbXn3yvrXMYM  Wasteland+c9ad1eea-5712-4ed7-b619-5935a4078ece
+      [text] QYhUmOyeU626  Windblown+-+hades+like,+bloody+animals+ebfc4451-6abb-46a6-b6d8-3250d1b99c41
+      [text] nzXkMJqnlqBh  darkest+dungeon+14484580-2f82-49ae-986e-f612174c16b0
+      [text] coU6d0zghdNi  deep+rock+galactic+-+space+gnomes+33cc921d-65e5-4b51-8efb-29404680898e
+      [text] itGN6YXa17rf  dicey+dungeons+7ae92c49-d6a8-4627-b4fd-e9926d297114
+      [text] ZohZlaTyYc4t  endless+space+2+98a7a91b-6f4c-4280-adbf-f28f794b07de
+      [text] SrjbR6BXAM1f  frostpunk+423f46cb-a090-41f8-b5c5-d8abfaefd748
+      [text] Xb8afnsZbGEt  heides+325af369-5816-4b89-b557-05abdb5fe0c1
+      [text] NLTg71rpNiLn  iron+harvest+@strategy+d5becfbc-e711-480c-8340-e65c9a145780
+      [text] HCFeFUK8gBYw  mirautomata+4dbb6140-c957-4d3c-99ac-48436578009b
+      [text] eA2kKRKciTGS  moonlighter+7eedca7d-2119-47cf-93c5-0d6407aa7890
+      [text] S0XL4CWb3AzC  moonlighter+901cb57f-e628-4a2a-a4eb-be184d886ba3
+      [text] FggCGIyiQ7sZ  opus+magnum++pic+game++2421216f-41ee-4759-9645-b08cadc2c48d
+      [text] GMMP6xNBfvJf  opus+magnum+f031b563-6ac8-4d2b-ac84-1b5e505cd14b
+      [text] eQES5uc7i5U1  prison+architect+d746cd89-e674-4376-8977-2a8f3a2f4b0f
+      [text] IfBnuCtLdKdH  recur+ca773087-3410-4a17-905a-9f0a28b128a8
+      [text] QH3wsuqxp26P  ship+breaker+f8db323a-d527-4f2d-bb9e-5cc4fe94025c
+      [text] lX2qAQysFKgh  spirit+farer+dc64742d-963e-4a62-947f-6e4c15b73dcc
+      [text] KG3sBSAv2Wvs  surviving+mars+a3dc2f86-9683-4d33-b4f3-3dda548e8fc1
+      [text] HLYLl1pESZca  they+are+billions+f9eaa16c-9c26-47bd-a645-cb457c50bf1c
+      [text] Wmi1ywP0yr0E  void+bastards+2027c2e5-1f61-463d-8de8-e422ae728e4c
+    [text] oZCYWtUowDpT  Health+Wiki+e8c95046-29ef-4294-802a-f871d024c432
+    [text] yVznc2C0VfhM  Imperial+Treasury+16040571-35c9-4d7b-abc5-174986ed7909
+      [text] rbAjEeJfhKL7  Закупки+Домой+d1589e9b-473f-44ce-bf46-147232eedb12
+      [text] LdkGnJinNVvX  Инвест+Идеи+7298198d-339c-4f66-97d8-43db693fd791
+    [text] qHpUuXfEIFnH  Life+Advice+93fec6ee-5c3e-41df-b467-b4fc366c41aa
+      [text] tSvbeZdvSg0P  Father+Engagement+Manifest+571c5de4-088d-4788-8088-af16d6c47d94
+    [text] pwcNFLIT2qTj  Me+c7dc1d52-633d-4e06-8096-5dfc2adcf0a2
+      [text] 5kxaleEFF6xn  Стрижка+3c9e38cd-d9f3-4566-aa26-c9a3f6b9f495
+        [text] K1lhm6FvS6ew  Untitled+Database+1153e8b5-29e0-4ebe-a8c0-95cae3810815
+    [text] 1ebbcrV4SFtT  Mental+health++e5e50f00-3a0e-4e8a-b5c5-ddc1064af208
+      [text] jvzvJ0jFncL9  ADHD+76bc29cf-f7da-4b4c-b728-d8f8d1aa1739
+        [text] On4dposxeCL0  ADHD-Research,+arguments+88957617-e51b-4a1c-9ec3-e1d283d15c17
+      [text] Otq4TIdJGMJt  Psychotherapy+++Психотерапия+f5ad9579-e141-44b7-af4a-960a3559bd55
+        [text] Dq6uwPQnbuDo  Врачи+-+У+кого+я+был+4c764c2a-4182-4ed8-9967-62eba9e64731
+          [text] zgL9QrbGI2c0  Греськова++4d046c62-117c-49eb-aa0c-111d59b258b0
+        [text] VIsbqorBXkEH  СДВГ+-+Специалисты+и+Клиники+СПБ+698f25ff-b8c1-4752-a357-2758123ebf6c
+          [text] IAr3L5NBo5zE  Клиники+9a0b7606-ac1c-42e3-896e-449f549b0f10
+          [text] 51emnHOCW8T9  Психиатры+688af80b-0a2e-4731-9022-6cb0bb6c8460
+        [text] d4TgAVBvHO8A  Таблетки+-+Мои+Заметки+5ae69a49-7f04-4d4b-8961-682e20d34e54
+      [text] JJGQHsSha9Fh  Sleep+-+Falling+Asleep+Ideas+dde454aa-8b2f-4d84-af1c-4814089ad1b7
+      [text] vV6sJowMHk88  Wacky+Plans+and+Ideas++27c1c58f-7b8d-4786-8423-81aa681e0c96
+      [text] RpcEth2ECDNw  Всё+об+отношениях+++Everything+about+relationships+590e3952-c486-40a8-b37d-90ddac10af83
+        [text] ahYsp7R1T8hq  Маша+-+Почему+нет+c305185b-94ba-4d8a-807c-0ddeb18ed434
+        [text] xGFYohVHLH9W  Мэри+71755cdc-7a45-4c9c-872f-6d358ca06fa7
+      [text] D6SbrhENlaI0  Мотивации+d0589c37-d50a-4153-9fe9-8a9ba53de7b8
+    [text] 78FCvGJFVJB6  Other+8b2cd85b-9c30-4b18-be02-5255fecdaaef
+      [text] oGKPnDYBBUAG  Audio+-+скачать+и+послушать+de971eb5-178d-44af-876f-25835d92d819
+      [text] uwRdPkAgaCOB  Databases+4d30770e-717d-455b-a383-56386998c3d3
+      [text] E5QEm6ZmgnLI  Don't+wanna+deal+with+it++6fc2d635-1cbd-42d3-bfa2-e9064e57675e
+      [text] ZGohlOXjbQbp  other+5373ca5e-f23b-47dd-8f6b-05814977f2b8
+      [text] ycHycyv6TvBt  Audio+-+скачать+и+послушать+de971eb5-178d-44af-876f-25835d92d819
+        [text] 9NufiWtDyyNN  Audio+1de2a138-4a8d-483a-b484-cfa69115f977
+        [text] k2jgaMMLaQeR  Audio+02ea354f-ee8a-413c-aa81-8132fe8ff2eb
+        [text] Egl5yWHkKzFT  Audio+8a03ebc4-ab89-4bce-b2c0-d5ee826af0a4
+        [text] Prxv0fRg3BAW  Audio+156bec71-ce07-4823-841c-a57c1dca6c7c
+        [text] dZe6D3pGX1o5  Audio+d308a798-f867-4abd-97c3-30e95f241ad5
+        [text] SlYnvv44ysAe  Audio+dfb3edbe-b335-4982-866a-20e27d369687
+        [text] 5gAN8hAZnySl  Audio+eb6f5c76-71df-477f-9daf-ebdb28ddd4bb
+        [text] Sgjzagm85KaW  Audio+recording+cc74bbc2-89af-4dd0-b6b1-c31df8ee66a0
+        [text] Uu2bpIOs0e1s  Untitled+note+a429c2ca-0465-415f-b09b-22225511a980
+        [text] ZMZU4KwM9tWG  Untitled+note+ac752917-3744-4c0e-894e-ceb3e417f7b9
+        [text] 3xW8gZkT5tut  Welcome+to+the+moment+now+-+How+are+you+going+to+feel+421cba69-4c32-4a46-ab4f-81af3fb88347
+      [text] lqT9VM3vw62m  Databases+4d30770e-717d-455b-a383-56386998c3d3
+        [text] 7l1CTz9YL1Oo  Master_People_Table+afc181bb-fc72-4ac1-86b7-c7ce2ff055c7
+          [text] 7DyEbRVjcJVl  Настена+и+Максим+0c73d262-beab-4c85-a2a7-1fd924de67aa
+        [text] 8jBDJ9h2idPG  My+Links+2acccac1-9df2-40a9-bf05-e144f5eca59a
+          [text] 26nepYnHk9w5  GitHub+-+mhss1+MyBrain:+Open-source,+All-in-one+productivity+app+for+Tasks,+Notes,+Calendar,+Diary+and+Bookmarks.+4f993de1-dfbc-468c-be38-0e3d1cea8e3d
+        [text] MCVgpxHKqTqA  Phrases+8720580f-c834-4b7c-b94b-0aae93907b5a
+          [text] n6YEKsKiQfGK  Overlord+and+constant+companion+075bb472-a9f8-4b9d-bc04-fb039c1e1b6c
+          [text] NsAov6vnuToY  Untitled+Page+a09279c1-796f-4d3a-87d8-74d9bcd529a5
+          [text] OFoFSQ8BWWXP  Я+кисажрун+и+малышкаждун+4032b347-ae7b-45b3-b484-07308d2858b9
+        [text] x7Wtb4KTXek9  Shows+++Movies+fbf04bfc-eecd-430b-9322-1831ae771b8b
+          [text] rhjZMr0A3Tpl  The+Peripheral+826ff640-d925-4a75-a356-d1adefdcae91
+          [text] ozT31N55e9UR  Untitled+Page+9e38eb23-f0bc-4c58-9743-6ff0701c9875
+          [text] pJQ4rbOo0H9y  Untitled+Page+27baaca5-e4bc-4efc-ac01-2962b47a7468
+          [text] aoTwhp6iD30a  Untitled+Page+69a2cbae-1b3b-4ec9-ada8-c7cdb59b6f39
+      [text] VH7CuUXATzsJ  Don't+wanna+deal+with+it++6fc2d635-1cbd-42d3-bfa2-e9064e57675e
+        [text] hOeLE2bQ2G6N  Военкомат+f4482675-7765-4b21-8c0f-2d6a16f08ebe
+        [text] sl0bm9sGMjfc  спп+52c949d6-853e-4e1c-bec3-7c0bf2ff6f0c
+          [text] i89oy5AObEkJ  Спп+доки+0aad461f-48fd-4e20-9e5e-7329ea2574c6
+      [text] WmaDjYtcut2o  КоробкиОтВещей+9580b3fd-503d-4537-a575-9926215d058f
+      [text] wNDaiUhQtfS8  Постельное+бельё+60247901-e50b-465e-9d00-f6672d2fb96a
+    [text] FXBJX8sSn5Fm  Phones+7388153f-d63a-4975-8920-58e48466db09
+      [text] MIAHgfRmprh7  Xiaomi+Poco+X3+Pro+0b022590-e949-493c-b60e-d299f7c1291a
+        [text] V5z0eT40zxIK  ROMs+bf7e072e-6eb8-45b6-bbbb-8c4eb3764ce1
+    [text] abn5nS904sOP  Poetry+++Поэзия+90d5504b-4fbc-4add-a1f7-88d3e0844075
+      [text] eMrwFy5VQoys  2020-09-16+06.48.42.ogg+8be34ffb-973a-48c1-b273-13852ed246d1
+      [text] 75TwQTsUYxZh  "One+Day"+e0eba060-9470-4368-83b1-0fd576d057f6
+      [text] CHErvCWvSnNA  An+Endless+Engine+of+Pain,+Recognitiin+and+Vain+69cddf26-daee-4f87-a7df-87eaf6e6f249
+      [text] toihTpIwiZwf  Audio+0651526e-a2fa-441b-8ce1-3c0e0382f3c0
+      [text] QY6SaVRIppKx  Audio+e0810836-13c7-4832-8d9d-be57149118f8
+      [text] MNNfbJaXFROZ  Audios+363663f8-8330-497e-94c6-b3108f0bbb12
+      [text] Ic8KTw6NooQl  Note+@+Cambridge,+Massachusetts+7a578c8f-2920-44f5-b7a4-eb17af05b621
+      [text] 9aJfWh95LmHy  Picture+164355cf-dfb1-4fd0-8a4c-e74b50248e0b
+      [text] EyQgBScVGIxy  Roll+the+Dice+fc5d7dba-baa6-437a-8233-5aeaa0f1a302
+      [text] MldKdu9iQJzQ  Try+Again+-+Song,+postulates+bbe2e2de-8678-4c16-a6db-b591a2760618
+      [text] BKgb9IAlcVub  Untitled+Note+791c5add-5816-4007-87df-f841872a9a73
+      [text] bBdmjyRMJPw5  Untitled+note+47cbe3fa-108b-4a5e-9715-4fb1542f0127
+      [text] CUhjcKMhvqxI  Untitled+note+87dfb2ea-5d78-408e-85e1-80bc441f7944
+      [text] Qv1YOmw81hul  X+6e006f6a-675f-4922-98fd-4c3f08590641
+      [text] bV3lXwHY4tI7  sing+2+4fcf15c6-ed3c-45ce-8a4b-35d47c7f4b7d
+      [text] e0FR7oMgGN1Y  Аудио+@+Санкт-Петербург+2f870e89-2975-454c-b9a5-d2da1b3eda8c
+      [text] urgnkEs1nnok  Маме+840f1e80-0290-4835-9a43-575e6d477006
+      [text] 4g2SFiTnyowP  Маше+456cc5ff-cb74-45eb-8acf-c24d5c335661
+      [text] IVvTwkA5m3Qs  Рифма+4c0c7ab5-b345-45bb-bcc3-e662852e19a2
+      [text] 1zdhkhHBNKlz  Темной+Королеве+e991983b-c259-4d5b-91e9-41156123c826
+      [text] NxlbNfwpawBz  Рифма+4c0c7ab5-b345-45bb-bcc3-e662852e19a2
+        [text] pJip4LU762J7  2022-05-11+23.57.15.mp3+6a67e2f4-dac4-493e-ba86-efc30e54a60d
+        [text] u4QFjAEGo28g  Earth+Worm+287b3ce9-0e49-4964-b4bd-23fbb4fe12f4
+        [text] ihx9QZYTCO5M  Sleep+well,+my+sweet+girl+f268eca5-d20b-4975-96a5-40891ee0e496
+        [text] XenOthf76n8B  Time+is+after+us+6509c7fa-b439-4f21-a0d9-a9804dcc807b
+        [text] jNacYOUgs5lE  Untitled+Page+1f5461d2-8047-417d-8c1c-8a0d4ad60ba3
+        [text] KLb6DiMQGGcs  Ко-рекурсия+41cc6728-febd-476a-90a2-5915cfad39f2
+        [text] NCQhGmH2hfr5  М+поздравления+2022+1c2acd4d-d532-4893-bb79-c82ddd5ca278
+        [text] QD5w2bFjI0PZ  Earth+Worm+287b3ce9-0e49-4964-b4bd-23fbb4fe12f4
+          [text] JfzlE2iP09qI  2022-06-25+01.10.20.mp3+dc84fdce-fdd1-4c86-8756-7ad51a8fa6c7
+          [text] KUtlIeI5WbAg  Untitled+Page+fdeb9651-5ac8-4ef8-803c-196cbdf9f4b5
+    [text] yXHT9TjcMmF1  Predators+8b817e38-0a8b-4385-8215-926887df302f
+      [text] T4Ij0quQgjMy  Greyness+78bebc28-4251-4a56-8b18-fa519a1ef923
+    [text] o2jo2G5NIPhu  Quotes+396f2370-09e1-4537-add3-9b74a4dd626a
+      [text] CXJlWG7MJYdD  Untitled+Page+0f07efe0-8c83-41d1-9658-2e6479d5189e
+      [text] VHQM8o4BaF1h  Untitled+Page+9fd256ce-0d57-448c-bfb0-4d1ae3829c0e
+      [text] Szt3UB4xuVRd  What+can+be+asserted+without+evidence+can+be+dismissed+without+evidence+9842342c-9ac9-44b2-9392-6ccc26db169b
+    [text] Vm7XFzAGLDCW  Watch+6d78f114-3a3c-4547-a2bf-5b889b219089
+      [text] BfMHCs0DWTir  5th+wave++3e069df7-c13d-4596-bc32-5ad5165f8fa9
+      [text] MYXZvIYMwd9A  2036+origin+unknown++60b1749a-2c2a-4685-be22-a7354f5edf1b
+      [text] OObdDYvsqWaW  @show+Criminal+a9799173-b2f3-4047-9523-72159de97aa5
+      [text] MkuCknbrrl2c  @show+boys+f217e712-a79b-4199-be1e-6584e25bf061
+      [text] h9Oe3uPJZkCu  @show+doom+patrol+c198f986-d9c2-404c-9803-3ec12df688b6
+      [text] Ig8Y4RYReyq4  Batman+The+Long+Halloween+ebcdf7ba-02f6-4b58-b176-825625f938a8
+      [text] IbfPTmwqTHqE  Bluey+36a8b8c0-ab7a-4c27-b33f-b1c786095ac1
+      [text] ZodrSA0wO633  Brothers+Sisters+a0fb2e72-1eea-4c2b-b70c-b85af196bc31
+      [text] urm8WZjBaqIn  Citizen+Kane+469fcfdd-48fe-48da-9780-e8822ce7894f
+      [text] DPJnWC2Gm5YQ  Coco+ef105323-cc13-4497-a1ab-ef822ca992ca
+      [text] WSPUQF7LrOmx  Comedians+drinking+coffee+@show+c68f6db1-703b-4dee-af4b-27760c31af4f
+      [text] 20oP1qnTAWmu  Dark++german++f0a7d5da-a36c-4261-81d5-4b213e6f01e0
+      [text] jrvSEkZxOXId  Emily+Blunt+movies+363df69a-e150-42ce-95d5-38cf323c0315
+      [text] udM9Ho0w1CNR  Everyone+hates+Yohan+6153c989-8dfb-471e-995e-456203c088c2
+      [text] G4NsgFeUvP86  Farscape+b67528a0-aaf1-4f4e-b04f-c0d49af9a3ed
+      [text] CL5IJLkU9yer  Ford+v+Ferrari+dd35b8f1-2f75-4be0-bf89-0dce84930a09
+      [text] cFM2YM8s2Qr2  Google+Search+03c65d80-acf3-4c25-8155-2cf99119d33f
+      [text] bTSoChPDbbo1  Hotel+Grand+Budapest+0d6432cd-f45f-49d2-af68-76c061cee631
+      [text] CNnUhl7IlGnO  Justice+League+Dark+Apokolips+War+3edc2e4d-f76a-476b-a9ad-3308fa20a691
+      [text] MfolwvJNKwGN  Mad+Max+the+Fury+Road+29d2824c-ee70-4785-ac8e-17319fcf8288
+      [text] zhZb8AwLtigD  Making+sure+you're+not+a+bot!+d1be7a6d-68e1-40de-9242-50820df42798
+      [text] 2S5Qc8fw0l4H  Netflix+maniac+@show+0dbf3779-059f-4caa-8411-ee93bfbf9e11
+      [text] 5FEHZfjujRfH  Seinfeld+35ffa84d-fcf6-4bcf-8c3c-7772c4bac44b
+      [text] Jg2KyFMOhA1c  Vice++6b0b9dee-e069-46eb-b839-d49164476b2f
+      [text] ne1USc3GnDp2  Waco+81496cda-112b-477d-8d5c-08b69702fec6
+      [text] qg4CAdirgbAO  Welcome+to+the+Rileys++b9f3ac19-541a-4a0b-bd68-0d1a0c9756f9
+      [text] tGdMm9RkJXlX  Wrath+of+Man+592ed7d0-43ce-476e-98ca-c0a646089292
+      [text] BJfA6k5UAB3R  Zero+Dark+Thirty+b8f780e9-7fa6-49d7-b1e5-84453bc61fa1
+      [text] H80zWiJBm31R  birdbox+3f7ea747-adf7-4ab3-9046-de19b29731f1
+      [text] CkGKmn0SLqqQ  detective+rabbit+@show+aa808cea-7657-4095-b313-5e937f84e24a
+      [text] CrG7HXQ93Fz4  duce+@show+18f5e468-059f-47b4-a02a-c4a055763cfe
+      [text] tPwKzG3wxsCt  fargo+d2cc5401-7732-47e8-a78c-560b33b2b1f9
+      [text] L1ufmXSYvJaC  fleabag+585b79ae-3e5b-466c-b0c7-6c2440c300f1
+      [text] XefunfVJ5LEM  fleabag+b9a988de-63eb-4dd1-acc2-aaddb8251449
+      [text] TPx0XL8Wqbsy  hilda+@show+@animated+ce756894-7024-41b9-ac70-952a741d2605
+      [text] yqyIejnRjPAj  https:++www.pravilamag.ru+entertainment+195233-chto-smotret-55-luchshih-filmov-na-lyuboy-vkus-1++657d752d-06d7-4bf2-9013-e805015cbece
+      [text] KcEPaCiCQeJi  killing+@show+4722555e-3a67-4c04-9009-4a52f1bbe334
+      [text] eukwbvxSFjli  killing+eve+2bfe6613-7ab8-4e1b-84a1-156451787aa0
+      [text] 2U5TZ3ZjBNci  leftovers+573cadc7-558e-498b-9037-8b2458b3125b
+      [text] lfIcXsMEP3V4  lost+in+space+@show+9c3700aa-7d2a-4a47-be36-3dfee035eb0a
+      [text] FttOF7nhGa8r  lost+in+space+@show+c5ef2995-974b-4424-9046-002f5931c0ab
+      [text] jg3DtPpaxwmq  love+death+and+robots+aab2cf08-961f-4710-ad06-bb7faa7eb297
+      [text] ruEThC7s7wBg  orwell+@show+e37b6e74-63e0-4851-8a34-7f4ab778b527
+      [text] VtacvJmllwYo  pop+team+epic+@show+7686641d-ffc8-465d-9a8c-04d621f7eba2
+      [text] LiXya2vmET1y  simple+favour++2535deee-a030-4c68-ac2a-3164401d9e1e
+      [text] S781xGTFu7sw  watch+men+f8a8f13d-7296-435c-a946-8740bd2f7db9
+      [text] ybdJsSL6Vty5  watchman+@show+7ca198e2-d7c3-47fd-8fa7-593a17acea5c
+      [text] LF7n92O8IWvS  Головокружение+6fa8b243-a6b8-45da-8cfe-71f5c785ea1b
+      [text] CjzplopllZMl  Доктор+Тонцарелла,+Личный+врач+основателя+империи+b3ab71a0-b1ca-44b7-b451-d9d45d44868e
+      [text] dcyQBtPTTbku  Космический+Линкор+Ямато+2199++b6b524eb-b037-4b51-bd3a-73b55d77e984
+      [text] SmbkTYslowbJ  Пропала+Собака+3c67615a-8b5c-4ff5-8490-979ae98bfef3
+      [text] gMZJQNL6QXzZ  Тёмная+Лига+Справедливости+b9047be9-2beb-44e7-8727-82eb6733d688
+      [text] WCYAHXSJZAvy  Что+За+Люди+c2e4cccd-fa69-4b39-9e49-a2d702af0ac7
+      [text] WyG73usdjRVx  дом+которы+построил+Джек+8a9a27a0-a7c6-4066-9892-8276b70b39e5
+      [text] 4vnXI3g5YUih  мульт+про+спайди+3a1254f3-699e-4c0c-bcf3-0f8cf436ab9e
+      [text] MjBZ73nxVKGJ  остров+собак+3887b80d-3cd4-469c-ba25-f4efae35edb9
+      [text] o8O9sil1cnqT  сериал+с+Джимом+Керри+0e7daeb5-1366-462f-877e-f70b4bf78c55
+      [text] 0WY0IvHWafPI  сыт+по+горло+3a077c4c-1be8-426b-b9bf-c381659ecf35
+    [text] 1rMdRlKvvMN5  Комендантский+53+-+Инфо++храним+пока+не+продадим++e8a8bb90-95d9-4001-a61c-e134ef92a515
+      [text] rpYcLNiEghFg  +Зелёная+3a1e2ebf-09f1-4994-92e0-7a95e9b5af21
+      [text] Fnqo5gTIgwgM  Кухня+950d5d7b-00ed-4ff5-9aab-f176f5050750
+      [text] NSyOXzronYqJ  Прихожая+aa51c6d5-5e50-4693-88a4-f59504b33f47
+    [text] dAdPmxKCAyMn  Окси+f30a0600-ba39-4464-9876-bca86e85259c
+    [text] l16C9VKOkSy8  Списки+для+сборов+++Packing+Lists+cb3ab1f3-688c-40e3-b7b7-955616b4b310
+      [text] pacGe4pu6O9A  Travel+checklist++packing++e586fd2b-3583-435e-a020-99518a019d40
+      [text] xPaT0WzNiD1d  На+пикник+53ff08e9-be2a-45be-aa82-566a7a9d5482
+      [text] QzZPDKnUbAY8  Самолёт+d817800d-d526-4f94-88c2-ca75aad043bd
+      [text] Njncn4dhjZxG  Чеклист+для+Хоккея++Checklist+for+Hockey++49ffc33e-5995-4138-9c95-2e0c91e30e18
+      [text] rUGOsOP1gbjO  Travel+checklist++packing++e586fd2b-3583-435e-a020-99518a019d40
+        [text] n2UJQbVKQjMv  LARQ+Bottle+PureVis+-+Self-Cleaning+and+Insulated+Stainless+Steel+Water+Bottle+with+UV+Water+Sanitizer,+17oz,+Granite+White+:+Amazon.co.uk:+Sports+++Outdoors+1e3f906c-1b50-4e6c-831c-b47a28caa68c
+        [text] DtJdXmqdPyak  Sex+question++e0b42c9c-55c6-4a59-b051-26fa2d904eae
+        [text] ALMu2j5Qvex3  Махмутлар+-на+зиму+в+Турции+рек+от+СА+43ab9226-2387-4c3f-bc31-f95a8b55038f
+        [text] COjRsiNEkkUO  Свидание+с+раком+и+пивом+окси+ксю++fa93bb22-298c-4d89-affc-029e192b7249
+[text] yxsOCKYRwjJ2  Dashboard+1f67464f-a
+[text] G3HJturk9TEs  Inbox
+  [text] U9b9TSLMcdSf  Inbox+843ef80b-8bca-4117-9739-f3cc94ab99d8
+  [text] AMtjOHbHdErj  Inbox+843ef80b-8bca-4117-9739-f3cc94ab99d8
+    [text] 5bFCJmOW1QOV  Untitled+1+249f6951-ad99-4a52-bc94-4a2205cd7387
+  [text] NG9Xbww6vNgL  hermes-pylon — fork repo (Sep 2026)
+  [text] 5P3ihGu1Onrt  Moscow packing
+[text] rManLkIlmSsL  Modum
+  [text] EZLjAoivbgk1  Modum+12ec35d3-0c49-4a62-ad9f-1f9b9a71862b
+  [text] AfMTOVyjlJmr  Modum+12ec35d3-0c49-4a62-ad9f-1f9b9a71862b
+    [text] tvLvdGCar24G  Ремонт+квартиры+-+Рекомендации+Поставщиков,+Производителей+и+Магазинов+deb5c402-1f5a-4e4b-a3ba-915f121e8d51
+    [text] VpBQwt9MBH0V  Расходы+c2f0c71a-5cc8-415d-b15b-5b9fad82cec2
+      [text] b8mknSo3L480  Untitled+Page+063c7dbf-ec58-4b83-8553-712156d979b3
+      [text] KeZWt9LHC2Qo  Водонагреватель++с+озона+кажется++57e05346-7239-4117-a4d6-9ffdbda95f02
+      [text] dGIeKYi4Okfo  Вывоз+Мусора+00e1c5a4-1fb0-419f-adc8-fbcf6875f030
+      [text] 3MUIJmHzHylX  Вывоз+Мусора+3b695863-205d-4ac4-b98c-d23e29cce071
+      [text] 4BpVItXo08lA  Вывоз+Мусора+7b6550a9-131e-4c3c-8dc1-f4346729b6b2
+      [text] nMVJp130qDLs  Вывоз+Мусора+ca217cfc-6e38-42c0-a74e-a91ad2931f77
+      [text] hssIz9QFk0Qe  Вывоз+мусора++2++++материалы++леруа++1a8feea0-6a74-4d31-ba6b-9ca31d65760e
+      [text] GWafWr4xzjYf  Двери+откатные+-++++предстоит++6ea8fa51-3a30-49b0-8384-3a69af43d314
+      [text] PQsThdPwNUqr  Двери+скрытые+-+куплены+,установлены+-+ЗАПОЛНИТЬ+820aaf75-5636-41cf-9a3b-e5bd3b8d3688
+      [text] SpA80mfTN2bn  Двери+скрытые+покрасить+-+18000++предстоит++7853033b-25b2-47a6-ae1b-8fb1d135a86e
+      [text] ABPK7LSvV4Nx  Кондиционеры+26917520-cc99-4d71-b5cc-fcaf433c1c9f
+      [text] q5yEVuqLwV77  Кухня+++Техника+-++++предстоит++++установка+4dbccd1b-787f-4f05-a282-6495a254ffd7
+      [text] ORoxI0KXqW8x  Материалы++"ЛИДЕР+ЭЛЕКТРО"++2dab002d-1d15-4704-8436-1461d86af51f
+      [text] bls58P4O8zkz  Материалы++Аквасфера++25673a0c-47f7-4d26-a656-951ba128668c
+      [text] LTjtUXDhvp36  Материалы++Петрович++6cb19c4a-4cb8-44fb-9e3b-5ffae97ddf20
+      [text] 5gQZkXR94Ron  Материалы++Петрович++07f1a10c-0d84-447b-8fb0-b874d7b2d123
+      [text] rMmQDQQWpXZ4  Материалы++Петрович++13b3e0fa-2804-4e62-bd6f-40c5157e0772
+      [text] a2RezAq9tYe4  Материалы++Петрович++25b701a1-7acd-40bb-b82d-5eef68faa540
+      [text] hUY30nWp5L4p  Материалы++Петрович++926d9506-c340-40f6-9805-c8059ff30474
+      [text] 2modePwTnRwA  Материалы++Петрович++32491b1c-4cce-4aa8-8131-86cd10d6d702
+      [text] vQRilpn0fWV6  Материалы++Петрович++5291083f-36cd-4c79-ab52-7541508f01ac
+      [text] QJ1yrCRm9GvW  Материалы++Петрович++a675720e-91bd-48ab-a622-edffc1891ce5
+      [text] JqyOdkdWxSt6  Материалы++Петрович++aff748dd-785a-4748-acae-5a2b5ca6aaca
+      [text] eTf9EjHXqZop  Материалы++Петрович++d5360586-d101-4762-96e3-965590f9c3b9
+      [text] bmCJrU7ez6uT  Материалы++Петрович++d6016129-c2ae-44d9-b8a5-7959028a46b2
+      [text] x4GZmbMC4atB  Материалы++Петрович++ddd4b6ea-05de-4282-8e4a-2eff4d191d43
+      [text] RoIk12T5IWaI  Материалы++ТД+"ЛИДЕР"++5bdec10a-ac52-4177-a882-3aebb3d01e4d
+      [text] 5kcBHhudkWYU  Начало+стрйки,+материал+для+демонтажа+1f7aa4c5-5294-46cf-adb0-d4012e2edf3d
+      [text] JIgO6v3WhyQx  Окна+40300d7a-c13e-44e3-8a5d-c6980cefdde6
+      [text] txIQ13SFjH9w  Плитка+-+ванна+и+прихожая+ЗАПОЛНИТЬ++8fe73612-76e3-47d1-9bda-b1187704d56b
+      [text] bJH6OxRUsJIv  По+договору+1+1904ca20-fd86-48c3-92e9-10c8aec54190
+      [text] VcCpNMOOhcFR  По+договору+2+++мусор+++чеки+bd05004d-8f8f-4709-a648-0692db2358aa
+      [text] 0hbzmJglp0DM  Пол+-+кварцвинил+775e7312-b8a3-40bf-adae-c21161cc9e02
+      [text] 1ZPnkViVaNmE  Работы+25986a92-c196-4c25-8cad-7f5f21fe2b49
+      [text] IWwHRnpGNhJb  Работы+-+пол,стены,+потолок,+сантехника,+электрика+6a729525-4fbf-4442-8400-3b9f328a249d
+      [text] GxfknBUh81gl  Работы+c0d34f4e-3d7e-41ce-9faa-1e537c7d3b83
+      [text] UTCHNa66hhdE  Работы+fbf6a0cb-3dc4-498b-9eda-5d3ec212adec
+      [text] RQMhi2eBraKi  Работы+fc3871a8-faa4-453e-bb51-a43802b2f7dc
+      [text] zF1alb7VMLLy  Работы+ff20cf12-c23d-4dce-bcac-8cd677ad2f82
+      [text] OrFVM4t6ACxz  Раковина+Ceramicanova+Element+CN5020+встраиваемая,+без+отверстия+под+смеситель,+овальная,+белая,+фарфоровая,+60+см+6dd8133e-6dd7-4e69-897d-7484cec43d54
+      [text] duALTnAGpsIG  Ретейнер+Денису++начальный+платеж++5462f357-5560-4aab-9efa-c0e1c433c2e2
+      [text] 1r4Hx9rzExet  Розетки,+Выкл+купить+-++++предстоит++1ae37c4c-aa8b-4ff2-b994-81aabbc8c70e
+      [text] xNp86zXd0Utm  Свет+-++++предстоит++70da1740-8c08-4e1f-a374-fb4cc6fecb1b
+      [text] sDV4mkpmBu0i  Система+инсталляции+для+унитазов+-+2+шт+-+ООО+"Сила+воды"+9930419e-10fe-4d22-8c9b-9d194f983bac
+      [text] A3nUhpB51eL8  Чек++Ле+Монлид++2e5959bf-a15e-4789-af28-b3b5cc79a1f7
+      [text] qZxOeyrx61o5  Чек++Ле+Монлид++398b093a-1d46-4242-8582-9faaa4f2989d
+      [text] S62C0dgcA0Bj  Чек++Ле+Монлид++0703de6e-13d2-432d-b18c-61b04de45f1a
+      [text] f0RfSnkOc5Sl  Чек++Ле+Монлид++b0bdf280-5c1c-49af-b667-4a876e94ff96
+      [text] JSbvjceJTPPa  Чек++Ле+Монлид++c04486ea-229c-4bf3-98ae-d369cb221a88
+      [text] q8saSwAvz6Yw  Чек++Ле+Монлид++f9a44edc-3116-4433-a00b-80ddfef648ac
+      [text] 27ZxGPvzdCEJ  Чек++Петрович++1a1556ba-fa57-461f-a879-a2bd6e71e78e
+      [text] lznnZpdhJhUY  Чек++Петрович++5ff4ec84-e85d-4b2a-8dc6-7b534caba9c2
+      [text] Ltr8Lc31QtI2  Чек++Петрович++6abe54e5-f1b4-4527-81ca-9434298e8dd6
+      [text] mOV9F9K5ac7i  Чек++Петрович++7d3d2d58-a979-42f2-a9a6-6fdca2f386d7
+      [text] HnxbO3i8uvQ9  Чек++Петрович++6662ddfb-e42f-4abb-b300-b63adb8cdce2
+      [text] 1C4xNRzMegJf  Чек++Петрович++7464971e-d536-4674-a7cb-e2f17f890839
+      [text] FFGAc7YgRbUD  Чек++Петрович++91885089-4ed7-485c-b9c0-5852bbef0ab3
+      [text] tCPlw9eHiQ3U  Чек++Петрович++a7be9da9-f7e4-48fc-90bf-0d47b19fb964
+      [text] GYxTjg1eIKuf  Чек++Петрович++be1c3cd2-cb5f-40a6-ad09-a298116061cc
+      [text] YQ7cnErlAU1H  Чек++Петрович++c1b586ab-4b3c-4961-9740-4569da9ceb2f
+      [text] BY1BwEKQRlYR  Чек++Петрович++d9154c13-edf7-41e2-bfb5-6defa663fdf8
+      [text] 9AM3mwX3wvwL  Чек+bad0a5f8-8e2c-4ce4-883b-c11713ffc5f8
+      [text] T1LO3t0ghHZE  Чек+Ле+Монлид+dac423a2-c538-4583-bc6a-2a1b1098edbc
+      [text] GSkI7TUb47pC  Электрика+-+ТОРГОВЫЙ+ДОМ+"ЛИДЕР"+933bb6e3-3124-499b-a842-6164d7c18ebd
+      [text] mPbsquFxSw9y  Электрика+чистовая+~70+000++предстоит++bce80fa1-5311-448c-99a5-b28c1bbb9bce
+      [text] 4YU1LtX9Hny5  кондиционеры+-+работы+74b1b7ad-fb1b-450e-adb7-cd09a53e9288
+      [text] ETze5FQ126Lj  сантехника+чист+84dd307d-069b-48d5-b578-18ae58319205
+      [text] UT0ibg2OQtjO  Вывоз+мусора++2++++материалы++леруа++1a8feea0-6a74-4d31-ba6b-9ca31d65760e
+      [text] VyuA1ANyULIG  По+договору+2+++мусор+++чеки+bd05004d-8f8f-4709-a648-0692db2358aa
+      [text] 1GB4qwJPyNiP  Чек+Ле+Монлид+dac423a2-c538-4583-bc6a-2a1b1098edbc
+    [text] 87qvKDBhEUHn  Ремонт+квартиры+-+Рекомендации+Поставщиков,+Производителей+и+Магазинов+deb5c402-1f5a-4e4b-a3ba-915f121e8d51
+      [text] Xw7x0FHPU1fU  Рекомендованные+Компинии+Производители+5910ff14-ca96-4304-b469-ba5c4f312920
+[text] 8uCAnpvgw7qI  Research
+  [text] bXircyC0KLgz  Research+ed09bebd-8318-4176-b140-a158cd417432
+    [text] cuiRSBKgQpvE  Alkaline+Ionized+Water,+Kangen+etc.+5eb18863-f147-4c36-bc1b-0744d487b79b
+    [text] 0C1PzZsC1xHn  Connected+Papers+++Find+and+explore+academic+papers+4fc2057a-8992-4dcd-a178-389a261ad9aa
+    [text] cmiaTarsycd2  Lab+Muffin+Beauty+Science+++The+science+of+beauty,+explained+simply+c1606a5b-58da-48b1-9102-09e7ef30f90d
+    [text] UUQTebTW1wYC  Leannec+e2edfdfd-c6e2-4639-9eed-5fdcc1a585c6
+    [text] 81aIz1wKURrN  Politics+Opinion+Sources++cd04d5aa-7369-4201-9113-097a0435cc4c
+    [text] iqlbJS3bCrgj  Research+on+Current+Wars+and+Comparison+to+Rus+vs+Ukr+c37ea76d-342c-4b18-8155-2395a620ce77
+    [text] 0ZhH3VLz4mTW  Where+to+live++fd74b9cb-3c51-46d6-ba88-221e9d092f85
+    [text] qfP8Kkj8uf9L  Какие+анализы+стоит+сдать,+если+чувствуешь+постоянную+усталость:+отвечают+врачи+196b287f-5e6b-4f8f-9a33-f07abb1c0a2e
+    [text] Uw7b8zRTvQ4H  Connected+Papers+++Find+and+explore+academic+papers+4fc2057a-8992-4dcd-a178-389a261ad9aa
+    [text] N7OjQZCO0QF7  Lab+Muffin+Beauty+Science+++The+science+of+beauty,+explained+simply+c1606a5b-58da-48b1-9102-09e7ef30f90d
+    [text] Melcqlj5s3AF  Какие+анализы+стоит+сдать,+если+чувствуешь+постоянную+усталость:+отвечают+врачи+196b287f-5e6b-4f8f-9a33-f07abb1c0a2e
+  [code] Sjz9t0zGQMGJ  AI Roleplay Memory Architecture
+  [text] 2zQf32blymAD  Robot Vacuum Research 2026
+  [text] Mq1XM914ALMp  New note
+  [text] CCUBbqJJmeIh  Роботы-пылесосы 27–36к — итог (7 итераций, 09.2026)
+[text] HZKz92GEO2Oy  WorkIdeas
+  [text] LltkXvCvRg4a  Work+Ideas+37acaa64-4d49-4d2e-9e87-8aaf106a4350
+  [text] cvnbDQrcBItq  Work+Ideas+37acaa64-4d49-4d2e-9e87-8aaf106a4350
+    [text] RKUpONpUjno6  Business+Names+756d316b-60f3-4165-8cd3-ec50c76facd1
+    [text] 25igxR62YOas  Container+Store+++ADHD+help+c9782109-26f3-4000-a8fc-3f8be7ea48e9
+    [text] KEelstjFHkcQ  Work+Tools+and+Services+8f01d3cc-edb2-4d56-9d30-02baeb4d63c9
+    [text] O7aiDTC2lKLS  Ассистент+46aa88a9-f19d-4740-8b41-e5b609a78250
+    [text] Qz1eoVdj1jPh  Мерч+продавать+на+озоне+9a672fb1-afb2-4984-8ee7-8de94870936a
+    [text] CqHHdS1hPPvc  Ассистент+46aa88a9-f19d-4740-8b41-e5b609a78250
+      [text] YSoW4coHTYLp  Аренда+70622d5e-edb2-48b2-82a8-90e343144d31
+      [text] xbNbsZwKNLJv  Продажа+++Аренда+Помещения+fc7aee26-7304-425f-9a14-4d03dbfbdc82
+      [text] 2fVJY6sywfbU  Фрилансер+Dmitry+Mell+pro-media+-+Портфолио+-+odoo,+erp,+crm+-+Веб+разработка+Верстка+Дизайн+сайтов+fa6495da-8136-4188-9bb8-ed8db3517d99
+      [text] d9ArowHqszLB  Аренда+70622d5e-edb2-48b2-82a8-90e343144d31
+      [text] ln1pt6SJC27R  Фрилансер+Dmitry+Mell+pro-media+-+Портфолио+-+odoo,+erp,+crm+-+Веб+разработка+Верстка+Дизайн+сайтов+fa6495da-8136-4188-9bb8-ed8db3517d99
+[text] rjEiEdwz1MWT  Аренда
+  [text] JwuGOrPTRB47  Аренда+98105355-4219-4aee-ae44-b865ea356c5c
+  [text] RcH9HbSDwOOY  Аренда+98105355-4219-4aee-ae44-b865ea356c5c
+    [text] fK5aXcLhRNbR  1С+43197bc6-9287-4178-bef2-ef1db6119daa
+    [text] F7ajaz2xVyiJ  Бизнес+процессы+-+Описание:+caf5bb66-efaf-46bf-a337-7f9f714cc87d
+    [text] qBqyXzJhrIIk  Богатырский+просмотры+7b9b34c7-ef9b-44f4-b21e-1075d749ca3f
+    [text] 4NjgsrC6NtCq  ГТК-1+-+Как+платить+6cceffb9-ac75-4eb4-b97a-c6d5a3834e8b
+    [text] tQsl28tShH3B  Запики+по+законодательству+вывесок+82bdf27c-73ce-4343-bd80-50bd07099311
+    [text] JMhntmsZevhd  Untitled+Database+6709c99c-7ca0-408d-ad93-2c1b0a9f4662
+      [text] RRlKLv64YCGy  Untitled+Page+80827ce6-cd81-4bc4-a0a5-38a02d4d13b0
+      [text] gWvxwJVIGNN4  Untitled+Page+458398fa-931a-4c97-a2fa-28afea8c38a2
+      [text] tCyepgXgHXjk  Untitled+Page+ce485bdc-3cd7-4759-8caa-f560e39171fd
+      [text] kjMStdXBm6Uh  Богатырский49+69732f07-f5e4-4bf4-9f90-652b2b1499c0
+    [text] niZryILH43mu  Бизнес+процессы+-+Описание:+caf5bb66-efaf-46bf-a337-7f9f714cc87d
+    [text] F4LuusEfkCaW  Поиск+помещения+2026-03+1cce9430-b8da-4978-87e7-c7d8d46425ce
+      [text] SuTGjc7vHoQE  15,000+Полис+Приморский+56.5+4438c6f5-e3dc-4761-8133-4a2d57329856
+      [text] b7uUIJLxeFr2  17,539+Бионика+33.6+73b9e066-789e-4dea-9734-9244222aeba1
+      [text] 7t12e6RfdgeN  17,978+DreamLine+43,9м2+140408a0-5329-4348-baea-6c205b9758f0
+      [text] z1Bf81HZCiq2  18,462+Полис+Приморский+74,9м2+811f4514-650f-4bc9-a10f-71831022f09a
+      [text] FdLCF2stFkGT  18,530+Полис+Приморский+75.2+м²++4d5a617d-88b9-4c41-8350-ff130798b145
+      [text] iItD36wmFdSG  18,850+Полис+Приморский+65м2++2++fdfb2fa6-495a-4156-9ac8-717525b361be
+      [text] IvKitqgMX46G  20,300+DreamLine+50,8м2+0259c1d8-3a0a-48aa-8d11-38f5bf5aade3
+      [text] xEjgDgMFkEog  22,041+Полис+Приморский++85,7м2+c6f161f3-1beb-4329-bba8-bdfb42fb8a28
+      [text] EQEngDTetU74  27,645+Ультра+сити+117,5м2+e39cfabf-3ffa-427a-bdc9-4228e8753edc
+      [text] cdeVoaMKr1Ue  87квм+96da2a0f-311a-414f-a545-396c130b8039
+      [text] wfwu02NTerYV  ++++cbfc8d3e-f01f-4a03-ad54-6ecbf0f1adb8
+      [text] n5WsQHI4qab9  Untitled+Page+3360c62b-9f3f-4030-9673-fe1b1465feba
+      [text] CEM5v5JCf92d  Untitled+Page+517630c0-5e40-43dc-a6be-902e9d81e06d
+      [text] ZlSnvolESihu  Вариант2+2160325b-f3aa-4de8-b329-b471dfe9008e
+      [text] 0tMki7yWLPQd  Вариант2+мин+6e8ef461-362d-4a01-b848-a42698f341a4
+      [text] WyCaMbaQ9oZI  Возможно+для+светы++Я+этот+район+не+заню+сооооовсем+ccf42c74-d878-418d-b5dd-6b0008a48a21
+      [text] Rvr8fS4Oom1h  Много+вариантов+в+bip+35a055a3-76ee-42d6-b69a-e06310364c1a
+      [text] JWO8NBh43U3h  →+30474fdb-3b1b-45ae-9d2e-ca2372649f31
+[text] tb66gOqvFlbt  Выборы
+  [text] M5jxlcmC09Xs  Выборы+сравнения+++Choices+Comparisons+8fe8b628-a2c0-404d-9fa3-a987565e78ef
+  [text] GifDnW0I1mGT  Выборы+сравнения+++Choices+Comparisons+8fe8b628-a2c0-404d-9fa3-a987565e78ef
+    [text] yT1ArV6xabAD  Android+Audiobook+Player+d5eba854-1040-437a-af03-8a1c2453076d
+    [text] 0eAMUx2qLMTj  Headphones+Requirements++7b25d29e-5d0b-4e68-ae74-06d802719585
+    [text] NXt9T8ml8vRz  Markdown++VSCode++22fcd139-2941-4a64-9196-736004ca039c
+    [text] 4pmPHIYnWRqA  Movie+trackers+a9d48efc-d86b-443b-9c61-b5b30660dfc8
+    [text] evrgIgnyRBWT  Notes+188ccaa0-1728-42a2-bba3-f189b77e9d31
+    [text] fpW0MrEiHEdA  SPECTACLE+eab8f923-c6a2-444a-897a-2db1177293c0
+    [text] rfO9Zg2ZhuEy  Task+Project+Managers+4cb56b92-57f5-4205-84e3-c6ac9d54b5d7
+    [text] 3wXqbghIF5uJ  Task+Project+Managers+DBs+f706e683-7bc2-4556-8a6b-f561b75ad016
+    [text] 1Oe2B1nQbowL  Zettel+Notes+-++eb2e7362-be64-4ce7-850f-398f0a141946
+    [text] 8TjLAEreiv8y  Куда+переезжать++da4d2b7b-7de4-4b6b-8522-88f51c7368d8
+    [text] P3nkMv9x2Bl9  Android+audiobook+players+f723fed3-ab22-4753-be97-e9a68d219fce
+      [text] 0n2eTSTNdBj1  FoldPlay+dd9428a9-04bb-4c72-a472-adf8d3bf6746
+      [text] D9qGfPLH7yLW  Player+Music+cba90d14-83a8-4792-b25f-0e733c71db34
+      [text] HBMVxZ9VG2oK  Untitled+Page+3671e11d-9ba4-439d-bbf3-fe557af74801
+    [text] 8OFJldzLNaxW  Compare-StretchingApps-Android+-+Stretching+fd288370-40e9-48f8-86b0-1bc1d943d794
+      [text] vYDP9OQ4hah6  A+list+of+excercises+stretches+797e54aa-a5f6-4c41-b815-c2675dfe6563
+      [text] NE8u9dsU3qnd  Ability+to+add+my+own+stretches,+but+a+bunch+of+pre-maid+options+too+b12489b7-a485-48f5-b754-ca1c10a32c58
+      [text] 8CZxZggQidx7  Google+fit+integration+e8b2a0ac-1337-4cdb-8fb0-1d8b0db87ca2
+      [text] MrC8Z6gAD56k  GymKeeper+e5695196-833b-4e8c-a5ba-9681b17fce91
+      [text] fBOToIrRFdRG  To+see+how+much+time+I+spend+on+it+and+what+the+results+are+6b3f3524-083a-4e9e-82ed-8996f05d0927
+      [text] v0re9S5xStxw  Too+keep+track+of+what+I've+done+34983484-8962-4ae5-bccd-b447564a1a60
+      [text] sU3L4fDZWrcB  ability+to+create+my+own+"programs"+sets+of+stretches,+combos,+lists+++899bd8eb-44b1-41a6-b05d-a2aab4073209
+      [text] wrkBd90ShRrb  https:++play.google.com+store+apps+details+id=eu.fitric.improveflexibility+81611e8c-a403-4c1d-bee4-54e77521ee75
+      [text] jS1DBK4UItTK  maybe+a+timer++for+consistency+++e7f75534-69c6-4afd-93ed-5f2f2932d2da
+      [text] bGre9wvtaoWx  to+remember+what+i+wanted+to+do+67474d1d-24db-4277-87a3-3771e09951b5
+      [text] AJBAGV18spRU  why+I+think+I+want+it+8630ca6a-3d3f-407a-be64-2f153ed8676a
+    [text] nugKio4UCCXw  Compare-WeatherAppWithWidget-Android+-+Sheet1+7c7f2941-bff9-4b2c-b27e-b556edc74f26
+      [text] FtpLAbC8azLx  AccuWeather+55c9dbcc-e235-48bd-bffc-9125dfc6091b
+      [text] vfgYw80YVmsH  Gismeteo+3e649073-7b32-4bf6-b3e7-8064c6f15fd9
+      [text] tMTu4gsDMVGr  Is+it+going+to+rain++before+21:00++59c4c38e-c3f0-45d1-bae3-e016837fbe58
+      [text] hMAVsnTpWXSF  Night+temperature+cd9eb7c1-56f1-4cef-98cf-264b44cef3af
+      [text] dB3BfGa2MKYm  OpenWeather+bf24090b-c383-4b08-ac9c-7ebebcfd29e2
+      [text] 2IAWiucPnT0Y  Overdrop+d0740c88-188a-4555-b1d9-c93758d741d3
+      [text] jBRM5vwF7KgU  Privacy+Friendly+Weather+8f878960-95b6-401a-844d-26ab170821c7
+      [text] uOegWtP6Zrsw  Real+Feel++feels+like++205f0ef4-97ac-4f03-a159-f77bd35d72ed
+      [text] Nb1jy9adO616  Temperature+at+21+17e0c6b3-d362-4072-aede-02683de0b01b
+      [text] VzVs2sdE7gXA  Temperature+now+3d034ff9-b19b-4f1c-8f6c-ff8216616422
+      [text] sOffgCq35wyc  The+goal+is+to+get+understanding+by+quick+glance+=+Things+stay+in+the+same+place.+044b79ba-ba47-4347-ac35-44bf21173361
+      [text] cTFg8KWp5A6s  Untitled+Page+f9687ea0-65f2-4258-be76-33d17063880b
+      [text] huRpCHzWeZJB  WeaWow+9456a5d5-d065-4959-b5e1-10767448ef21
+      [text] V6t5b6bICu1e  What+I+think+I+don't+want+to+see:+7e425941-31cd-4776-87c6-798e5f29ea09
+      [text] bLWQvAIk3O72  What+I+think+I+want+to+see:+b32cc60a-c329-43f1-b62e-9988699e9566
+      [text] 5D1YjZkCos4P  What+to+wear+-+What+weather+is+it+now,+and+what+weather+it+will+be+later+today++most+days+I+should+come+home+by+21++so+what+weather+will+be+like+at+20+2d63741b-1799-4f98-9de3-926419acb32d
+      [text] zd5EKYEg0n6Q  Yandex+Weather+fa1e8012-4bf7-4ff2-9d12-65e8a6866423
+    [text] dh2qN5Su10jZ  Email+Clients+-+Desktop+1da33818-45bd-441b-9c63-3cac3efe833f
+      [text] w3cjlpy7Felk  Betterbird+68e35c80-090e-4c3f-865e-307493d0705b
+      [text] Ui9fj8uYTl26  Thunderbird+0d3a7f9a-9129-4884-9e86-b2643449f0fb
+      [text] 5xPNfxNdpbPC  bluemail+403adfd5-e47e-4aef-91d7-1aecd4c07d9a
+      [text] 3eOExzCbFXOo  claws-mail+3a27e7fd-6349-4334-9eca-bac95d02e133
+      [text] p7D1SWzc43LU  deltachat-desktop+f8370fd1-d9a7-4994-a52e-df111499f839
+      [text] kuTBQG1wChjr  evolution+#+in+evaluation+fb62d9bb-a955-4a4d-9eeb-f8c42971de98
+      [text] 8NCoeCEys9bs  geary+b6ad769a-ea1e-4129-bc5f-549e2c377d4a
+      [text] zKdIPRgLJC8X  kdePackages.kmail+2592f213-145b-40b8-b875-25ba4ad31cff
+      [text] P1Xwfzy0KwO6  lumail+34549364-b8ad-4f9d-96e5-2a4df9867be4
+      [text] 5JbZEk2fKHDh  mailspring+e1b52af0-dced-4095-80bc-f8b8dbca2221
+      [text] i2il2QyS7I6o  snappymail+84f0dd9d-dc7a-4810-b9ef-232204b52c12
+      [text] Erkz4ACLKPlS  evolution+#+in+evaluation+fb62d9bb-a955-4a4d-9eeb-f8c42971de98
+    [text] ffzsPCn3lJrE  File-Sync-Solutions.xlsx+-+Sheet1+44605cc2-1e90-4021-9ec4-640e962d0794
+      [text] BgdDC4THlZFl  Client+Side+E2EE+20452c8d-4f72-4473-bf0e-bfbbf7ce42c8
+      [text] M6fNmXuatfHa  Client+Side+E2EE+fbb1159a-e915-426f-be28-29be65ec24ee
+      [text] 8f2Q26SE9H0o  Encryption++99308bd5-cbb0-4adc-b699-b968abbdd1fb
+      [text] ZrbIycGZp3m2  Encryption+Software+b31d2a19-74de-4698-b635-4b8830ae5ed0
+      [text] xN9GHah2uwgd  Encrypts+File+Sizes+93db1831-c885-4fbb-bf8d-7a1c7ad867b0
+      [text] 83pquIYKH2qZ  Encrypts+File+Sizes+ae77f186-7383-40d8-ad6b-9efd4ad243e8
+      [text] RJgndsU3FKmr  Encrypts+Folder+Structure++4bebc64f-07fd-435a-85d1-2d152897b020
+      [text] dJIr0ccQxlIl  Encrypts+Folder+Structure++78b04555-0426-4f87-a994-bde89a9b79e1
+      [text] RNo1FKkkA1Eg  Known+Sec+Issues+46445920-8f97-4ad2-afcd-6354b408bf9e
+      [text] CIe61sNt7E4z  Main+Use+Case++a9dd0d55-ab92-4e7f-9f33-e75be3ef038d
+    [text] 6wH5GpDVQmS6  Linux+Digital+Audio+and+Music+Workstation+Comparison+Matrix+-+Comparison+Matrix+27d56ee4-3a2a-4828-b967-8abb9d8693ca
+      [text] 7hyS4Q1chVSj  +Thanks+to+all+those+who+have+helped+update+things!+++++If+you+accidentally+delete+content,+change+colours,+widths+formatting,+etc.,+please+Undo+your+change!+Cheers!+27f270d4-9454-40c7-8e05-a1d12f6a784a
+      [text] zO42UkocN3uo  Audio+systems+39601b24-bd89-4865-94a3-4fd7c933bb71
+      [text] Rc8UNMYLg9Gt  Automation+96aea605-1948-48ab-8676-67dad8b89c85
+      [text] Uy1kdGHqa53B  Export+audio+formats+5ac22de4-20b6-4d01-9092-0be9c86c6d9d
+      [text] 4h0Pz0HWMM0B  Export+project+formats+44921481-04cf-4356-a288-a04313801644
+      [text] VotuMJZAdTF6  Exported+notation+7ffcd464-5cf9-449c-85d1-d2112571325a
+      [text] Cg3zrclbR6WV  External+control+2a7087c1-2309-491a-bf8b-305c3d15e894
+      [text] jU4QeQVzJoZL  External+patching+ced81492-0436-464b-a3a2-8235ad43f2de
+      [text] Hm0CV5B8mlSR  Import+formats+afee124a-3caa-45a3-b1a4-a0be03785547
+      [text] xhv8lPSzbaRe  Interface+9c471460-9bff-40c1-b129-a5d89893af03
+      [text] NlBVnKqhdtFa  MIDI+systems+cbb53d9c-b374-4e07-92e0-e4ee41cc88de
+      [text] 3zDqMA7QrqkL  Monitoring+d1caea7f-eeee-40a5-9ff8-65e00f755aec
+      [text] IEBTwh8Ys9Kz  Pattern+arrangement+1bc01cfe-e782-4ce9-9085-e023aebb44d4
+      [text] Vs0ZGsxDPlcC  Playback+3706197a-b1c8-4843-94cf-8a84410bdd71
+      [text] ce1wdS12ObLg  Plugin+formats+c2ff6032-e6d7-441e-9cd5-fdab027f120b
+      [text] 2W9nUHX0fUfq  Processing+6509a04f-d0c9-462d-ad3d-7f4b9cbcf4cc
+      [text] H0QjFLVPFFa1  Projects+f3a63811-bcb6-48b7-b866-2277ad54b017
+      [text] OKRP3O2IeHBt  Recording+56df1e2b-fe6d-4c04-b357-808f112dcb13
+      [text] 5PvwCWYX9wrJ  Release+818575a3-18a6-48d8-b85e-4609d5f63297
+      [text] HwYuyu9pEANu  Routing+e730557a-903c-47d2-a107-4f5a06e261f6
+      [text] CYoB9QmONmUO  Sample+formats+b2e08405-9c71-4b6a-945e-2993106ce4d2
+      [text] tHDS6MGkzaER  Sample+synthesis+f9b70ace-26ae-4761-8a48-ed88c82dc0ad
+      [text] NjSMwqrnpcij  Scripting+5739c8a0-c0f4-4307-a400-bbd9add5aa2d
+      [text] Ash5PgxBRdjw  Sequencing+02010b2e-308c-4d6a-8e3e-99c7a756c4fb
+      [text] aM1cqfhHNWUy  Sessions+018a6cf6-600a-4ad0-856e-4890031201d9
+      [text] SwCV7xpOrUFK  Song+arrangement+4715fe2e-41be-4bc6-856d-bc0dfdc9e4e8
+      [text] zOasFGlDZvfk  Soundfont+formats+b56d0e04-e028-4710-9d94-3556bd5d812d
+      [text] lJIyN0JzYvxP  Synchronisation+947230ab-97ff-46a8-83b1-cb9da8b51482
+      [text] yJttqM2OyGPZ  Transport+c249940e-41ed-4f4c-837b-dd27f5c920bb
+      [text] jOpVPZnv3sWB  Untitled+Page+0b85d7a4-eed8-4217-8f5c-a62be43c7797
+      [text] 2heRm45ySYGY  Untitled+Page+0f500e0a-0864-45e2-a7da-3287b73bf197
+      [text] qafhzlk66kEt  Untitled+Page+1af9c44e-9b7a-4ea3-b918-cc2647ab101e
+      [text] xkgub8Bmt7kS  Untitled+Page+1bea8738-75c5-4b40-b133-ea902334f970
+      [text] PzGR3ZRvd1Xk  Untitled+Page+1e2faba2-c8b9-4b88-9525-239574265151
+      [text] PEHMmJoIyXWt  Untitled+Page+2a0e8d3d-e9c9-4324-b796-3e4e3b4c9fa3
+      [text] QAlBT5L0U77o  Untitled+Page+02a30539-b2cb-4e34-9d58-3e6838c22571
+      [text] d4GoXWMVZpTk  Untitled+Page+2d688967-7729-452c-9f0b-3e1f81c18d59
+      [text] m6VEHKFyy24V  Untitled+Page+2fbab9a8-28b1-4d40-b68b-a808f422e061
+      [text] R6N4UNCVuhmX  Untitled+Page+3e190803-6ef5-468d-902e-49b22cf35601
+      [text] nxQLo1qypYFI  Untitled+Page+4e085db8-20bc-47c2-9269-777adeaa39a9
+      [text] HSgfx5PYcMku  Untitled+Page+4f195e69-5e3d-4834-aa81-624f4d886001
+      [text] EnoYX6aypzxF  Untitled+Page+5ac4d6d7-4bf5-4c47-b060-18827ff624a5
+      [text] 6u0ulE2oRnn8  Untitled+Page+5b2fa9a5-cb2b-4268-9866-2d30c654cd3e
+      [text] 1wIpZHtIor54  Untitled+Page+5b6822b9-f30d-4b33-baf8-8c7220857c07
+      [text] 4P06L6ByhDqZ  Untitled+Page+5eb96f5e-cec5-4bb4-bdb0-36d3495a2b9c
+      [text] RuL7Aw1RylzD  Untitled+Page+05fb4533-3eb8-4db3-9c75-fb9e47e6d4a7
+      [text] tNU1N38WljkI  Untitled+Page+6c34c5fe-fc19-45d2-a2c2-0f2e4075ba92
+      [text] bVM06xPbxleC  Untitled+Page+6f2e9b90-0d99-47bc-917a-a91d275df2b8
+      [text] lgd8ARrfb5Jn  Untitled+Page+6f1034e0-97d1-4f40-b803-ed8c37325a04
+      [text] uAxgPSOYkWUR  Untitled+Page+7a9c293f-4dde-43c0-87e3-7c270975b30b
+      [text] yNp309vIH5zW  Untitled+Page+7ce75dab-b663-454e-88cd-4682a060e96d
+      [text] OSbseyzdSi7p  Untitled+Page+8b2f62fe-1fb2-4c31-b1b2-27ccf095f5e9
+      [text] FjwfVn97mBuU  Untitled+Page+8dacb416-5c24-4798-bb64-3eef9dbce321
+      [text] fjCcngSodyWw  Untitled+Page+9a36ccb0-549f-4cde-92f2-0667af0aca53
+      [text] wSK2PS6QhHfZ  Untitled+Page+9c88e58f-ef30-4222-b2af-e2dea03ce7ff
+      [text] OeDXajJHwoyj  Untitled+Page+09e93a36-9e61-4ec8-a064-ce6f3bb4fb8b
+      [text] Druh3mRIPYL2  Untitled+Page+9ece0f15-c5e4-4e68-bdff-867a413c4944
+      [text] Q31yBXtSmI8I  Untitled+Page+9f0a661d-4eb0-42c4-aa39-36e6785d6018
+      [text] zWZ2pUZgB1k8  Untitled+Page+14e37e61-190b-4552-9d20-6e369a987eb0
+      [text] 9B68XulgARKG  Untitled+Page+16f5f355-983a-4cd2-a717-3bd9320e44a6
+      [text] r7SMeRWFzUeA  Untitled+Page+017ab035-4aff-4cf1-8a10-5f84b8789eff
+      [text] Ls12Jt2DWe2W  Untitled+Page+18a40c64-baa2-46fb-b64a-2404c6d40c41
+      [text] yKtFYaiJNxpe  Untitled+Page+19c77c00-8363-4006-9310-b99be0935695
+      [text] 5e4auzGI2dUD  Untitled+Page+33e071f0-b475-4f70-9162-68456fc6140a
+      [text] cN12yx7O29kZ  Untitled+Page+34c4b0fc-525b-4ef8-aecb-8223d49798cd
+      [text] 5WsEIHq0DY6P  Untitled+Page+42c95a95-588d-4ce2-a2ec-b9d091203e1d
+      [text] Jkex6dJAZdPZ  Untitled+Page+44ce8e04-c32f-4471-a823-bafb7f8ab1aa
+      [text] hccnXHFAw41c  Untitled+Page+49eccee0-135d-41c1-b4be-134fd75d4530
+      [text] JYTEWO1MdYXQ  Untitled+Page+50d0947c-5ed5-4121-a23a-b4d4b27320c3
+      [text] hetdsdtyBAlU  Untitled+Page+053ef4bc-5ed3-4707-b19d-6f5631819499
+      [text] 3yyrEYiynCHd  Untitled+Page+059d3f13-98d9-476d-b999-122a15e435bf
+      [text] u1OELTHQX9JX  Untitled+Page+62e1badd-9fca-472c-b13f-6c1382a4789c
+      [text] fISkphlpJzBH  Untitled+Page+68d5d0cd-9314-42f3-8349-beeb52a9fccf
+      [text] KXGdYO6zpb1X  Untitled+Page+75d8cce7-e2fc-432a-a288-c61e592771fa
+      [text] Sdg99luZSVdN  Untitled+Page+86c5e670-7e99-4ece-a5bb-b59f3b0abd17
+      [text] ZuuUsUOkDbQq  Untitled+Page+88c6dfd9-de69-46b8-878a-0351dab422af
+      [text] llfZRcgr4ML0  Untitled+Page+94c70389-5d5a-4cf7-9e77-10725fd7529e
+      [text] yJsjDQxjSQXz  Untitled+Page+094ca0d3-0e56-4d68-9fd7-5d7efaa9ce17
+      [text] UgNblIfZqXgi  Untitled+Page+98fe79a4-f370-4857-a62b-3bea0a2df40c
+      [text] PQE5kOHhyBDX  Untitled+Page+125cf1f9-f7de-40c1-9945-646935fa9f5a
+      [text] HCl8kfiKjbSE  Untitled+Page+213bc92a-a32c-4582-a6bd-34f1a6802bc9
+      [text] DOS3iKLxHBt4  Untitled+Page+245ca4be-86c3-4af2-9d8e-23693c6e200e
+      [text] kk3hSgrHDVo5  Untitled+Page+554fcc8c-0a74-480c-aaf2-bf5b55e1ce8e
+      [text] wvXvAtuLmFs1  Untitled+Page+617da630-9a1f-4b62-a0e1-02ee9631686b
+      [text] cwePVCIlJtpF  Untitled+Page+635f36d0-295b-4c08-a74e-dba7d9f20b31
+      [text] 1steTOch9y42  Untitled+Page+770d38b4-2c79-49ae-b190-7bcbba2553cb
+      [text] Mmn3a998YfBG  Untitled+Page+788f560b-5586-4b06-9a6a-fc1a75fddb90
+      [text] KNT9b3YPrJgz  Untitled+Page+789c16c4-e8e5-4db5-9ce1-d00b1892f717
+      [text] nx8xgtyEzJh3  Untitled+Page+984d87a6-6549-48ca-92c7-ef69caef2f58
+      [text] wxm4xnmYVRIW  Untitled+Page+984dab79-5ebf-42d5-b429-8c73bbffbbca
+      [text] s9IqreaAZleN  Untitled+Page+1749dc33-de3e-4ffd-9048-154929361c77
+      [text] t7Ahmj6XFr0t  Untitled+Page+3315a1d6-fcd7-426e-8a35-364600caefa2
+      [text] AnfYD1AVD5Cs  Untitled+Page+3539ef9d-26b5-4baa-b151-e5fd45f6307a
+      [text] IZRZ69DpleBs  Untitled+Page+03607a96-c8d8-49bc-b07e-d6e69a89406f
+      [text] J7MyfRFiJTr1  Untitled+Page+4521f839-335c-4632-9a2d-8a0f132d61bc
+      [text] XwMKfHFGP1fx  Untitled+Page+7933c55d-2d48-494c-823a-9f1f803de070
+      [text] 6Cs30xyK4p5h  Untitled+Page+7953d1f2-d678-414f-b1ac-6cd11d062183
+      [text] 3TrE0tPUXF4e  Untitled+Page+8939d4e6-15f9-4c22-a543-878cad0e4792
+      [text] RpMTrkUZK0Ub  Untitled+Page+9030b26e-933e-4045-9826-a33a7e40f8cc
+      [text] lC85QqLQENrV  Untitled+Page+14434d43-5747-48c4-97b5-8ebe1945f371
+      [text] hvoio1WklI3x  Untitled+Page+69402fab-9fac-44ac-ae51-d4bf5a641e13
+      [text] W35ElwnQzVGU  Untitled+Page+149359f6-ee85-4381-a6d0-7fcea062fc89
+      [text] VxV1BtiNqdIN  Untitled+Page+248188d9-e708-4cf2-adfa-393e07c9dd60
+      [text] z19Wu6or67Ve  Untitled+Page+383838a4-b395-4b22-88d4-64033b0b4757
+      [text] JGgpMM9glm71  Untitled+Page+2827094f-7777-4f08-a59d-0d6ff9f3f737
+      [text] wQtspGOcHhI7  Untitled+Page+03306551-360a-4799-b703-9188214a04b3
+      [text] JcGctKmXqkc9  Untitled+Page+7474880e-6d14-4de8-bd10-af0d3a3fb2c9
+      [text] 9ScH9yuH0mAC  Untitled+Page+60757999-2bdc-45ec-b11b-350847444490
+      [text] OwdlWiMyD7ve  Untitled+Page+76607865-90a3-4c91-b2b9-945c1189ea0f
+      [text] RkfAfl9azQq7  Untitled+Page+91822696-bf92-450a-9a05-aacaff8202e2
+      [text] lPlPo1QIRTGX  Untitled+Page+a04ad54f-a15a-4bff-b263-1b7cc1d36803
+      [text] 22H2wNgsB6ys  Untitled+Page+a68c18b4-91c8-4740-891c-a6991d089f82
+      [text] sAR9fq94OnOV  Untitled+Page+a92cb0d2-4b0d-4c11-868b-e6e51b2e71e0
+      [text] fmWpzWxORwiN  Untitled+Page+a2640518-56f5-4b20-88f6-4e46967db16b
+      [text] lkvZZLjVyiK0  Untitled+Page+aa0ecad7-03fa-4275-accd-80263831a07f
+      [text] qrBWYkbSyolr  Untitled+Page+ab72ade6-fadd-44b8-b181-e5e57016c0a8
+      [text] koDk5d1tBQCh  Untitled+Page+abbbc3b9-3fc1-46d7-a51f-a79afebc9489
+      [text] bEq59AeX88jZ  Untitled+Page+ac1e9efc-11e0-4968-bee1-2912eac1718f
+      [text] tBHaeBDkpxhi  Untitled+Page+b2da4739-8635-48bb-a5af-4ffc1ed0f05c
+      [text] b9BiHNvcaLiW  Untitled+Page+b4cdbec8-311b-4a1a-ab13-15ed1d2fabfa
+      [text] rE9BdK6Ckv1M  Untitled+Page+b41e4d77-54a8-4b0f-b6fc-1da0a0163441
+      [text] vuSmdPrHsC5r  Untitled+Page+bafc0cb9-d7b1-47f2-95a5-d8ab24253ab9
+      [text] 9cv7n54MR63B  Untitled+Page+c9cf08ea-e101-497b-ba83-dbf7818e69bf
+      [text] Kmw7LYBGb2fn  Untitled+Page+c554a872-a2a9-4b74-afa5-40c753196a75
+      [text] uO6Hmg5GgCFx  Untitled+Page+c57163fc-6371-44cb-887a-99361aac13b4
+      [text] 07JKufYTIzb8  Untitled+Page+c917660d-b4bb-4b27-9b3d-da68df078a37
+      [text] o6uMOzhpKwMJ  Untitled+Page+c5845613-fc5d-4241-8332-99448f5fd00b
+      [text] tkMo2F2OWwK2  Untitled+Page+cd37411a-42ed-4c95-b0b8-6bf4616d2b6d
+      [text] C7v2amYc1V3Z  Untitled+Page+ced9c3b4-5983-4252-8348-4ad9d4e6a431
+      [text] s1AJWPkFBNix  Untitled+Page+ced4319c-fc7c-4c0f-b353-aa4a7df2b7f3
+      [text] kmX26wYyyG6Q  Untitled+Page+d8ac7872-b1bf-4e23-a591-4b1511f0501b
+      [text] WCIItc8ncy3h  Untitled+Page+d8cb9af1-9a8d-4032-aef5-5b94b7a137b9
+      [text] Hb0SZcSfjaCH  Untitled+Page+d70eee44-7714-4e77-8972-32de0b737959
+      [text] kuzvXELTXguv  Untitled+Page+d011900e-16e1-4b32-acd7-a6c27449dba5
+      [text] NtM6fUeJB53K  Untitled+Page+d19750de-c971-4a43-97f1-68b0808103f7
+      [text] RA2u9VAQH4p3  Untitled+Page+d75585e5-e50b-46f8-b333-01edd8105ca5
+      [text] rhiSqDDdz9gw  Untitled+Page+dc021438-39da-4c15-b36b-4bd7f9604e7e
+      [text] 3MKLbnztAFjG  Untitled+Page+de6d876f-7eaa-4a8f-a13f-dde8adcf4651
+      [text] hfCfm9UNHsKs  Untitled+Page+de147a6c-0a3a-4a32-bda9-1ae726387f0b
+      [text] oEENIw0SDi3Q  Untitled+Page+e9e80546-ff89-4bcd-aa78-87a07791c35b
+      [text] rNjTDsr7tuNj  Untitled+Page+e24f2f01-76e6-4501-aaa6-0918ce11e5fe
+      [text] 78PinyGVWOP7  Untitled+Page+e37e2d04-948c-410f-bf70-38c5b412782e
+      [text] vIBBShPXvNEB  Untitled+Page+e2207a25-5833-445e-b8f1-1eb44c2ce233
+      [text] 7ByVx4P8E88v  Untitled+Page+e55716ff-dbc3-4a49-8b34-a1292f4a5ac6
+      [text] lvmN2oicxmnF  Untitled+Page+ea9f6a0f-d7c8-4310-b010-90ef3eeec7d9
+      [text] xhE4aY9KMRyl  Untitled+Page+eaf5d847-b1b8-4093-b937-db35fea537b1
+      [text] MyxCFSmBBfHe  Untitled+Page+ec336170-ac7e-4dd5-a7ef-76a4f64bfa64
+      [text] p7oIJUxfNAfQ  Untitled+Page+ee3e9000-a5c0-4fbb-92bb-7e3ec953be32
+      [text] O0MO3htyRWAS  Untitled+Page+f6cf9064-26ab-4bd0-b12e-46010a751151
+      [text] GB4RgYV5BplI  Untitled+Page+f7fa8a27-5d22-4ffb-b296-8325e74351cb
+      [text] VMRdIUL1RQyB  Untitled+Page+f36d114a-8eee-4563-a8be-ca8c8ddbc72b
+      [text] bmk77LdNjfsm  Untitled+Page+f241e0a3-02dc-4f87-a90c-4245a9d80c66
+      [text] 8kqzTFXqB8y6  Untitled+Page+f7341eba-0737-4009-b67f-a2f5a6bcb519
+      [text] mBSIwlSUH7fT  Untitled+Page+f575643e-eaa6-4725-8e4e-acdec768f95c
+      [text] YJVFakmJ9696  Untitled+Page+fa9d6859-1c89-4870-929b-4f1390c85bad
+      [text] SIT9YQz64Xvp  Untitled+Page+fcabfe45-1ecd-409f-8a6c-f150aca312be
+      [text] kND2xW8wXZwD  Untitled+Page+fd6a69a2-3042-4477-94bf-961abec0b12d
+      [text] pjBgFI2vIPI3  Untitled+Page+fd94bdb6-2ddd-4f6e-808f-7a6e24baa48d
+      [text] I4pjwnD03bAY  Untitled+Page+fff8a9ec-357d-4a56-aebb-40f21b2f9762
+      [text] jTDb1gyypmSE  Visualisation+ae2d1b1d-fadc-489c-b5d0-f6549c4c3769
+      [text] 1d8FgE14kVGv  b.vc.c+zvbb.+b.+2d083047-2796-4b06-84cf-ddb9451e24d9
+      [text] VDff64565EdN  https:++en.wikipedia.org+wiki+OpenMPT+af5c13d9-fbbe-4e58-a7e7-c1f9175cb728
+    [text] 50XDCTX6ZSXL  Markdown++VSCode++22fcd139-2941-4a64-9196-736004ca039c
+    [text] Y47HNfphkwYK  Markdown_Notes_Editors+Managers+-+Sheet1+4ce0437b-25c2-40fc-8c1d-4fc5ad9b9ac9
+      [text] 5qkKxbxzcbB1  Android+688aba7a-e513-4362-a8eb-4354c17ea0c0
+      [text] T5qFZwEa8CE5  Attachments+Management+Options+89493ada-aacd-4239-b41f-bf4da39f5112
+      [text] kHbSCewna5pa  Attachments+Management+bd547eeb-d1af-4585-aab2-8c5b8496ad8f
+      [text] JkY5yMzkNyys  Attachments:Copied+to:+.++0e16add3-0cf0-4b17-84a1-3bdb0ffd1aba
+      [text] SctTD7LSo4jM  Attachments:Copied+to:+.+++filename+.assets+b5aaf8ff-769a-45d9-87d7-9792b76f4db4
+      [text] u40wtzdZGBzZ  Attachments:Copied+to:+.+assets+03b1bfa2-1350-4924-8487-ac217befbf5b
+      [text] BBNa1ccm9Gnr  Attachments:Copied+to:+Global+folder+089c66ef-fef3-4c63-8e7e-3b6ebe541de9
+      [text] ZreAH7gR9F33  Attachments:Insert:+Drag'n'Drop+e25dd64b-4310-4e59-8f73-9c4782cbc331
+      [text] K0IgsRn8yj7l  Date+Info+Updated+c598b46f-7683-4ae0-a228-1e4d56d0628e
+      [text] zTCbPMNtdRIH  Desktop+Support+05b8023d-42af-421a-af4b-00f0c58f5811
+      [text] AgBKeRjHXGSs  Editor+Features+b10f203b-f2ed-4630-8204-3f18504dec69
+      [text] iXvAWHbznGST  Extra+Files+33b056ce-ab3b-4bb5-a944-717beac7cbf6
+      [text] wYub4yAs9ytt  Has+Image+Management+bc67653d-7391-4021-91ee-e54493a17498
+      [text] SAMPOphyk0Dd  Has+attachment+management+ede421ad-f85e-4d2a-89de-6d53a9666642
+      [text] KjJaGC5ntBYL  Images+Management+40e8734d-3bdc-4360-9997-cdb3a72e8a3e
+      [text] Du0dJB09EHQX  Images+Management+Options+969c8a54-87e9-4628-b219-5403c1f50a91
+      [text] fhL5jVNKRWkr  Images:Copied+to:+.+++filename+.assets+8b04eef7-da2d-42a8-b50b-70471b78e7ef
+      [text] 7fIgeVGAZaly  Images:Copied+to:+.++ec45f316-b088-4e0c-823f-254fbf7835f9
+      [text] cYDSd7tDZIMy  Images:Copied+to:+.+assets+03b2383d-6eec-48dd-9c80-3c0cd31e2c6f
+      [text] tOORkcAG9Ds4  Images:Copied+to:+Global+folder+5293ddba-1d93-401f-89a0-b4959d177d8f
+      [text] 1l1qGRDVnmEX  Images:Insert:+Drag'n'Drop+51d5746e-add5-4b04-ba8f-36fb368cf2fd
+      [text] vZ2XZYl3GDJn  Images:Insert:+From+Clipboard+93de0ee2-2136-4b0e-9e54-54d079117117
+      [text] rgW5tIzVi6hr  In-Place+Preview:+Images+16e47afb-51f0-4a7d-a6e0-ea6b318bdbde
+      [text] d6SV6KUtpp5e  In-Place+Preview:+Styling+717113c3-30e6-4ae6-8496-ee44f28a0cb8
+      [text] 8R4Q7Vs2IxsB  Licence+69f7d970-99b6-4982-a7fa-52974c8d7f08
+      [text] jbDOcTGUDy62  Linux+Mobile++PinePhone,+etc.++9c3cd4f4-174f-4655-8d07-7c80b9a74c7f
+      [text] p4cvjihidoPS  Linux+bd9e0ca4-5690-4acd-9262-5a36f045030a
+      [text] nQlWX8bNYoGp  MacOS+86d667ff-925c-4321-abfb-98b397197d2f
+      [text] 9TnCCRpvXBee  Mobile+Support+8439641a-abfc-4243-8f93-94baf1b13dc5
+      [text] UWGZ6IJcEiP0  Nested+Lists:+Adjust+numbering+on+un-indent+f03385ed-a449-43b3-95e4-5ffb5a9936b7
+      [text] KANo6H0Bsoq5  Nested+Lists:+Auto-Correct+Numbering+on+delete+48b5f834-b7bd-4251-9985-955ab16e4c24
+      [text] aduKCV6vNuLR  Nested+Lists:+TAB+starts+2nd+level+numbering+7c3cf543-19b9-4791-9080-9b626fc2e51c
+      [text] xuw9CpyYarrH  Open+with+External+Editor+f4a5cb3f-cbee-46c1-b07d-f16a4f66e540
+      [text] FaZpgUepuKLD  Plain+Filesystem+++Plain+Text+8be7dc74-69b5-4f1e-ac99-d09830cb305e
+      [text] Yzbjn1oFqFqZ  Plain+Text+Mode+d7959b95-6dcd-4072-8195-0edc8a2d817c
+      [text] KZsCTPj9SjZN  Relative+links+to+copied+attachment+2c300910-5783-4459-8ac0-abbcc0ed19c2
+      [text] SBJlDtxQXOqw  Relative+links+to+copied+image+d1595b74-9773-4f66-a7a6-e0c8b8a52641
+      [text] Nzh8ekjYz1aY  Tables+w++Multi-line+Text+are+Managable++ad7aaf59-b70a-4b77-9ebc-789aa9f80a2f
+      [text] VUHXVwpk27cB  True+WYSIWYG++Single+Pane++9fe24b0e-0488-4eb0-9b16-002fbc98ce07
+      [text] 0KhNC19Itz5J  Untitled+Page+1bbe539f-8af1-4252-ac19-edf1f3c5dea2
+      [text] GR2Geu7gFpUX  Untitled+Page+2fbb6909-e57e-4dfd-b432-14b1a119bf20
+      [text] SwNJX8hn7DQ6  Untitled+Page+8c9d43d5-88a9-4ea0-83fd-97bf5fd43b24
+      [text] c3v8Lm9t4Xpe  Untitled+Page+94b0d081-0dc3-44e1-bb9f-55a92a3a437e
+      [text] XYmW0zCLwZNf  Untitled+Page+af461209-43c5-4c7a-85c1-b7d78544afc6
+      [text] XBCc6kY0RYRs  Untitled+Page+f21f635c-6737-4cb5-9dfa-2ef82eff5213
+      [text] OaQ8gWyoGRAQ  Windows+dc7b9f6b-9c7a-43d8-baec-8402596a05f5
+      [text] 6nZNJ1oJRGzj  Written+In+a650ddef-1592-41bc-9187-38a081588a77
+      [text] lvr4vtwLLvUf  iOS+22c96461-1a7c-4e87-8197-0047abf29dd1
+    [text] npumd9D46cUx  Task+Project+Managers+DBs+f706e683-7bc2-4556-8a6b-f561b75ad016
+      [text] bKRYy0HJVHZj  Task+Project+Managers+DB+-+MAIN+5f81e9b4-e82d-41bc-b869-ea06bd97784e
+        [text] xfXsovWLTo07  Amazing+Marvin+e9509342-8e14-4a77-8ce7-87c73cce5e5b
+        [text] tZxzFxl1l1vl  Asana+28b988d9-fdc6-4dc6-a31e-37ead9856370
+        [text] s4OMfjzGdyEG  Chaos+control+78812f33-ce46-40cf-8a72-a897ea1a7810
+        [text] 5IHY6TSAF0zJ  Click+Up+30580c65-343e-4f52-aa4d-25593c014191
+        [text] mFiKIW4b4DJt  MLO3+82b28629-fe6b-4cc6-afa5-d8e2d7c5c204
+        [text] rgUaL0zjX8gu  Taiga.io+863a8720-b80d-4ffa-9e5c-c5ed509069b2
+        [text] JJpfIN62LWVg  TickTick+f2b0f624-aff5-472b-898f-46aee5f52c08
+        [text] Yozo2wqF05Ui  Todoist+0b2ddb1d-de51-487d-a83c-b06fd88e29d5
+        [text] PP2Sw8V3rpR6  ntask+12395f52-3c64-4a87-96e8-dfeb58053156
+    [text] RxU2zFjKP4Ye  Клавиатуры+-+Keyboards+cca52e3c-954f-4bf4-99bf-cc9bef4a2b9b
+      [text] RBtYKMNJMZkw  Untitled+Page+35f35827-466a-458b-aaa2-7487b0bd2daa
+      [text] EowlcAgIXRWC  Untitled+Page+53d3fa5c-c76e-4332-a343-a5e3acf83091
+      [text] VibNUGHEDGVa  Untitled+Page+f2adfbd1-1f06-4394-ae3c-d34e03a397bc
+      [text] B98noCojFg5v  https:++www.keyboardco.com+keyboard+usa-majestouch-minila-air-67-key-click-action-bluetooth-keyboard.asp+26c85a7e-d2e4-4e7f-8a18-c28e072b8e79
+[code] XXD9TijByv1Z  Flat-Rate LLM API Providers Comparison — August 2026
+[text] hjeLg2ksheH9  erebus — services & ports
+[text] NG9Xbww6vNgL  hermes-pylon — fork repo (Sep 2026)
+[text] j0vCOhnVuZwl  Tasks
+  [text] n22Gqh7QhkuP  Board
+    [text] jZHkNCdo9pdz  Настроить поверку счётчиков (13 помещений)
+    [text] xu7Ha8eQYzAR  Подать показания за сентябрь (ГуП ТЭК / ТГК-1)
+    [text] p7bBwyzmeD6J  Установка счётчиков с нуля — согласование с УК
+    [text] 78jtbEMpHX9i  Прочее (пример карточки)
+[code] 0sHlEZMymPhM  Home Server Upgrade Plan (2026-09)
+
+TOTAL: 947

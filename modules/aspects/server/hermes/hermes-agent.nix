@@ -33,7 +33,9 @@
       ];
 
       graphitiConfig = import ./_graphiti.nix { inherit config pkgs lib; };
-      llamaConfig = import ./_llama.nix { inherit config pkgs lib; };
+      # The agent's own bge-m3 embedder (:8081, used by graphiti's vector
+      # search). Skipped on serenity — see the gate in the mkMerge below.
+      llamaConfigRaw = import ./_llama.nix { inherit config pkgs lib; };
       graphitiMemoryConfig = import ./_hermes-graphiti.nix { inherit config pkgs lib; extraProfiles = extraHermesProfiles; };
       playwrightConfig = import ./_playwright.nix { inherit config pkgs lib; };
       litellmConfig = import ./_litellm.nix { inherit config pkgs lib; };
@@ -106,7 +108,11 @@
       ) extraHermesProfiles);
     in lib.mkMerge [
       graphitiConfig
-      llamaConfig
+      # Gate by host, the same idiom nc-rag uses for its host-specific units:
+      # serenity already runs an identical bge-m3 embedder for nc-rag (same
+      # model, same port, CUDA), so the agent's copy is skipped there instead
+      # of colliding on :8081 and pulling a second copy of the weights.
+      (lib.mkIf (config.networking.hostName != "serenity") llamaConfigRaw)
       graphitiMemoryConfig
       playwrightConfig
       litellmConfig

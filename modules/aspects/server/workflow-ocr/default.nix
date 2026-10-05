@@ -21,14 +21,6 @@
       ncOcrFlowSrc = ../../../../pkgs/nc-ocr-flow;
       ocrVenv = "/var/lib/nc-ocr/venv-v4";
 
-      # L2 handwriting router model (WritingtypeAPI DenseNet-121, Apache-2.0)
-      # https://github.com/DALAI-project/WritingtypeAPI
-      writingTypeModel = pkgs.fetchurl {
-        name = "writing_type_v1.onnx";
-        url = "https://raw.githubusercontent.com/DALAI-project/WritingtypeAPI/main/model/writing_type_v1.onnx";
-        sha256 = "sha256-9D+k0zkKTv6X3VRSnZbi6uo7hBywGr8bZnKjXrb/7/4=";
-      };
-
       # Start script: create venv with pip if missing, then run webhook server
       webhookStartScript = pkgs.writeShellScript "nc-ocr-webhook-start" ''
         set -eu
@@ -61,11 +53,17 @@
       # Tesseract language data
       environment.etc."tessdata".source = "${pkgs.tesseract5}/share/tessdata";
 
-      # L2 handwriting router model (read by nc-ocr-webhook, nextcloud user)
-      environment.etc."nc-ocr".source = pkgs.runCommand "nc-ocr-models" { } ''
-        mkdir -p $out
-        ln -s ${writingTypeModel} $out/writing_type_v1.onnx
-      '';
+      # MobileNetV3-Small fp32 doc/photo classifier (0=document, 1=photo),
+      # read by nc_ocr_flow.classifier from /etc/static/nc-ocr/.
+      # The int8 sibling of this model is broken (logits collapse to ~zero and
+      # real scans come back "photo"), so fp32 only. Measured on this host:
+      # 6/6 text-bearing images caught, 53/54 text-free skipped, ~88 ms/image
+      # (tesseract text-density gives the same verdicts at 856 ms).
+      environment.etc."nc-ocr/mobilenet_v3_small_fp32.onnx".source =
+        pkgs.fetchurl {
+          url = "https://huggingface.co/vlad-m-dev/mobilenet_v3_small_onnx_photo_doc/resolve/main/mobilenet_v3_small.onnx";
+          sha256 = "sha256-UpqXVXf5im68cG/r+YkEeGh08KuwXTjOacQMFA2OF18=";
+        };
 
       systemd.services.nextcloud-cron.path = lib.mkAfter [
         pkgs.ocrmypdf
@@ -123,7 +121,11 @@
           NC_OCR_LISTEN_PORT = "8095";
           NC_OCR_FONT_PATH = "${pkgs.dejavu_fonts}/share/fonts/truetype/DejaVuSans.ttf";
           TESSDATA_PREFIX = "${pkgs.tesseract5}/share/tessdata";
-          LD_LIBRARY_PATH = "${pkgs.stdenv.cc.cc.lib}/lib";
+          # Doc/photo gate: fp32 MobileNetV3-Small (see environment.etc."nc-ocr/...").
+          NC_OCR_MOBILENET_MODEL = "/etc/static/nc-ocr/mobilenet_v3_small_fp32.onnx";
+          # onnxruntime imports numpy, which needs libz; without it `import numpy`
+          # dies and every image hit the "classifier failed" path.
+          LD_LIBRARY_PATH = "${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.zlib}/lib";
         };
 
         serviceConfig = {

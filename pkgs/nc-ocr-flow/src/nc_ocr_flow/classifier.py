@@ -39,7 +39,7 @@ def _get_session():
         import onnxruntime as ort
         model_path = os.environ.get(
             "NC_OCR_MOBILENET_MODEL",
-            "/etc/static/nc-ocr/mobilenetv2_doc_photo_quant.onnx",
+            "/etc/static/nc-ocr/mobilenet_v3_small_fp32.onnx",
         )
         _MOBILENET_SESSION = ort.InferenceSession(
             model_path, providers=["CPUExecutionProvider"]
@@ -50,8 +50,10 @@ def _get_session():
 def classify(image_path: str | Path) -> ClassifyResult:
     """Classify image as document or photo.
 
-    Failures default to PHOTO (skip) — false negative is worse than false
-    positive because wrongly-OCR'd photos pollute search results.
+    Failures default to DOCUMENT (OCR it). The previous default (photo/skip)
+    meant a missing or broken model silently discarded every image's text
+    forever; wrongly OCR-ing a photo costs a bit of search noise, losing a
+    document costs the document.
     """
     path = Path(image_path)
     try:
@@ -71,8 +73,8 @@ def classify(image_path: str | Path) -> ClassifyResult:
         return ClassifyResult(is_document=is_doc, reason="mobilenet")
 
     except Exception as exc:
-        log.warning("classifier failed: %s; defaulting to photo", exc)
-        return ClassifyResult(is_document=False, reason=f"error:{type(exc).__name__}")
+        log.warning("classifier failed: %s; defaulting to document (OCR it)", exc)
+        return ClassifyResult(is_document=True, reason=f"error:{type(exc).__name__}")
 
 
 __all__ = ["ClassifyResult", "classify", "DOC", "PHOTO"]

@@ -136,7 +136,9 @@
         # recipients (X25519 + TPM). Built on erebus from the existing values —
         # encryption needs only the public recipients, so no cross-host
         # decryption and no TPM plugin dance. Verified by TPM round-trip.
-        sops.defaultSopsFile = ../../../secrets/serenity/hermes-secrets.yaml;
+        #
+        # NOT via sops.defaultSopsFile: the shared server/sops aspect
+        # mkForce-nulls it deliberately, so every host names its file per secret.
 
         users.users.hermes.extraGroups = [ "users" "systemd-journal" ];
 
@@ -157,39 +159,41 @@
         ];
 
         sops.secrets = {
-          # Agent env + platform tokens
-          "hermes/env" = { owner = "hermes"; group = "hermes"; mode = "0600"; };
-          "hermes/telegram-bot-token" = { owner = "hermes"; group = "hermes"; mode = "0600"; };
-          "hermes/salem-bot-token" = { owner = "hermes"; group = "hermes"; mode = "0600"; };
-          # Model/search provider keys
-          "hermes/exa-api-key" = { owner = "hermes"; group = "hermes"; mode = "0600"; };
-          "hermes/minimax-api-key" = { owner = "hermes"; group = "hermes"; mode = "0600"; };
-          "hermes/synthetic-api-key" = { owner = "hermes"; group = "hermes"; mode = "0600"; };
+          # Env + platform tokens
+          "hermes/env" = { sopsFile = ../../../secrets/serenity/hermes-secrets.yaml; owner = "hermes"; group = "hermes"; mode = "0600"; };
+          "hermes/telegram-bot-token" = { sopsFile = ../../../secrets/serenity/hermes-secrets.yaml; owner = "hermes"; group = "hermes"; mode = "0600"; };
+          "hermes/salem-bot-token" = { sopsFile = ../../../secrets/serenity/hermes-secrets.yaml; owner = "hermes"; group = "hermes"; mode = "0600"; };
+          # Model + search provider keys
+          "hermes/exa-api-key" = { sopsFile = ../../../secrets/serenity/hermes-secrets.yaml; owner = "hermes"; group = "hermes"; mode = "0600"; };
+          "hermes/minimax-api-key" = { sopsFile = ../../../secrets/serenity/hermes-secrets.yaml; owner = "hermes"; group = "hermes"; mode = "0600"; };
+          "hermes/synthetic-api-key" = { sopsFile = ../../../secrets/serenity/hermes-secrets.yaml; owner = "hermes"; group = "hermes"; mode = "0600"; };
           # Gateway API listeners (default :8642, salem :8643)
-          "hermes/api-server-key" = { owner = "hermes"; group = "hermes"; mode = "0600"; };
-          "hermes/salem-api-server-key" = { owner = "hermes"; group = "hermes"; mode = "0600"; };
+          "hermes/api-server-key" = { sopsFile = ../../../secrets/serenity/hermes-secrets.yaml; owner = "hermes"; group = "hermes"; mode = "0600"; };
+          "hermes/salem-api-server-key" = { sopsFile = ../../../secrets/serenity/hermes-secrets.yaml; owner = "hermes"; group = "hermes"; mode = "0600"; };
           # Dashboard basic auth (mobile clients without Nous OAuth)
-          "hermes/dashboard-basic-auth-hash" = { owner = "hermes"; group = "hermes"; mode = "0600"; };
-          "hermes/dashboard-basic-auth-secret" = { owner = "hermes"; group = "hermes"; mode = "0600"; };
+          "hermes/dashboard-basic-auth-hash" = { sopsFile = ../../../secrets/serenity/hermes-secrets.yaml; owner = "hermes"; group = "hermes"; mode = "0600"; };
+          "hermes/dashboard-basic-auth-secret" = { sopsFile = ../../../secrets/serenity/hermes-secrets.yaml; owner = "hermes"; group = "hermes"; mode = "0600"; };
+          # hermes-webui's EnvironmentFile. Declared per host (webui.nix cannot
+          # name a host's file); restartUnits is required — sops-nix reloadUnits
+          # sends a signal the python server ignores.
+          "hermes/webui-password" = { sopsFile = ../../../secrets/serenity/hermes-secrets.yaml; owner = "hermes"; group = "hermes"; mode = "0400"; restartUnits = [ "hermes-webui.service" ]; };
           # Langfuse — agent traces (same project: it is the same agent, moved)
-          "langfuse/hermes-erebus/public-key" = { owner = "hermes"; group = "hermes"; mode = "0600"; };
-          "langfuse/hermes-erebus/secret-key" = { owner = "hermes"; group = "hermes"; mode = "0600"; };
+          "langfuse/hermes-erebus/public-key" = { sopsFile = ../../../secrets/serenity/hermes-secrets.yaml; owner = "hermes"; group = "hermes"; mode = "0600"; };
+          "langfuse/hermes-erebus/secret-key" = { sopsFile = ../../../secrets/serenity/hermes-secrets.yaml; owner = "hermes"; group = "hermes"; mode = "0600"; };
           # Langfuse — LiteLLM proxy traces
-          "langfuse/graphiti-litellm/public-key" = { owner = "hermes"; group = "hermes"; mode = "0600"; };
-          "langfuse/graphiti-litellm/secret-key" = { owner = "hermes"; group = "hermes"; mode = "0600"; };
+          "langfuse/graphiti-litellm/public-key" = { sopsFile = ../../../secrets/serenity/hermes-secrets.yaml; owner = "hermes"; group = "hermes"; mode = "0600"; };
+          "langfuse/graphiti-litellm/secret-key" = { sopsFile = ../../../secrets/serenity/hermes-secrets.yaml; owner = "hermes"; group = "hermes"; mode = "0600"; };
           # Provider keys LiteLLM reads at runtime
-          "hermes-mitmproxy/github/pat-hermes-full" = { owner = "hermes"; group = "hermes"; mode = "0600"; };
-          "hermes-mitmproxy/llm-providers/openrouter/api-key" = { owner = "hermes"; group = "hermes"; mode = "0600"; };
-          "hermes-mitmproxy/llm-providers/groq/api-key" = { owner = "hermes"; group = "hermes"; mode = "0600"; };
-          "hermes-mitmproxy/llm-providers/huggingface/api-key" = { owner = "hermes"; group = "hermes"; mode = "0600"; };
-          "hermes-mitmproxy/llm-providers/mistral/api-key" = { owner = "hermes"; group = "hermes"; mode = "0600"; };
+          "hermes-mitmproxy/github/pat-hermes-full" = { sopsFile = ../../../secrets/serenity/hermes-secrets.yaml; owner = "hermes"; group = "hermes"; mode = "0600"; };
+          "hermes-mitmproxy/llm-providers/openrouter/api-key" = { sopsFile = ../../../secrets/serenity/hermes-secrets.yaml; owner = "hermes"; group = "hermes"; mode = "0600"; };
+          "hermes-mitmproxy/llm-providers/groq/api-key" = { sopsFile = ../../../secrets/serenity/hermes-secrets.yaml; owner = "hermes"; group = "hermes"; mode = "0600"; };
+          "hermes-mitmproxy/llm-providers/huggingface/api-key" = { sopsFile = ../../../secrets/serenity/hermes-secrets.yaml; owner = "hermes"; group = "hermes"; mode = "0600"; };
+          "hermes-mitmproxy/llm-providers/mistral/api-key" = { sopsFile = ../../../secrets/serenity/hermes-secrets.yaml; owner = "hermes"; group = "hermes"; mode = "0600"; };
           # Email MCP (himalaya runs on the agent host and cats these)
-          "email/gmail/account1/adress" = { owner = "hermes"; group = "hermes"; mode = "0400"; };
-          "email/gmail/account1/app-password" = { owner = "hermes"; group = "hermes"; mode = "0400"; };
-          "email/gmail/account2/adress" = { owner = "hermes"; group = "hermes"; mode = "0400"; };
-          "email/gmail/account2/app-password" = { owner = "hermes"; group = "hermes"; mode = "0400"; };
-          # hermes/webui-password is declared by the hermes-webui aspect itself
-          # (it reads config.sops.defaultSopsFile), so it is not repeated here.
+          "email/gmail/account1/adress" = { sopsFile = ../../../secrets/serenity/hermes-secrets.yaml; owner = "hermes"; group = "hermes"; mode = "0400"; };
+          "email/gmail/account1/app-password" = { sopsFile = ../../../secrets/serenity/hermes-secrets.yaml; owner = "hermes"; group = "hermes"; mode = "0400"; };
+          "email/gmail/account2/adress" = { sopsFile = ../../../secrets/serenity/hermes-secrets.yaml; owner = "hermes"; group = "hermes"; mode = "0400"; };
+          "email/gmail/account2/app-password" = { sopsFile = ../../../secrets/serenity/hermes-secrets.yaml; owner = "hermes"; group = "hermes"; mode = "0400"; };
         };
 
         # ── Cutover guard (Stage A) ──────────────────────────────────────

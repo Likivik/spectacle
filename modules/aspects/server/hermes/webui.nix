@@ -41,19 +41,12 @@
         # tailscale serve exposes 8444 → 127.0.0.1:8787 (node-local state,
         # deliberately not in nix — same treatment as pocketrisu on :443).
 
-        sops.secrets."hermes/webui-password" = {
-          # Host default — this aspect is shared by every host that includes it,
-          # so it must not hardcode one host's secrets file (that bug meant a
-          # second host would decrypt erebus's file or fail to find the key).
-          sopsFile = config.sops.defaultSopsFile;
-          owner = "hermes";
-          group = "hermes";
-          mode = "0400";
-          # KEY=value content, consumed directly as an EnvironmentFile.
-          # NOTE: sops-nix reloadUnits sends a signal the python server
-          # ignores — secret changes need `systemctl restart hermes-webui`.
-          restartUnits = [ "hermes-webui.service" ];
-        };
+        # `hermes/webui-password` is declared by the HOST, not here: the shared
+        # server/sops aspect mkForce-nulls sops.defaultSopsFile on purpose, so a
+        # shared aspect cannot point at one host's secrets file. This aspect only
+        # consumes /run/secrets/hermes/webui-password.
+        # Any host declaring it must keep restartUnits = [ "hermes-webui.service" ]:
+        # sops-nix reloadUnits sends a signal the python server ignores.
       };
   };
 }

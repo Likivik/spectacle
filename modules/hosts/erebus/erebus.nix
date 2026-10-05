@@ -110,11 +110,17 @@ in
 
       users.users.hermes.extraGroups = [ "users" "systemd-journal" ];
 
-      # Host-wide default secrets file: shared aspects (hermes-webui) reference
-      # config.sops.defaultSopsFile instead of hardcoding one host's file.
-      sops.defaultSopsFile = ../../../secrets/erebus/secrets.yaml;
-
       sops.secrets = {
+        # hermes-webui consumes this as an EnvironmentFile. Declared per host
+        # (the shared aspect cannot name a host's secrets file).
+        "hermes/webui-password" = {
+          sopsFile = ../../../secrets/erebus/secrets.yaml;
+          owner = "hermes";
+          group = "hermes";
+          mode = "0400";
+          restartUnits = [ "hermes-webui.service" ];
+        };
+
         "tailscale/auth-key" = {
           sopsFile = ../../../secrets/erebus/secrets.yaml;
           owner = "root";

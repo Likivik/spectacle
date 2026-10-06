@@ -69,6 +69,12 @@
 
       extraSopsEnv = lib.concatMapStringsSep "\n\n" (p: mkSopsEnv p) extraHermesProfiles;
 
+      # v0.21.5 serves every profile from ONE gateway per host: a per-profile
+      # unit exits 75/TEMPFAIL ("host gateway already serves profile X") and
+      # systemd restarts it forever. Keep the profile data (sops-env, api
+      # port, graphiti wiring); generate no gateway units for them.
+      extraGatewayProfiles = [ ];
+
       extraGatewayUnits = lib.listToAttrs (map (p:
         lib.nameValuePair "hermes-gateway-${p.name}" {
           description = "Hermes Agent Gateway (${p.name})";
@@ -98,7 +104,7 @@
             ];
           };
         }
-      ) extraHermesProfiles);
+      ) extraGatewayProfiles);
     in lib.mkMerge [
       graphitiConfig
       # Gate by host, the same idiom nc-rag uses for its host-specific units:

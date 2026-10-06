@@ -120,7 +120,7 @@ done
 # exactly what a missing secret produces.
 #   hermes-gateway-salem  guest: 78 (EX_CONFIG)  host: active, NRestarts=0
 #   hermes-dashboard      guest: 1 (FAILURE)     host: active, NRestarts=0, webui 302
-for u in hermes-gateway-salem hermes-dashboard; do
+for u in hermes-dashboard; do
   S=$(timeout 15 sudo -u hermes XDG_RUNTIME_DIR="/run/user/$UID_H" systemctl --user is-active "$u" 2>/dev/null || true)
   echo "  $u -> ${S:-unknown} (guest: needs real secrets/state; host: active)"
   case "$S" in

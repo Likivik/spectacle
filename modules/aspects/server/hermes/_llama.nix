@@ -20,8 +20,6 @@ in {
     openFirewall = false;
   };
 
-  # Allow PocketRisu container (podman0 bridge) to reach the embedder
-  networking.firewall.interfaces.podman0.allowedTCPPorts = [ 8081 ];
 
   system.activationScripts."hermes-llama-model" = lib.stringAfter (
     lib.optional (config.system.activationScripts ? setupSecrets) "setupSecrets"

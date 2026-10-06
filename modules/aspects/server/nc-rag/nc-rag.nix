@@ -28,7 +28,6 @@
     includes = [ den.aspects.server.sops ];
     nixos = { config, lib, pkgs, ... }:
     let
-      modelsDir = "/var/lib/llama-cpp";
       # Blessed pkgsCuda scope — cache-friendly (see core/nix.nix substituters)
       llama-cpp-cuda = pkgs.pkgsCuda.llama-cpp;
       llama-server = "${lib.getExe' llama-cpp-cuda "llama-server"}";
@@ -51,6 +50,19 @@
         installPhase = "install -Dm755 $src $out/bin/ollama_proxy.py";
       };
       pythonWithProxyDeps = pkgs.python3.withPackages (ps: with ps; [ fastapi uvicorn httpx ]);
+      # Models come from the store: immutable inputs, GC-tracked, and readable by
+      # the DynamicUser units. They used to be downloaded by an activation script
+      # into the unit's StateDirectory; a later rename (llama-cpp ->
+      # llama-cpp-embedder) orphaned them behind /var/lib/private (mode 700), so
+      # llama-server could no longer open them and both units crash-looped.
+      bgeM3 = pkgs.fetchurl {
+        url = "https://huggingface.co/groonga/bge-m3-Q4_K_M-GGUF/resolve/main/bge-m3-q4_k_m.gguf";
+        hash = "sha256-RGIP2wqNI7XtV/5euPOELrljK0wTY91gIkasJL1tG+Q=";
+      };
+      bgeReranker = pkgs.fetchurl {
+        url = "https://huggingface.co/TheOSExplorer/bge-reranker-v2-m3-Q2_K-GGUF/resolve/main/bge-reranker-v2-m3-q2_k.gguf";
+        hash = "sha256-YFnPAktxpOR4SNosFGhGyZFvHbfWokzKhQ4rxHLElbg=";
+      };
     in lib.mkMerge [
       # ── Serenity: 3 llama.cpp systemd units + ollama-compat proxy ───────
       (lib.mkIf (config.networking.hostName == "serenity") {
@@ -62,7 +74,7 @@
             Type = "exec";
             ExecStart = ''
               ${llama-server} --host 0.0.0.0 --port 8081 \
-                -m ${modelsDir}/bge-m3-q4_k_m.gguf \
+                -m ${bgeM3} \
                 --embedding --ctx-size 8192 -ngl 99 --threads 4
             '';
             Restart = "on-failure"; RestartSec = 5;
@@ -77,7 +89,7 @@
             Type = "exec";
             ExecStart = ''
               ${llama-server} --host 0.0.0.0 --port 8082 \
-                -m ${modelsDir}/bge-reranker-v2-m3-q2_k.gguf \
+                -m ${bgeReranker} \
                 --embedding --pooling rank --reranking -ngl 99 --ctx-size 8192
             '';
             Restart = "on-failure"; RestartSec = 5;
@@ -108,21 +120,6 @@
         # Open 11434 on tailscale0 only (loopback already reachable from poweredge
         # via Tailscale's magic DNS routing). 127.0.0.1 is implicit via Type=exec.
         networking.firewall.interfaces.tailscale0.allowedTCPPorts = [ 11434 ];
-        system.activationScripts."nc-rag-models".text = ''
-          mkdir -p "${modelsDir}"; chmod 755 "${modelsDir}"
-          EMBED="${modelsDir}/bge-m3-q4_k_m.gguf"
-          if [ ! -f "$EMBED" ]; then
-            ${pkgs.curl}/bin/curl -L --fail -o "$EMBED.tmp" \
-              "https://huggingface.co/groonga/bge-m3-Q4_K_M-GGUF/resolve/main/bge-m3-q4_k_m.gguf"
-            mv "$EMBED.tmp" "$EMBED"
-          fi; chmod 644 "$EMBED"
-          RERANK="${modelsDir}/bge-reranker-v2-m3-q2_k.gguf"
-          if [ ! -f "$RERANK" ]; then
-            ${pkgs.curl}/bin/curl -L --fail -o "$RERANK.tmp" \
-              "https://huggingface.co/TheOSExplorer/bge-reranker-v2-m3-Q2_K-GGUF/resolve/main/bge-reranker-v2-m3-q2_k.gguf"
-            mv "$RERANK.tmp" "$RERANK"
-          fi; chmod 644 "$RERANK"
-        '';
       })
     ];
   };

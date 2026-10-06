@@ -49,7 +49,7 @@
         };
 
         # tailscale serve exposes 8444 → 127.0.0.1:8787 (node-local state,
-        # deliberately not in nix — same treatment as pocketrisu on :443).
+        # deliberately not in nix — served by a manually-managed listener).
 
         # `hermes/webui-password` is declared by the HOST, not here: the shared
         # server/sops aspect mkForce-nulls sops.defaultSopsFile on purpose, so a

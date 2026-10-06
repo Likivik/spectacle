@@ -69,11 +69,27 @@
 
       extraSopsEnv = lib.concatMapStringsSep "\n\n" (p: mkSopsEnv p) extraHermesProfiles;
 
-      # v0.21.5 serves every profile from ONE gateway per host: a per-profile
-      # unit exits 75/TEMPFAIL ("host gateway already serves profile X") and
-      # systemd restarts it forever. Keep the profile data (sops-env, api
-      # port, graphiti wiring); generate no gateway units for them.
-      extraGatewayProfiles = [ ];
+      # Opt each extra profile out of the host multiplexer so its own unit can
+      # serve it. Gated by a grep so the CLI call only happens when the key is
+      # missing — same idiom as _hermes-graphiti.nix.
+      mkStandalone = { home, ... }: ''
+        if ! ${pkgs.gnugrep}/bin/grep -q "standalone: true" "${home}/config.yaml" 2>/dev/null; then
+          ${pkgs.sudo}/bin/sudo -u hermes ${pkgs.bash}/bin/bash -c '
+            export HOME=/var/lib/hermes
+            export HERMES_HOME=${home}
+            export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$(id -u)/bus"
+            export PATH=/run/current-system/sw/bin:/etc/profiles/per-user/hermes/bin
+            /run/current-system/sw/bin/hermes config set gateway.standalone true
+          '
+        fi
+      '';
+
+      # Per-profile gateways: 0.21.5 multiplexes ONE gateway per host, so a
+      # profile's own unit only starts if that profile opts out of the host
+      # multiplexer. The opt-out lives in the profile's own (Hermes-owned)
+      # config.yaml as `gateway.standalone: true` — set below through the
+      # supported CLI, never by hand-editing that file.
+      # See hermes_cli/profiles.py:profile_is_standalone + profiles_to_serve.
 
       extraGatewayUnits = lib.listToAttrs (map (p:
         lib.nameValuePair "hermes-gateway-${p.name}" {
@@ -104,7 +120,7 @@
             ];
           };
         }
-      ) extraGatewayProfiles);
+      ) extraHermesProfiles);
     in lib.mkMerge [
       graphitiConfig
       # Gate by host, the same idiom nc-rag uses for its host-specific units:
@@ -119,6 +135,8 @@
         systemd.user.services = extraGatewayUnits;
         system.activationScripts."hermes-secrets-env-extras" =
           lib.stringAfter [ "hermes-seed" ] extraSopsEnv;
+        system.activationScripts."hermes-standalone-profiles" =
+          lib.stringAfter [ "hermes-seed" ] (lib.concatMapStringsSep "\n" mkStandalone extraHermesProfiles);
       })
       {
         users.groups.hermes = { };

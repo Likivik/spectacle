@@ -16,7 +16,8 @@ Cite/document what you found when it shapes a decision.
   tests, VM smoke gates and deploys happen here.
 - **Erebus**: `/Storage/Git/spectacle` — edit-only scratch (jj repo). Its Hermes gateway is
   masked and it has no space: **never build here**, heavy Nix work belongs on Serenity.
-- **Traversal**: `/Storage/Git/spectacle` — auto-pulls every 5 min
+- **Traversal**: `/Storage/Git/spectacle` — the `spectacle-autopull` unit is defined in
+  `modules/hosts/traversal/traversal.nix`, but the host is off the tailnet: nothing pulls.
 
 ## VCS: Jujutsu (jj)
 

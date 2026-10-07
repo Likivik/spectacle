@@ -140,7 +140,7 @@
         # NOT via sops.defaultSopsFile: the shared server/sops aspect
         # mkForce-nulls it deliberately, so every host names its file per secret.
 
-        users.users.hermes.extraGroups = [ "users" "systemd-journal" ];
+        users.users.hermes.extraGroups = [ "users" "systemd-journal" "gitdev" ];
 
         # (The agent's own bge-m3 embedder is skipped on this host inside the
         # hermes-agent aspect: nc-rag already runs the identical model on :8081,

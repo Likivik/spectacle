@@ -108,7 +108,7 @@ in
 
       swapDevices = [ { device = "/swapfile"; size = 4096; } ];
 
-      users.users.hermes.extraGroups = [ "users" "systemd-journal" ];
+      users.users.hermes.extraGroups = [ "users" "systemd-journal" "gitdev" ];
 
       # Lets serenity's agent stop THIS host's Telegram poller during a cutover,
       # so the two never poll one token together (they would not conflict

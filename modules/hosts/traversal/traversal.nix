@@ -34,7 +34,23 @@
         sops.age.sshKeyPaths = lib.mkForce [ ];
         sops.age.keyFile = "/var/lib/sops/tpm-identity.txt";
 
-        # services.openssh.enable = true;
+        # sshd: the host used to be off the tailnet, so this was commented out.
+        # The agent on serenity deploys and updates the fleet over ssh, so it is
+        # back on — password auth off, root login refused.
+        services.openssh = {
+          enable = true;
+          settings = {
+            PermitRootLogin = "no";
+            PasswordAuthentication = false;
+          };
+        };
+
+        users.users.likivik.openssh.authorizedKeys.keys = [
+          # hermes@erebus
+          "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIECMxs9cBFN8Adq8AJ9I62gVNFTkgNkr0ikg+VkWbHx1 hermes@erebus"
+          # hermes@serenity — agent host (see poweredge.nix for the same key)
+          "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAxgjvMCf4tUu9geCOifsHdlMK9md9D0ykkcxca47WeD hermes@serenity-flip-2026-10-05"
+        ];
 
         hardware.amdgpu.initrd.enable = lib.mkDefault true;
 

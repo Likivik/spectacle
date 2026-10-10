@@ -55,6 +55,11 @@ IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".tiff", ".heic"}
 PDF_EXTS = {".pdf"}
 PROCESSABLE_EXTS = IMAGE_EXTS | PDF_EXTS
 
+#: Below this many extractable characters per page a PDF is treated
+#: as a scan even when the text-based classifier says otherwise
+#: (real uploads: 1 and 4 chars/page were silently skipped).
+MIN_TEXT_CHARS_PER_PAGE = 25
+
 # Loop prevention: track recently processed node IDs
 _processed_ids: dict[int, float] = {}
 _processed_lock = threading.Lock()
@@ -472,11 +477,38 @@ def _needs_ocr_decision(path: Path, force: bool) -> bool:
 
     try:
         cls = classify_pdf(path)
-        return bool(cls.get("needs_ocr", True))
+        needs = bool(cls.get("needs_ocr", True))
     except Exception as exc:
         # Classifier crashed — default to OCR (better safe than skip).
         log.warning("pdf_classify raised (%s); defaulting to OCR", exc)
         return True
+
+    if needs:
+        return True
+
+    # Text-density guard. The inspector (pdf-inspector / heuristic)
+    # calls a page "text_based" whenever it finds text objects, even
+    # when the page is really an image scan carrying a stamp or a
+    # watermark. Measured on real uploads: two phone-photo scans
+    # classified as text_based with 1 and 4 characters of extractable
+    # text, and were silently skipped — no OCR, no text layer. If
+    # there is essentially no text per page, treat it as a scan.
+    try:
+        import fitz
+        with fitz.open(str(path)) as doc:
+            pages = max(1, doc.page_count)
+            chars = sum(len(page.get_text().strip()) for page in doc)
+        per_page = chars / pages
+        if per_page < MIN_TEXT_CHARS_PER_PAGE:
+            log.info(
+                "pdf_classify said text_based but only %.1f chars/page "
+                "on %s; OCR-ing anyway", per_page, path.name,
+            )
+            return True
+    except Exception as exc:  # noqa: BLE001 — guard is best-effort
+        log.warning("text-density guard failed (%s); trusting classifier", exc)
+
+    return False
 
 
 def _process_file(nc_path: str, node_id: int, engine: str | None = None,
@@ -691,7 +723,14 @@ def _enqueue(nc_path: str, node_id: int, engine: str | None = None,
 
 
 def _check_secret(x_webhook_secret: str | None) -> None:
-    if WEBHOOK_SECRET and x_webhook_secret != WEBHOOK_SECRET:
+    """Fail closed: an unset secret must never mean "no auth"."""
+    import hmac
+
+    if not WEBHOOK_SECRET:
+        log.error("webhook secret is not configured — refusing request")
+        raise HTTPException(status_code=503,
+                            detail="webhook secret not configured")
+    if not hmac.compare_digest(str(x_webhook_secret or ""), WEBHOOK_SECRET):
         raise HTTPException(status_code=401, detail="invalid secret")
 
 
@@ -979,10 +1018,41 @@ async def health():
 
 
 @app.get("/panel")
-async def panel():
-    """Serve the OCR status panel (secret is entered in the page itself)."""
+async def panel(request: Request):
+    """Serve the OCR status panel.
+
+    Local-only (the service already binds to 127.0.0.1, this is
+    defence in depth) and never framed: the page asks the user for the
+    webhook secret, so embedding it in a foreign frame is a phishing
+    surface.
+    """
+    client_host = ""
+    try:
+        client_host = (request.client.host if request.client else "") or ""
+    except Exception:  # noqa: BLE001
+        client_host = ""
+    if client_host not in ("127.0.0.1", "::1", "localhost"):
+        raise HTTPException(status_code=403, detail="panel is local-only")
+
     static = Path(__file__).parent / "static" / "panel.html"
-    return HTMLResponse(content=static.read_text(encoding="utf-8"))
+    return HTMLResponse(
+        content=static.read_text(encoding="utf-8"),
+        headers={
+            "X-Frame-Options": "DENY",
+            "Content-Security-Policy": (
+                "default-src 'self'; "
+                "script-src 'self' 'unsafe-inline'; "
+                "style-src 'self' 'unsafe-inline'; "
+                "img-src 'self' data:; "
+                "connect-src 'self'; "
+                "frame-ancestors 'none'; "
+                "base-uri 'none'; "
+                "form-action 'none'"
+            ),
+            "Referrer-Policy": "no-referrer",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 def main():

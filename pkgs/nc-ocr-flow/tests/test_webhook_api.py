@@ -51,6 +51,23 @@ def h():
 
 # --- /status ---------------------------------------------------------------
 
+def test_fails_closed_when_secret_not_configured(monkeypatch):
+    """An unset secret must refuse requests, not disable auth."""
+    monkeypatch.setattr(ws, "WEBHOOK_SECRET", "")
+    c = TestClient(ws.app)
+    assert c.get("/status", headers=h()).status_code == 503
+    assert c.post("/webhook", headers=h(), json={}).status_code == 503
+
+
+def test_panel_is_not_frameable(client):
+    """The panel asks for the webhook secret — it must not be
+    embeddable in a foreign page."""
+    r = client.get("/panel")
+    assert r.status_code == 200
+    assert r.headers.get("X-Frame-Options") == "DENY"
+    assert "frame-ancestors 'none'" in r.headers.get("Content-Security-Policy", "")
+
+
 def test_status_requires_secret(client):
     r = client.get("/status")
     assert r.status_code == 401

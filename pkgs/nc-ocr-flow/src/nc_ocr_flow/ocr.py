@@ -115,13 +115,44 @@ def process_pdf(
     log.info("process_pdf: engine=%s input=%s output=%s",
              chosen, input_pdf, out_pdf)
 
+    # --- Per-page orientation correction (engine-agnostic) -----------------
+    # Render each page, run Tesseract OSD, and write a flattened,
+    # upright-on-disk PDF to a temp path. The engine then operates on
+    # that upright copy, which means every engine sees the same
+    # upright raster — no engine-specific orientation detection
+    # needed (and engines that *do* detect orientation on their own
+    # are a no-op because the input is already upright).
+    #
+    # Set NC_OCR_DISABLE_ORIENTATION=1 to bypass the preorient pass
+    # (useful for benchmarking / tests that compare orientation-on
+    # vs off on the same input).
+    import os as _os
+    if _os.environ.get("NC_OCR_DISABLE_ORIENTATION", "").strip() in ("1", "true", "yes"):
+        engine_input = str(input_pdf)
+        log.info("process_pdf: orientation correction disabled by env")
+    else:
+        from .orientation import preorient_pages_safe
+        try:
+            engine_input = preorient_pages_safe(str(input_pdf))
+        except Exception as exc:  # noqa: BLE001 — best-effort, never block OCR
+            log.warning("process_pdf: orientation pre-pass failed (%s); "
+                        "falling back to original input", exc)
+            engine_input = str(input_pdf)
+
     # Hand off to the engine. Engines that produce OcrResults
     # (google, minimax) need the orchestrator to embed the text layer
     # and save the PDF; tesseract writes a layer directly via ocrmypdf.
     engine_result = engine_process(
-        str(input_pdf),
+        engine_input,
         str(out_pdf),
     )
+
+    # If we used a temp upright PDF, clean it up.
+    if engine_input != str(input_pdf):
+        try:
+            Path(engine_input).unlink(missing_ok=True)
+        except OSError:
+            pass
 
     # Normalize engine output into our ProcessResult.
     return _finalize(engine_result, chosen, str(out_pdf))

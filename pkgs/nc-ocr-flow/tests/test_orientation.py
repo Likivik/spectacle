@@ -965,12 +965,12 @@ class TestResolutionPreservingRasterPolicy:
 
     # --- (c) 600-dpi page + rotation → effective dpi <= 300 --------
 
-    def test_high_dpi_rotation_caps_at_max_dpi(
+    def test_high_dpi_rotation_preserves_source_image(
             self, tmp_path, monkeypatch):
-        """Spec rule (c): a 600-dpi source page that needs rotation
-        must come out at the configured cap (default 300). We
-        verify by checking the rendered raster dims equal ~300
-        dpi × page_size / 72 — not the 600-dpi source dims.
+        """A 600-dpi source that needs rotation must come out with its
+        ORIGINAL embedded image: the rotation is baked into the page
+        content by ``show_pdf_page``, so the pixel data and the byte
+        stream are untouched (no resample, no dpi cap involved).
         """
         from nc_ocr_flow import orientation as orient_mod
         in_pdf = tmp_path / "hi-rot.pdf"
@@ -982,92 +982,78 @@ class TestResolutionPreservingRasterPolicy:
         orientations = preorient_pdf(in_pdf, out_pdf)
         assert orientations[0].angle == 90
 
-        with fitz.open(str(out_pdf)) as d_out:
+        with fitz.open(str(in_pdf)) as d_in, \
+                fitz.open(str(out_pdf)) as d_out:
+            src_meta = d_in.extract_image(
+                d_in[0].get_images(full=True)[0][0])
             page = d_out[0]
+            assert page.rotation == 0
             imgs = page.get_images(full=True)
             assert imgs
             meta = d_out.extract_image(imgs[0][0])
 
-        # Rendered at the cap (300 dpi, default).
-        self._assert_rendered_at_dpi(
-            meta, page_w_pt=595.0, page_h_pt=842.0, page_dpi=300)
-        # Source was 600 dpi (=> rendered would be 2480×3508 if
-        # uncapped). The rebuilt image must be way smaller.
-        assert max(meta["width"], meta["height"]) < 4000, (
-            f"spec rule (c): 600-dpi source must be capped near "
-            f"300 dpi; got embedded image {meta['width']}×"
-            f"{meta['height']}"
+        assert (meta["width"], meta["height"]) == (
+            src_meta["width"], src_meta["height"]), (
+            f"rotation must not resample: source image was "
+            f"{src_meta['width']}×{src_meta['height']}, output carries "
+            f"{meta['width']}×{meta['height']}"
         )
-        # And the dim must be > 1500 px wide (otherwise we went
-        # below the > 150 dpi lower bound from the spec).
-        assert max(meta["width"], meta["height"]) > 1500, (
-            f"spec rule (c): 600-dpi source must stay above "
-            f"~150 dpi; got max dim {max(meta['width'], meta['height'])}"
+        assert len(meta["image"]) == len(src_meta["image"]), (
+            f"rotation must not re-encode: embedded stream was "
+            f"{len(src_meta['image'])} bytes, output has "
+            f"{len(meta['image'])} bytes"
         )
 
-    def test_cap_env_var_overrides_render_dpi(
+    def test_cap_env_var_does_not_touch_output(
             self, tmp_path, monkeypatch):
-        """``NC_OCR_ORIENTATION_MAX_DPI`` is the canonical way to
-        change the ceiling. A 600-dpi source + cap=150 must rebuild
-        the page at ~150 dpi, not 300.
-
-        We assert this by checking the *actual rendered raster
-        dimensions* against ``cap * page_size / 72`` instead of
-        computing effective dpi, because after a 90° rotation the
-        embedded image dimensions swap and naive
-        ``img_px / page_pt`` produces numbers > the cap.
+        """``NC_OCR_ORIENTATION_MAX_DPI`` now only bounds the render
+        used for orientation detection. Since a rotated page is no
+        longer rasterized, the env var must not change the output page
+        at all — same page box, same embedded image, same bytes.
         """
         import os as _os
         from nc_ocr_flow import orientation as orient_mod
-        _os.environ["NC_OCR_ORIENTATION_MAX_DPI"] = "150"
-        try:
-            in_pdf = tmp_path / "hi.pdf"
-            self._build_pdf(in_pdf, image_w=4961, image_h=7016)
+
+        in_pdf = tmp_path / "hi.pdf"
+        self._build_pdf(in_pdf, image_w=4961, image_h=7016)
+
+        def _run(cap):
+            if cap is None:
+                _os.environ.pop("NC_OCR_ORIENTATION_MAX_DPI", None)
+            else:
+                _os.environ["NC_OCR_ORIENTATION_MAX_DPI"] = cap
             orient_mod.detect_orientation_tesseract = (
                 lambda png_bytes, **kw: Orientation(90, 99.0, "mock"))
-            out_pdf = tmp_path / "out.pdf"
+            out_pdf = tmp_path / f"out_{cap}.pdf"
             orientations = preorient_pdf(in_pdf, out_pdf)
             assert orientations[0].angle == 90
-
             with fitz.open(str(out_pdf)) as d_out:
                 page = d_out[0]
-                imgs = page.get_images(full=True)
-                assert imgs
-                meta = d_out.extract_image(imgs[0][0])
-                pw_pt = page.rect.width
-                ph_pt = page.rect.height
-                rendered_at_cap_x = 150.0 * pw_pt / 72.0
-                rendered_at_cap_y = 150.0 * ph_pt / 72.0
-                # After 90° rot the embedded dims are {y_cap, x_cap}.
-                # Allow a 4-px slack to absorb pymupdf's rounding.
-                w, h = meta["width"], meta["height"]
-                ok_w_x = abs(w - round(rendered_at_cap_x)) <= 4
-                ok_w_y = abs(w - round(rendered_at_cap_y)) <= 4
-                ok_h_x = abs(h - round(rendered_at_cap_x)) <= 4
-                ok_h_y = abs(h - round(rendered_at_cap_y)) <= 4
-                assert (ok_w_x or ok_w_y) and (ok_h_x or ok_h_y), (
-                    f"NC_OCR_ORIENTATION_MAX_DPI=150 must rebuild the "
-                    f"raster at the cap; got embedded dims {w}×{h}, "
-                    f"expected ~{round(rendered_at_cap_x)} or "
-                    f"~{round(rendered_at_cap_y)} in each axis"
-                )
-                # Strong floor: the rebuilt image must NOT be the
-                # 300-dpi build (which would be 2480×3508).
-                assert max(w, h) < 2000, (
-                    f"rebuilt raster suspiciously large at "
-                    f"{w}×{h} — env var didn't take effect?"
-                )
+                meta = d_out.extract_image(
+                    page.get_images(full=True)[0][0])
+                return (round(page.rect.width), round(page.rect.height),
+                        meta["width"], meta["height"], len(meta["image"]))
+
+        try:
+            capped = _run("150")
+            default = _run(None)
         finally:
             _os.environ.pop("NC_OCR_ORIENTATION_MAX_DPI", None)
 
+        assert capped == default, (
+            f"MAX_DPI must not affect the rotated page (nothing is "
+            f"rasterized anymore); cap=150 gave {capped}, "
+            f"default gave {default}"
+        )
+
     # --- (d) Page with no images → uses the cap -------------------
 
-    def test_no_images_falls_back_to_cap(
+    def test_no_images_page_is_not_rasterized(
             self, tmp_path, monkeypatch):
-        """Spec rule (d): a page that has no embedded images must
-        use the configured cap. We assert this by checking the
-        rendered pixmap dimensions match ``cap * page_size / 72``
-        (allowing for the 90° rotation axis-swap).
+        """A page with no embedded images must come out with no images.
+        The old code rasterized such a page (turning any text into a
+        bitmap); the new path only rotates the page content, so the
+        output stays vector/text and the page box just swaps.
         """
         from nc_ocr_flow import orientation as orient_mod
         in_pdf = tmp_path / "blank.pdf"
@@ -1075,7 +1061,6 @@ class TestResolutionPreservingRasterPolicy:
         orient_mod.detect_orientation_tesseract = (
             lambda png_bytes, **kw: Orientation(90, 99.0, "mock"))
 
-        # Drive with cap=200 via render_dpi kwarg.
         out_pdf = tmp_path / "out.pdf"
         orientations = preorient_pdf(in_pdf, out_pdf, render_dpi=200)
         assert orientations[0].angle == 90
@@ -1084,27 +1069,14 @@ class TestResolutionPreservingRasterPolicy:
             page = d_out[0]
             assert d_out.page_count == 1
             assert page.rotation == 0
-            imgs = page.get_images(full=True)
-            assert imgs, (
-                "spec rule (d)+(e): the rebuilt page must actually "
-                "contain an image — empty pages are not ok"
+            assert (round(page.rect.width), round(page.rect.height)) == (
+                842, 595), (
+                "a 90° turn must swap the page box; got "
+                f"{page.rect.width}×{page.rect.height}"
             )
-            meta = d_out.extract_image(imgs[0][0])
-            pw_pt, ph_pt = page.rect.width, page.rect.height
-            cap_x = 200.0 * pw_pt / 72.0
-            cap_y = 200.0 * ph_pt / 72.0
-            w, h = meta["width"], meta["height"]
-            assert (abs(w - round(cap_x)) <= 4 or
-                    abs(w - round(cap_y)) <= 4), (
-                f"spec rule (d): no-image page must render at "
-                f"cap=200; got width={w}, expected ~{round(cap_x)} "
-                f"or ~{round(cap_y)}"
-            )
-            assert (abs(h - round(cap_x)) <= 4 or
-                    abs(h - round(cap_y)) <= 4), (
-                f"spec rule (d): no-image page must render at "
-                f"cap=200; got height={h}, expected ~{round(cap_x)} "
-                f"or ~{round(cap_y)}"
+            assert page.get_images(full=True) == [], (
+                "a page with no images must not be turned into a bitmap "
+                "by the rotation pass"
             )
 
     # --- (e) Rebuilt page actually contains an image --------------
@@ -1155,12 +1127,12 @@ class TestResolutionPreservingRasterPolicy:
                 f"microscopic; got {w}×{h}"
             )
 
-    def test_jpeg_quality_env_var_honoured(
+    def test_jpeg_quality_env_var_is_inert(
             self, tmp_path, monkeypatch):
-        """``NC_OCR_ORIENTATION_JPEG_Q`` controls the output JPEG
-        quality. Higher quality → larger byte stream. We toggle
-        the env var, run the pre-pass at q=20 vs q=95, and assert
-        the higher q produces a measurably larger embedded image.
+        """``NC_OCR_ORIENTATION_JPEG_Q`` used to control the re-encode
+        quality of rotated pages. Since the rotation pass no longer
+        re-encodes anything, the knob must be inert: q=20 and q=95
+        have to produce byte-identical output.
         """
         import os as _os
         from nc_ocr_flow import orientation as orient_mod
@@ -1211,13 +1183,83 @@ class TestResolutionPreservingRasterPolicy:
         finally:
             _os.environ.pop("NC_OCR_ORIENTATION_JPEG_Q", None)
 
-        # Same pixel dims either way — only quality differs.
+        # Same pixel dims either way — and now the same bytes too,
+        # because nothing is re-encoded any more.
         assert (w20, h20) == (w95, h95)
-        # Higher quality ⇒ larger byte stream.
-        assert n95 > n20, (
-            f"NC_OCR_ORIENTATION_JPEG_Q=95 must produce a larger "
-            f"embedded JPEG than q=20; got q20={n20} q95={n95}"
+        assert n95 == n20, (
+            f"the rotation pass must not re-encode the embedded image; "
+            f"q=20 gave {n20} bytes, q=95 gave {n95}"
         )
+
+    def test_born_digital_page_keeps_its_text_layer(
+            self, tmp_path, monkeypatch):
+        """Bug #6 regression: a born-digital page used to be rasterized
+        when it needed rotation, so its text layer was destroyed and the
+        page became a picture. With the rotation baked into the page
+        content the text must still be extractable and no bitmap may be
+        introduced.
+        """
+        from nc_ocr_flow import orientation as orient_mod
+        in_pdf = tmp_path / "digital.pdf"
+        doc = fitz.open()
+        page = doc.new_page(width=595, height=842)
+        page.insert_text((72, 100), "GARAGE FOR SALE 28 SEP 2026",
+                         fontsize=18)
+        doc.save(str(in_pdf))
+        doc.close()
+
+        orient_mod.detect_orientation_tesseract = (
+            lambda png_bytes, **kw: Orientation(90, 99.0, "mock"))
+
+        out_pdf = tmp_path / "out.pdf"
+        orientations = preorient_pdf(in_pdf, out_pdf)
+        assert orientations[0].angle == 90
+
+        with fitz.open(str(out_pdf)) as d_out:
+            out_page = d_out[0]
+            text = out_page.get_text().strip()
+            assert "GARAGE FOR SALE" in text, (
+                "the text layer must survive the rotation; got "
+                f"{text!r}"
+            )
+            assert out_page.get_images(full=True) == [], (
+                "a born-digital page must not gain a bitmap from the "
+                "rotation pass"
+            )
+            assert (round(out_page.rect.width),
+                    round(out_page.rect.height)) == (842, 595), (
+                "a 90° turn must swap the page box; got "
+                f"{out_page.rect.width}×{out_page.rect.height}"
+            )
+
+    def test_outline_is_preserved(self, tmp_path, monkeypatch):
+        """Bookmarks must survive the pre-pass.
+
+        Neither ``insert_pdf`` nor ``show_pdf_page`` carries the
+        outline over, so it was lost both for rotated pages and for
+        documents where nothing changed.
+        """
+        from nc_ocr_flow import orientation as orient_mod
+        for angle in (0, 90):
+            in_pdf = tmp_path / f"toc-{angle}.pdf"
+            doc = fitz.open()
+            page = doc.new_page(width=595, height=842)
+            page.insert_text((72, 100), "OUTLINE TEST", fontsize=14)
+            doc.set_toc([[1, "Chapter One", 1]])
+            doc.save(str(in_pdf))
+            doc.close()
+
+            def _mock(png_bytes, _a=angle, **kw):
+                return Orientation(_a, 99.0, "mock")
+
+            monkeypatch.setattr(orient_mod, "detect_orientation", _mock)
+            out_pdf = tmp_path / f"toc-{angle}-out.pdf"
+            preorient_pdf(in_pdf, out_pdf)
+
+            with fitz.open(str(out_pdf)) as d_out:
+                toc = d_out.get_toc()
+            assert toc == [[1, "Chapter One", 1]], (
+                f"angle={angle}: outline lost; got {toc!r}")
 
     # --- Multi-page: only rotated pages rebuild -------------------
 

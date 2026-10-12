@@ -296,6 +296,31 @@ def _read_key() -> str:
     return ""
 
 
+# ---------------------------------------------------------------------------
+# MiniMax limits — documented 2026-10, verified live against the account.
+#
+# * Rate: 200 requests/min and 10,000,000 tokens/min for MiniMax-M3.
+# * Budget: separate 5-hour and weekly windows. The account is usually
+#   nowhere near the RPM and instead runs out of a *window*, which is why
+#   the token-plan quota is the thing worth watching.
+# * Quota can be read: GET https://www.minimax.io/v1/token_plan/remains
+#   with the bearer key. It returns per-model
+#   current_interval_remaining_percent (5-hour) and
+#   current_weekly_remaining_percent plus current_interval_status
+#   (1 = normal). Measured 96% / 86% remaining at the time of writing.
+#   Do NOT poll this every 5 minutes — the windows move slowly, so
+#   anything faster than ~30-60 min just adds noise. Not wired in yet.
+# * Errors arrive as HTTP 200 with base_resp.status_code in the body, so
+#   the HTTP status alone is NOT a success signal (this function
+#   currently ignores the code — the TODO below). Codes that matter:
+#     1002 rate limit          -> back off and retry
+#     1039 token limit         -> pause, shrink the prompt/output
+#     1041 connection limit    -> lower concurrency
+#     2045 rate growth limit   -> ramp workers gradually, never burst
+#     2056 usage window empty  -> do NOT retry in a loop; wait for the
+#                                 next 5-hour/weekly window
+#   Retrying 2056 the way a 429 is retried is what burns the budget.
+# ---------------------------------------------------------------------------
 def _chat(body: dict) -> dict:
     key = _read_key()
     if not key:
@@ -309,13 +334,31 @@ def _chat(body: dict) -> dict:
         },
         method="POST",
     )
-    try:
-        with urlopen(req, timeout=180) as resp:
-            return json.load(resp)
-    except HTTPError as exc:
-        raise MiniMaxError(f"minimax HTTP {exc.code}: {exc.read()[:200]}") from exc
-    except URLError as exc:
-        raise MiniMaxError(f"minimax unreachable: {exc.reason}") from exc
+    # Retry transient failures: a network blip or a 5xx from the API
+    # used to lose this page's VLM result entirely. 4xx (bad key, bad
+    # request) is not retried — it will not get better.
+    import time as _time
+
+    attempts = 3
+    last: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            with urlopen(req, timeout=180) as resp:
+                return json.load(resp)
+        except HTTPError as exc:
+            detail = exc.read()[:200]
+            err: Exception = MiniMaxError(
+                f"minimax HTTP {exc.code}: {detail}")
+            if exc.code < 500 or attempt == attempts - 1:
+                raise err from exc
+            last = err
+        except URLError as exc:
+            err = MiniMaxError(f"minimax unreachable: {exc.reason}")
+            if attempt == attempts - 1:
+                raise err from exc
+            last = err
+        _time.sleep(2.0 * (2 ** attempt))
+    raise last  # pragma: no cover — the loop always returns or raises
 
 
 def _user_message(png_bytes: bytes, prompt: str) -> dict:

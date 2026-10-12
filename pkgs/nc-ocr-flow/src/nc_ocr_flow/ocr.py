@@ -298,8 +298,8 @@ def _generate_tsv(pdf_path: Path, tsv_path: Path) -> None:
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
             tmp.write(pix.tobytes("png"))
             tmp_png = Path(tmp.name)
+        tsv_out = tmp_png.with_suffix(".tsv")
         try:
-            tsv_out = tmp_png.with_suffix(".tsv")
             subprocess.run(
                 ["tesseract", str(tmp_png), str(tsv_out.with_suffix("")),
                  "-l", "rus+eng", "tsv"],
@@ -316,6 +316,9 @@ def _generate_tsv(pdf_path: Path, tsv_path: Path) -> None:
                 tsv_out.unlink(missing_ok=True)
         finally:
             tmp_png.unlink(missing_ok=True)
+            # Also here: a tesseract timeout used to leave the .tsv
+            # behind because the unlink sat inside the try.
+            tsv_out.unlink(missing_ok=True)
     doc.close()
     tsv_path.write_text("\n".join(all_lines) + "\n")
 

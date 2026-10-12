@@ -1067,6 +1067,18 @@ def preorient_pdf(in_pdf: str | Path,
                     # for angle==0 pages.
                     out_doc.insert_pdf(src, from_page=page_idx,
                                         to_page=page_idx)
+        # Preserve the document outline. Neither insert_pdf nor
+        # show_pdf_page carries it over, so a PDF with bookmarks came
+        # back with none — even when no page was rotated. The source
+        # handle is already closed by this point, so reopen the input.
+        try:
+            with fitz.open(str(in_pdf)) as src_toc:
+                toc = src_toc.get_toc(simple=True)
+            if toc:
+                out_doc.set_toc(toc)
+        except Exception as exc:  # noqa: BLE001
+            log.debug("preorient_pdf: could not copy the outline: %s", exc)
+
         out_doc.save(str(out_pdf), garbage=4, deflate=True)
     finally:
         out_doc.close()

@@ -136,6 +136,15 @@
           # tesseract = local ocrmypdf fallback. minimax available via
           # NC_OCR_ENGINE=minimax. Surya/monkey/L2 routing removed 2026-09.
           NC_OCR_ENGINE = "google";
+
+          # Параллелизм. Очередь задач живёт в SQLite, поэтому воркеров
+          # можно поднимать без роста памяти. Каждый движок имеет свой
+          # потолок одновременных задач — это и есть защита квот API:
+          # поднять NC_OCR_WORKERS можно, не превысив лимиты Google/VLM.
+          NC_OCR_WORKERS = "2";
+          NC_OCR_MAX_CONCURRENT_GOOGLE = "2";
+          NC_OCR_MAX_CONCURRENT_TESSERACT = "1";
+          NC_OCR_MAX_CONCURRENT_MINIMAX = "1";
           # Google Cloud Vision (service-account key via CREDENTIALS_DIRECTORY)
           NC_OCR_GOOGLE_PROJECT = "spectacle-xandria";
           NC_OCR_GOOGLE_BUCKET = "ocr-project-tmp";

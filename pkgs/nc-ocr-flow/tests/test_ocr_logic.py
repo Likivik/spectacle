@@ -211,15 +211,35 @@ def test_webdav_url_fallback():
 
 
 def test_loop_prevention():
-    """_is_recently_processed / _mark_processed work correctly."""
-    from nc_ocr_flow.webhook_server import (
-        _is_recently_processed, _mark_processed, _processed_ids,
-    )
-    _processed_ids.clear()
-    assert not _is_recently_processed(999)
-    _mark_processed(999)
-    assert _is_recently_processed(999)
-    assert not _is_recently_processed(998)
+    """_is_recently_processed / _mark_processed go through SQLite."""
+    import importlib
+    import os
+    import sys
+    import tempfile
+
+    sd = tempfile.mkdtemp(prefix="ncocr-loop-")
+    old = os.environ.get("NC_OCR_STATE_DIR")
+    os.environ["NC_OCR_STATE_DIR"] = sd
+    try:
+        for mod_name in list(sys.modules):
+            if mod_name in ("nc_ocr_flow.webhook_server",
+                            "nc_ocr_flow.jobstore"):
+                del sys.modules[mod_name]
+        ws = importlib.import_module("nc_ocr_flow.webhook_server")
+        assert not ws._is_recently_processed(999)
+        ws._mark_processed(999)
+        assert ws._is_recently_processed(999)
+        assert not ws._is_recently_processed(998)
+        ws.jobstore.node_forget(999)
+        assert not ws._is_recently_processed(999)
+    finally:
+        if old is None:
+            os.environ.pop("NC_OCR_STATE_DIR", None)
+        else:
+            os.environ["NC_OCR_STATE_DIR"] = old
+        for mod_name in ("nc_ocr_flow.webhook_server",
+                         "nc_ocr_flow.jobstore"):
+            sys.modules.pop(mod_name, None)
 
 
 def test_webhook_secret_reading():

@@ -47,6 +47,19 @@ This repo uses **jj** (Jujutsu) on top of git. jj is the primary VCS.
    builds 5–60 min depending on cache hits. Never begin a switch without
    saying how long it should take. Time-blindness needs an external clock.
 
+   **Agent workflow — in this order, no shortcuts:**
+   1. **Be on latest.** `jj git fetch`, then confirm your `@` sits on `dev`
+      (`jj log -r 'dev'`). A stale checkout silently deploys an old pin —
+      `/Storage/Git/spectacle` sat 44 commits behind and still pinned
+      hermes-agent v2026.9.7 while serenity ran v2026.9.24.
+   2. **Work in your own workspace**, never the shared checkout:
+      `jj workspace add --name spectacle-<sessionid> -r dev \
+         /Storage/Git/Workspaces/spectacle-<sessionid>`
+   3. **Edit** in that workspace.
+   4. **Merge upstream** — rebase onto the latest `dev` and resolve conflicts
+      before building anything.
+   5. **Only then deploy** (below), from that workspace.
+
    ```bash
    # 0. Check which host you're actually on (same repo path exists on
    #    Erebus, Serenity, Traversal — don't assume).
@@ -86,9 +99,10 @@ This repo uses **jj** (Jujutsu) on top of git. jj is the primary VCS.
    #   - wrap in `bash -lc`: nixos-rebuild's activation runs
    #     `switch-to-configuration test`, which needs coreutils (`test`) +
    #     systemctl on PATH — absent from systemd-run's minimal env.
+   WS=$(jj workspace root)   # your session workspace — never the shared checkout
    sudo systemd-run --collect --unit=nixos-rebuild-serenity \
-     --working-directory=/Storage/Git/spectacle \
-     bash -lc 'exec nixos-rebuild switch --flake path:/Storage/Git/spectacle#serenity'
+     --working-directory="$WS" \
+     bash -lc "exec nixos-rebuild switch --flake path:$WS#serenity"
 
    # (A human on a real root shell may use the plain `sudo nixos-rebuild
    #  switch --flake .#serenity` — the cgroup hazard is agent-specific.)

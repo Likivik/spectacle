@@ -2,9 +2,28 @@
 { inputs, ... }:
 {
   perSystem =
-    { pkgs, ... }:
+    { config, pkgs, ... }:
     {
       checks = {
+        # CI entry point. This is the ONE attr CI builds
+        # (`nix build .#checks.<system>.ci`), so a new suite joins CI by adding a
+        # single line below — no workflow edit, and no ruleset edit, because the
+        # required check name ("nix checks") never changes.
+        #
+        # Membership is explicit on purpose: "CI-safe" is a decision, not a name
+        # pattern. serenity-smoke-vm is the counterexample and the reason the
+        # smoke is not a CI check at all — a hosted runner cannot cold-build
+        # that closure inside a job timeout (the build job was killed at its
+        # 90-minute limit with nix still running). forgejo-boot, litellm-boot
+        # and graphiti-roundtrip boot VMs too, so they stay out as well. A
+        # blanket `nix build .#checks` would silently reintroduce a job that
+        # cannot finish, which is worse than having no job.
+        ci =
+          pkgs.linkFarm "ci-checks" [
+            { name = "hermes-tests"; path = config.checks.hermes-tests; }
+            { name = "hr-bot-units"; path = config.checks.hr-bot-units; }
+          ];
+
         # Config still evaluates + builds (the "won't break Hermes on deploy" guard).
         erebus-build = inputs.self.nixosConfigurations.erebus.config.system.build.toplevel;
 

@@ -6,8 +6,16 @@
       # code uses TraceFlags.RANDOM_TRACE_ID). Langfuse ships as bundled opt-in
       # plugin; SDK lazy-installs into HERMES_LAZY_INSTALL_TARGET (~/.hermes/
       # lazy-packages) on first enable. No `observability` extra upstream.
+      # version: v0.21.7 moved to stamp-based versioning — pyproject.toml now
+      # carries the `0.0.0` placeholder and the CLI reads baseVersion from
+      # install-stamp.json. Nix sources keep no .git, so nothing can infer the
+      # tag; upstream's flake leaves `version ? "0.0.0"` and stamps 0.0.0
+      # (upstream #130070, open). Pass it explicitly.
+      # ⚠ keep in sync with the hermes-agent input tag in flake.nix /
+      #   modules/defaults/inputs.nix.
       hermes-pkg = (inputs.hermes-agent.packages.${pkgs.system}.minimal).override {
         extraDependencyGroups = [ "messaging" "anthropic" ];
+        version = "0.21.7";
       };
 
       # Extra (non-default) Hermes profiles. `default` stays hardcoded below for

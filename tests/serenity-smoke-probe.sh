@@ -149,6 +149,25 @@ else
   FAILED=1
 fi
 
+echo "--- hermes version (install stamp -> CLI; upstream #130070 / #135217) ---"
+# Regression gate for the stamp-based version. v0.21.7 moved pyproject.toml to the
+# `0.0.0` placeholder (upstream #102765) and the CLI now reads baseVersion from
+# install-stamp.json; Nix sources keep no .git, so upstream's flake stamps 0.0.0
+# unless the package is told the version. The aspect passes it explicitly — if that
+# override is ever dropped, this reports 0.0.0 and fails the gate.
+# ⚠ keep the literal below in sync with the hermes-agent input tag.
+HV=$(timeout 60 sudo -u hermes HOME=/var/lib/hermes HERMES_HOME=/var/lib/hermes/.hermes \
+  /run/current-system/sw/bin/hermes -V 2>&1 | head -1)
+echo "  ${HV:-<no output>}"
+case "$HV" in
+  *v0.21.7*) echo "HERMES_VERSION_OK" ;;
+  *) echo "HERMES_VERSION_BAD: ${HV:-<no output>}"; FAILED=1 ;;
+esac
+# The date in parentheses is hermes_cli.__release_date__, a checked-in literal that
+# no release since v2026.9.24 has bumped (upstream #135217). Expected stale here; it
+# becomes stamp-derived when upstream #135223 lands. Not gated — upstream's bug.
+echo "  (parenthesised date is expected stale until upstream #135223)"
+
 echo "--- summary ---"
 timeout 20 systemctl list-units --type=service --state=running --no-legend --plain 2>/dev/null | wc -l | sed 's/^/running services: /'
 timeout 20 systemctl list-units --type=service --no-legend --plain 2>/dev/null | wc -l | sed 's/^/loaded services:  /'

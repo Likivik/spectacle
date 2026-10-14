@@ -9,6 +9,36 @@ memory of how things were done before — frameworks (aiogram etc.) and
 standards change fast. Treat "I remember it" as a trigger to verify.
 Cite/document what you found when it shapes a decision.
 
+## Session isolation (read this first)
+
+**One agent session = one jj workspace. Never edit the shared checkout.**
+
+The shared checkout `/Storage/Git/spectacle` belongs to `likivik`. Working in it
+means your session snapshots another session's in-flight files into its working
+copy — that is how a schema + permission change was once silently dropped by a
+merge, and how a commit that looked like "another session stole my work" got
+created. `jj new` does **not** isolate you: it only starts a new change inside
+whatever checkout you are in.
+
+```bash
+cd /Storage/Git/spectacle                  # only to create or forget workspaces
+jj workspace add --name spectacle-<sessionid> -r dev \
+   /Storage/Git/Workspaces/spectacle-<sessionid>
+cd /Storage/Git/Workspaces/spectacle-<sessionid>
+jj workspace update-stale                  # after any gap
+```
+
+All work — editing, testing, deploying — happens inside that workspace, and the
+deploy command must point at it:
+`--flake path:/Storage/Git/Workspaces/<name>#<host>`.
+
+Before moving a shared bookmark, prove you sit on top of it:
+`jj log -r 'dev & ::@'` must return the dev tip. Empty means you branched from an
+older trunk and "merging" would revert every commit landed since — fix it with
+`jj rebase -s <oldest commit of yours> -d dev`, then gate with
+`jj diff --stat --from dev --to @` (it must list only files you touched) before
+`jj bookmark set dev -r @`. Full detail: skill `jj-agent-workspaces`.
+
 ## Repo Location
 
 - **Serenity**: `/Storage/Git/spectacle` — **the host the Hermes agent runs on** (moved
@@ -30,15 +60,20 @@ This repo uses **jj** (Jujutsu) on top of git. jj is the primary VCS.
    - `jj describe -m "message"` — set commit message
    - `jj log` — view history
    - `jj bookmark set dev -r @` — point dev bookmark at current change
-   - `jj git push --all` — push to origin
+   - `jj git push --bookmark <name>` — push ONE bookmark. Never `--all`: it sweeps other sessions' bookmarks into the remote.
    - `jj squash` — combine changes
    - `jj edit <id>` — switch to an existing change
    - `jj abandon <id>` — discard a change
    - `jj diff` — view working changes
 
-2. **Never create git worktrees.** jj handles parallel work via `jj new` — multiple changes in one checkout.
+2. **Never create git worktrees, and never work in the shared checkout.** Parallel work is isolated per session by a jj *workspace* (see "Session isolation" above); `jj new` only starts another change inside the workspace you are already in.
 
 3. **Deploy flow — pre-deploy checks always before building/pushing:**
+
+   ⚠ **Never deploy without an explicit go-ahead for that specific deploy.**
+   Permission to edit, commit, push or merge does NOT cover running
+   `nixos-rebuild switch`. Name the host and the change, ask, then wait for
+   the answer — one approval never carries over to the next deploy.
 
    ⏱ **TIME-BOX FIRST (mandatory):** before starting, state an estimate for the
    *whole* job — flake eval + dry-build + build + activation + any adjacent

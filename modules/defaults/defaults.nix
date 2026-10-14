@@ -42,7 +42,11 @@ in
       nixos = {
         home-manager.useGlobalPkgs = true;
         home-manager.useUserPackages = true;
-        home-manager.backupFileExtension = "backup";
+        # mkDefault, not a plain assignment: this is the fleet-wide fallback.
+        # A per-user aspect that wants a different suffix (watcher uses
+        # "hm-backup" together with trash-cli as backupCommand) must win,
+        # otherwise both definitions collide and the host stops evaluating.
+        home-manager.backupFileExtension = lib.mkDefault "backup";
         # HM's wayland module creates systemd tray.target that conflicts with
         # NixOS-managed ~/.config/systemd/user/ (read-only store symlink).
         # Override here for all users. No HM services depend on tray.target.

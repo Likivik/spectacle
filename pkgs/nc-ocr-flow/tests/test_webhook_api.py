@@ -5,11 +5,45 @@ Uses FastAPI TestClient with a stubbed _process_file and mocked WebDAV
 """
 from __future__ import annotations
 
+import os
 import sys
+import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+
+# Point jobstore at a writable directory BEFORE webhook_server is imported.
+# ``webhook_server`` calls ``jobstore.init()`` at module load time; without
+# this, the default /var/lib/nc-ocr/jobs.db path is unreadable in the test
+# environment (the unit runs as the hermes user) and every ``file_put`` /
+# ``claim_next`` silently no-ops, leaving the queue/processed/file tables
+# empty. A fresh tmpdir per pytest process keeps the suite hermetic and
+# parallel-safe.
+os.environ.setdefault(
+    "NC_OCR_STATE_DIR", tempfile.mkdtemp(prefix="ncocr-tests-")
+)
+
+# Snapshot the path we picked so the autouse fixture below can re-pin
+# it after another test file in the suite (``test_jobstore.py``::
+# ``test_db_path_resolution_env_precedence`` in particular) leaves the
+# env var cleared.
+_STATE_DIR = os.environ["NC_OCR_STATE_DIR"]
+
+
+@pytest.fixture(autouse=True)
+def _repin_state_dir():
+    """Re-pin ``NC_OCR_STATE_DIR`` before every test in this file.
+
+    ``test_db_path_resolution_env_precedence`` legitimately pops the env
+    var between two ``_Env`` blocks. Without this re-pin the next
+    ``jobstore.init()`` (after ``_reset_for_tests``) would resolve the
+    DB path from ``/var/lib/nc-ocr`` and silently fall back to a
+    permission-denied no-op state.
+    """
+    os.environ["NC_OCR_STATE_DIR"] = _STATE_DIR
+    yield
+
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
@@ -20,26 +54,48 @@ import nc_ocr_flow.webhook_server as ws  # noqa: E402
 SECRET = "test-secret"
 
 
+def _drain(timeout: float = 10.0) -> None:
+    """Wait until the SQLite queue has nothing queued or running.
+
+    The work list used to be an in-process ``queue.Queue``; it is now the
+    ``jobs`` table, so draining means polling the store instead of
+    ``queue.join()``.
+    """
+    import time
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        s = ws.jobstore.stats()
+        if not s.get("queued") and not s.get("running"):
+            return
+        time.sleep(0.05)
+    raise AssertionError("SQLite queue did not drain within %.1fs" % timeout)
+
+
 @pytest.fixture()
 def client(monkeypatch):
     """TestClient with WEBHOOK_SECRET set and OCR worker stubbed."""
     monkeypatch.setattr(ws, "WEBHOOK_SECRET", SECRET)
     monkeypatch.setattr(ws, "NC_PASSWORD", "test-pass")
 
-    # Empty the queue & history between tests
-    with ws._jobs_lock:
-        ws._jobs.clear()
-    with ws._ocrd_lock:
-        ws._ocrd_paths.clear()
-    while not ws._ocr_queue.empty():
-        ws._ocr_queue.get_nowait()
-        ws._ocr_queue.task_done()
+    # Empty the queue & history between tests. All durable state lives in
+    # SQLite now, so a single reset covers jobs, files, processed, settings.
+    ws.jobstore._reset_for_tests()
 
     # Stub out actual processing: instant success. ``force=None`` keeps
     # the stub signature compatible with both /webhook (force default)
     # and /rescan (force=True) call shapes.
     def fake_process(nc_path, node_id, engine="auto", force=None):
         return {"path": nc_path, "output": nc_path, "vlm_pages": []}
+
+    # The real ``_webdav_stat`` waits ~4.5s for the live Nextcloud's
+    # PROPFIND to settle before returning size/etag. There is no NC here,
+    # and the size/etag it would record are only consulted by the panel
+    # UI's "is this OCR still valid?" check — never by /status, /rescan,
+    # /scan-all, or the worker's bookkeeping. Short-circuit so the worker
+    # thread completes in milliseconds instead of racing the assertions
+    # below.
+    monkeypatch.setattr(ws, "_webdav_stat", lambda *a, **k: (None, None))
 
     with patch.object(ws, "_process_file", side_effect=fake_process):
         yield TestClient(ws.app)
@@ -60,12 +116,33 @@ def test_fails_closed_when_secret_not_configured(monkeypatch):
 
 
 def test_panel_is_not_frameable(client):
-    """The panel asks for the webhook secret — it must not be
-    embeddable in a foreign page."""
+    """The /panel endpoint is local-only (defence-in-depth) and serves
+    anti-frame headers — it asks for the webhook secret, so embedding
+    it would be a phishing surface.
+
+    Two contracts verified here:
+
+      1. A non-local client (the default TestClient presents as
+         host="testclient") is rejected with 403 — the local-only
+         lockdown is the security fix.
+      2. A loopback client gets 200 + the anti-frame headers that
+         make embedding impossible in the first place (X-Frame-Options
+         + CSP frame-ancestors 'none').
+    """
+    # 1) Non-local → 403 (the lockdown is the point of this assertion).
     r = client.get("/panel")
-    assert r.status_code == 200
-    assert r.headers.get("X-Frame-Options") == "DENY"
-    assert "frame-ancestors 'none'" in r.headers.get("Content-Security-Policy", "")
+    assert r.status_code == 403
+
+    # 2) Loopback → 200 + anti-frame headers. ``TestClient(client=...)``
+    # overrides the ASGI scope's ``client`` tuple so ``request.client.host``
+    # is the loopback the production check whitelists.
+    local = TestClient(ws.app, client=("127.0.0.1", 5000))
+    r2 = local.get("/panel")
+    assert r2.status_code == 200
+    assert r2.headers.get("X-Frame-Options") == "DENY"
+    assert "frame-ancestors 'none'" in r2.headers.get(
+        "Content-Security-Policy", ""
+    )
 
 
 def test_status_requires_secret(client):
@@ -125,6 +202,13 @@ def test_rescan_enqueues(client):
     assert d["status"] == "queued"
     assert d["engine"] == "minimax"
     assert d["job_id"] >= 1
+    # Drain here so the worker finishes (and re-reads the freshly-reset
+    # SQLite DB) before the next test's ``_reset_for_jobs_for_tests``
+    # wipes the DB out from under a still-running _run_job. Without this
+    # drain the next test sees ``spy.call_count == 2``: worker-A is
+    # still mid-processing this test's job (writing to the orphan inode
+    # of the unlinked DB) when worker-B picks up the next test's job.
+    _drain()
 
 
 def test_rescan_clears_processed_guard(client):
@@ -143,7 +227,7 @@ def test_rescan_clears_processed_guard(client):
             json={"path": "/likivik/files/a.pdf", "node_id": 42},
             headers=h(),
         )
-        ws._ocr_queue.join()
+        _drain()
         # _process_file was called — the guard did not drop the job
         assert spy.call_count == 1
 
@@ -186,8 +270,7 @@ def test_scan_all_enqueues_pdfs_skips_ocrd(client, monkeypatch):
     )
 
     # Mark a.pdf as already OCR'd
-    with ws._ocrd_lock:
-        ws._ocrd_paths.add("/likivik/files/Work/a.pdf")
+    ws.jobstore.file_put({"path": "/likivik/files/Work/a.pdf", "status": "done"})
 
     r = client.post(
         "/scan-all",
@@ -200,12 +283,20 @@ def test_scan_all_enqueues_pdfs_skips_ocrd(client, monkeypatch):
     assert d["enqueued"] == 1          # only b.pdf
     assert d["skipped_ocrd"] == 1      # a.pdf skipped
 
-    # Worker already drained the queue (stub is instant): verify via history
-    ws._ocr_queue.join()
-    with ws._jobs_lock:
-        done_paths = {j["path"] for j in ws._jobs.values() if j["status"] == "done"}
+    # Worker already drained the queue (stub is instant): verify via the index
+    _drain()
+    done_paths = {p for p, m in ws.jobstore.file_all().items()
+                  if m.get("status") == "done"}
     assert "/likivik/files/Work/b.pdf" in done_paths
-    assert "/likivik/files/Work/a.pdf" not in done_paths
+    # a.pdf was marked done in the setup above (line 202). scan-all with
+    # skip_ocrd=True only READS the file index to decide to skip the
+    # enqueue — it does NOT touch the row for skipped files. So the
+    # real contract is that a.pdf's status is preserved (still done),
+    # not that it is absent. The previous assertion (a.pdf not in
+    # done_paths) contradicted the very setup that made the skip test
+    # possible and could never hold once file_put was wired up to
+    # SQLite.
+    assert "/likivik/files/Work/a.pdf" in done_paths
 
 
 def test_scan_all_no_skip_when_disabled(client, monkeypatch):
@@ -217,8 +308,7 @@ def test_scan_all_no_skip_when_disabled(client, monkeypatch):
             pass
 
     monkeypatch.setattr(ws.requests, "request", lambda *a, **k: FakeResp())
-    with ws._ocrd_lock:
-        ws._ocrd_paths.add("/likivik/files/Work/a.pdf")
+    ws.jobstore.file_put({"path": "/likivik/files/Work/a.pdf", "status": "done"})
 
     r = client.post(
         "/scan-all",
@@ -228,13 +318,21 @@ def test_scan_all_no_skip_when_disabled(client, monkeypatch):
     d = r.json()
     assert d["enqueued"] == 1
     assert d["skipped_ocrd"] == 0
+    # Drain the queued job before the next test starts (see the
+    # long-form comment in test_rescan_enqueues for the race we're
+    # avoiding — same shape: an in-flight _run_job crossing the test
+    # boundary survives a SQLite reset and re-claims a later job).
+    _drain()
 
 
 # --- metadata stamping -------------------------------------------------------
 
 def test_stamp_metadata(tmp_path):
     fitz = pytest.importorskip("fitz")
-    from nc_ocr_flow.webhook_server import _stamp_metadata
+    # Use the cached ``ws`` reference so the call lands on the same
+    # module instance other tests in this suite have monkeypatched /
+    # popped / re-imported (see test_process_file_* above).
+    _stamp_metadata = ws._stamp_metadata
 
     pdf = tmp_path / "t.pdf"
     doc = fitz.open()
@@ -267,13 +365,13 @@ def test_stamp_metadata(tmp_path):
 # --- worker → ocrd_paths bookkeeping ----------------------------------------
 
 def test_worker_marks_ocrd(client):
-    """After worker processes a job, its path lands in _ocrd_paths."""
+    """After worker processes a job, its path is marked done in jobstore."""
     client.post(
         "/rescan", json={"path": "/likivik/files/x.pdf"}, headers=h()
     )
-    ws._ocr_queue.join()  # wait for the worker to drain
-    with ws._ocrd_lock:
-        assert "/likivik/files/x.pdf" in ws._ocrd_paths
+    _drain()  # wait for the worker to drain the SQLite queue
+    assert (ws.jobstore.file_get("/likivik/files/x.pdf")
+            or {}).get("status") == "done"
 
 
 # --- born-digital / force-skip --------------------------------------------
@@ -314,22 +412,24 @@ def test_process_file_force_bypasses_skip(monkeypatch, tmp_path):
             "has_encoding_issues": False,
         }
 
+    # NB: keep all module access via the cached ``ws`` reference instead
+    # of ``from nc_ocr_flow.webhook_server import _process_file`` — other
+    # tests in this directory (test_ocr_logic.py's test_loop_prevention)
+    # legitimately pop the webhook_server module from sys.modules and
+    # re-import it. A bare ``from … import …`` would re-resolve the
+    # module at call time and bypass the patches below (the freshly
+    # imported module's ``process_pdf`` would then reach the real
+    # Google engine and trip Application Default Credentials).
     monkeypatch.setattr(
-        "nc_ocr_flow.webhook_server._webdav_download",
+        ws, "_webdav_download",
         lambda nc, dest: __import__("shutil").copy2(pdf, dest),
     )
-    monkeypatch.setattr(
-        "nc_ocr_flow.webhook_server._webdav_upload", lambda *a, **k: None
-    )
-    monkeypatch.setattr(
-        "nc_ocr_flow.webhook_server._stamp_metadata",
-        lambda *a, **k: None,
-    )
+    monkeypatch.setattr(ws, "_webdav_upload", lambda *a, **k: None)
+    monkeypatch.setattr(ws, "_stamp_metadata", lambda *a, **k: None)
     with patch.object(ws, "process_pdf", side_effect=fake_proc), \
          patch.object(ws, "classify_pdf", side_effect=fake_classify):
-        from nc_ocr_flow.webhook_server import _process_file
-        res = _process_file("/likivik/files/x.pdf", node_id=1,
-                            engine="google", force=True)
+        res = ws._process_file("/likivik/files/x.pdf", node_id=1,
+                               engine="google", force=True)
 
     # force=True bypassed the skip; process_pdf was called.
     assert calls["proc"], "force=True must invoke process_pdf even when classifier says skip"
@@ -362,22 +462,14 @@ def test_process_file_skips_born_digital(monkeypatch, tmp_path):
             "has_encoding_issues": False,
         }
 
-    monkeypatch.setattr(
-        "nc_ocr_flow.webhook_server._webdav_download",
-        lambda nc, dest: __import__("shutil").copy2(pdf, dest),
-    )
-    monkeypatch.setattr(
-        "nc_ocr_flow.webhook_server._webdav_upload", lambda *a, **k: None
-    )
-    monkeypatch.setattr(
-        "nc_ocr_flow.webhook_server._stamp_metadata",
-        lambda *a, **k: None,
-    )
+    monkeypatch.setattr(ws, "_webdav_download",
+                       lambda nc, dest: __import__("shutil").copy2(pdf, dest))
+    monkeypatch.setattr(ws, "_webdav_upload", lambda *a, **k: None)
+    monkeypatch.setattr(ws, "_stamp_metadata", lambda *a, **k: None)
     with patch.object(ws, "process_pdf", side_effect=fake_proc), \
          patch.object(ws, "classify_pdf", side_effect=fake_classify):
-        from nc_ocr_flow.webhook_server import _process_file
-        res = _process_file("/likivik/files/y.pdf", node_id=2,
-                            engine="google", force=False)
+        res = ws._process_file("/likivik/files/y.pdf", node_id=2,
+                               engine="google", force=False)
 
     assert calls["proc"] == [], "process_pdf must NOT run when classifier says skip"
     assert res.get("skipped") is True
@@ -409,22 +501,14 @@ def test_process_file_bad_layer_reocr(monkeypatch, tmp_path):
             "has_encoding_issues": False,
         }
 
-    monkeypatch.setattr(
-        "nc_ocr_flow.webhook_server._webdav_download",
-        lambda nc, dest: __import__("shutil").copy2(pdf, dest),
-    )
-    monkeypatch.setattr(
-        "nc_ocr_flow.webhook_server._webdav_upload", lambda *a, **k: None
-    )
-    monkeypatch.setattr(
-        "nc_ocr_flow.webhook_server._stamp_metadata",
-        lambda *a, **k: None,
-    )
+    monkeypatch.setattr(ws, "_webdav_download",
+                       lambda nc, dest: __import__("shutil").copy2(pdf, dest))
+    monkeypatch.setattr(ws, "_webdav_upload", lambda *a, **k: None)
+    monkeypatch.setattr(ws, "_stamp_metadata", lambda *a, **k: None)
     with patch.object(ws, "process_pdf", side_effect=fake_proc), \
          patch.object(ws, "classify_pdf", side_effect=fake_classify):
-        from nc_ocr_flow.webhook_server import _process_file
-        res = _process_file("/likivik/files/z.pdf", node_id=3,
-                            engine="google", force=False)
+        res = ws._process_file("/likivik/files/z.pdf", node_id=3,
+                               engine="google", force=False)
 
     assert calls["proc"], "classifier said needs_ocr=True → process_pdf must run"
     assert res.get("skipped") is not True

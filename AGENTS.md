@@ -39,6 +39,30 @@ older trunk and "merging" would revert every commit landed since — fix it with
 `jj diff --stat --from dev --to @` (it must list only files you touched) before
 `jj bookmark set dev -r @`. Full detail: skill `jj-agent-workspaces`.
 
+## VM smoke — run it locally, it is not a CI check
+
+`.github/workflows/ci.yml` runs two required checks: the nc-ocr-flow pytest
+suite, and `nix build --dry-run` over every `nixosConfiguration`. The VM smoke
+is deliberately absent: a hosted runner cannot cold-build the serenity closure
+within a job timeout (the build job was killed at 90 minutes with `nix` still
+running), while serenity itself builds the same VM in 5-10 minutes because it
+already has the store.
+
+So the smoke is a step you run, and running it before you push is the point:
+
+    nix run .#serenity-smoke
+
+It boots the whole serenity host in QEMU and prints `SERENITY_SMOKE_PASS` or
+`SERENITY_SMOKE_FAIL`. Run it:
+
+- before pushing a change that touches `modules/`, `pkgs/` or `flake.nix` —
+  CI only proves those configs *evaluate*, not that they *build*;
+- before any deploy that touches serenity (see the deploy flow).
+
+Honest consequence: CI can no longer catch a build failure — a bad hash, a
+failing build step. Nothing automated covers that any more; the smoke does, and
+only when you actually run it.
+
 ## Repo Location
 
 - **Serenity**: `/Storage/Git/spectacle` — **the host the Hermes agent runs on** (moved

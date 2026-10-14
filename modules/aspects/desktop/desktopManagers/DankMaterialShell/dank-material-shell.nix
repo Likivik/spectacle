@@ -63,20 +63,34 @@
             restartIfChanged = true; # Auto-restart dms.service when dms-shell changes
           };
 
-          # Core features
-          enableSystemMonitoring = true; # System monitoring widgets (dgop)
-          enableVPN = true; # VPN management widget
-          enableDynamicTheming = true; # Wallpaper-based theming (matugen)
-          enableCalendarEvents = true; # Calendar integration (khal)
-          enableClipboardPaste = true; # Pasting from the clipboard history (wtype)
+          # enableSystemMonitoring, enableVPN, enableClipboardPaste,
+          # enableDynamicTheming and enableCalendarEvents were all removed
+          # upstream. DMS detects networking at runtime and ships these
+          # features built in, so the options no longer exist and merely
+          # setting them fails the assertions — which breaks `nix build` for
+          # every host that includes this aspect (traversal among them).
 
+          # `src` for every entry below is filled in by
+          # inputs.dms-plugin-registry.nixosModules.default (imported above),
+          # which only knows plugins listed in the official registry. Six names
+          # that used to be here are NOT in that registry and therefore had no
+          # src, which made the whole host fail to evaluate:
+          #   caffeine            - repo deleted upstream; DMS has a built-in
+          #                         idle inhibitor, so it is not needed
+          #   dankBatteryAlerts   - first-party only (AvengeMedia/dms-plugins);
+          #                         re-add with an explicit src if wanted
+          #   folderView          - repo archived, not in the registry
+          #   keybindingCheatSheet- not in the registry, duplicates
+          #                         dankLauncherKeys
+          #   qcalCalendar        - not in the registry (unofficial repo);
+          #                         khalCalendar / dankCalendarAgenda are the
+          #                         registry equivalents
+          #   tailscale           - registered as `tailscaleDashboard`
           plugins = {
             bongoCat.enable = true;
-            caffeine.enable = true;
             clipboardPlus.enable = true;
             commandRunner.enable = true;
             dankActions.enable = true;
-            dankBatteryAlerts.enable = true;
             dankBitwarden.enable = true;
             dankCalendar.enable = true;
             dankDiskUsage.enable = true;
@@ -85,16 +99,13 @@
             dankLauncherKeys.enable = true;
             displayManager.enable = true;
             emojiLauncher.enable = true;
-            folderView.enable = true;
             githubInbox.enable = true;
-            keybindingCheatSheet.enable = true;
             niriDS.enable = true;
             nixMonitor.enable = true;
             nixPackageRunner.enable = true;
             ocrScanner.enable = true;
-            qcalCalendar.enable = true;
             quickTote.enable = true;
-            tailscale.enable = true;
+            tailscaleDashboard.enable = true;
             unifiedTaskbar.enable = true;
             vscodeLauncher.enable = true;
             wallpaperDiscovery.enable = true;

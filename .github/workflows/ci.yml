@@ -1,0 +1,121 @@
+name: CI
+
+# Required gate before anything reaches main.
+#
+#   python-tests  — pytest over pkgs/nc-ocr-flow, required (~30 s)
+#   nix-eval      — evaluates EVERY host config, required (~4 min)
+#
+# The VM smoke deliberately does NOT run here. A hosted runner cannot cold-build
+# the serenity closure: the build job was killed by its own 90-minute timeout
+# with `nix` still running, while the same VM builds in 5-10 minutes on
+# serenity, which already has the store. A job that cannot finish is worse than
+# no job. Run the smoke locally instead — see AGENTS.md.
+#
+# This means CI proves every config EVALUATES, not that it BUILDS. A hash
+# mismatch or a failing build step still gets through; the smoke is the only
+# check covering that, and it is now a deliberate manual step.
+#
+# No caching here on purpose: with the heavy job gone there is nothing worth
+# caching (the eval uses --dry-run and downloads nothing). A fleet-wide binary
+# cache (attic on serenity) is the answer if the smoke ever comes back to CI —
+# separate decision, currently paused.
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [main]
+  merge_group:
+
+concurrency:
+  # Never cancel a run on main or in the merge queue: those results are what
+  # actually gates the branch. Superseding an in-flight PR run is fine.
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  ORI_MODEL_URL: https://huggingface.co/PaddleOcrNet/PaddleOcrNet-models/resolve/main/PP-LCNet_x1_0_doc_ori.onnx
+  ORI_MODEL_SHA256: d85b3185075afca1a83157f73eac2e52b598d72e9d47dd19cc4a2f3605e23e3f
+
+jobs:
+  python-tests:
+    name: python tests (nc-ocr-flow)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pkgs/nc-ocr-flow/pyproject.toml
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # Same set the service's start script installs, plus test-only bits.
+          # httpx2 is what starlette's TestClient asks for here; httpx is kept
+          # alongside so either name resolves.
+          python -m pip install \
+            pymupdf pillow requests img2pdf numpy onnxruntime \
+            fastapi uvicorn pydantic pdf-inspector \
+            google-cloud-vision google-cloud-storage \
+            pytest httpx httpx2
+
+      - name: Fetch the orientation model (verified by sha256)
+        run: |
+          curl -fsSL -o /tmp/pp_lcnet_x1_0_doc_ori.onnx "$ORI_MODEL_URL"
+          echo "$ORI_MODEL_SHA256  /tmp/pp_lcnet_x1_0_doc_ori.onnx" | sha256sum -c -
+
+      - name: Run the test suite
+        working-directory: pkgs/nc-ocr-flow
+        env:
+          # The service installs the package into its venv; here we just put the
+          # source on the path. Without this every test module fails to collect
+          # with "No module named 'nc_ocr_flow'".
+          PYTHONPATH: src
+          NC_OCR_ORIENTATION_MODEL: /tmp/pp_lcnet_x1_0_doc_ori.onnx
+        run: python -m pytest tests/ -q
+
+  nix-eval:
+    name: nix eval (all hosts)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: DeterminateSystems/nix-installer-action@main
+        with:
+          extra-conf: |
+            experimental-features = nix-command flakes
+            accept-flake-config = true
+
+      - name: Evaluate every nixosConfiguration
+        run: |
+          set -euo pipefail
+          # ALL hosts are required on purpose: a change made for one host must
+          # not silently break another. If a config stops evaluating, that is a
+          # regression to fix, not a host to exclude.
+          hosts=$(nix eval --raw .#nixosConfigurations \
+            --apply 'cfgs: builtins.concatStringsSep " " (builtins.attrNames cfgs)')
+          echo "hosts: $hosts"
+          failed=""
+          for h in $hosts; do
+            echo "::group::eval $h"
+            if nix build --dry-run --no-link \
+                 ".#nixosConfigurations.$h.config.system.build.toplevel"; then
+              echo "ok: $h"
+            else
+              echo "::error::eval failed for $h"
+              failed="$failed $h"
+            fi
+            echo "::endgroup::"
+          done
+          if [ -n "$failed" ]; then
+            echo "configs that do not evaluate:$failed"
+            exit 1
+          fi

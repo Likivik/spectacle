@@ -1,5 +1,5 @@
 { stdenv, lib, fetchurl, autoPatchelfHook, wrapGAppsHook3, makeWrapper
-, flac, gnome2, harfbuzzFull, nss, snappy, xdg-utils
+, flac, harfbuzzFull, nss, snappy, xdg-utils
 , alsa-lib, atk, cairo, cups, curl, dbus, expat, fontconfig, freetype
 , gdk-pixbuf, glib, gtk3, libX11, libxcb, libXScrnSaver, libXcomposite
 , libXcursor, libXdamage, libXext, libXfixes, libXi, libXrandr, libXrender
@@ -49,7 +49,10 @@ in stdenv.mkDerivation rec {
     freetype
     gdk-pixbuf
     glib
-    gnome2.GConf
+    # gnome2.GConf used to be listed here (copied from an old nixpkgs
+    # chromium). nixpkgs removed gnome2.GConf, so referencing it made the
+    # whole derivation fail to evaluate - and traversal is the host that
+    # includes the chromium-gost aspect. Nothing here needs GConf.
     gtk3
     libX11
     libXScrnSaver

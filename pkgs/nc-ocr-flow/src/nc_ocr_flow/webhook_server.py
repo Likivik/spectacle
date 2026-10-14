@@ -20,7 +20,7 @@ from pathlib import Path
 
 import requests
 from fastapi import FastAPI, Header, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
 from urllib.parse import quote
@@ -28,6 +28,7 @@ from urllib.parse import quote
 from .classifier import classify
 from .ocr import process_pdf
 from .pdf_classify import classify_pdf
+from . import jobstore
 
 log = logging.getLogger(__name__)
 
@@ -55,22 +56,20 @@ IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".tiff", ".heic"}
 PDF_EXTS = {".pdf"}
 PROCESSABLE_EXTS = IMAGE_EXTS | PDF_EXTS
 
-# Loop prevention: track recently processed node IDs
-_processed_ids: dict[int, float] = {}
-_processed_lock = threading.Lock()
+#: Below this many extractable characters per page a PDF is treated
+#: as a scan even when the text-based classifier says otherwise
+#: (real uploads: 1 and 4 chars/page were silently skipped).
+MIN_TEXT_CHARS_PER_PAGE = 25
+
+# Loop prevention: which node IDs we processed recently. The claim lives
+# in SQLite (jobstore.claim_node) so it survives a restart.
 _PROCESSED_TTL = 300  # 5 minutes
 
-# Persistent-ish record of files OCR'd by this service (survives queue but
-# resets on restart; scan-all uses it to skip already-done files)
-_ocrd_paths: set[str] = set()
-_ocrd_lock = threading.Lock()
 
-
-# --- Durable OCR index (survives restarts) ---------------------------------
-# Maps NC path -> {status, engine, reason, node_id, finished}. Written to the
-# systemd StateDirectory (STATE_DIRECTORY=/var/lib/nc-ocr) so the "how many
-# scanned / with which engine" metrics stay accurate across restarts. The
-# in-memory _ocrd_paths set is rebuilt from it on startup.
+# --- Per-file OCR state (survives restarts) --------------------------------
+# Maps NC path -> {status, engine, reason, node_id, finished, size, etag}.
+# It lives in the ``files`` table (see jobstore), so the index costs no
+# RAM no matter how many files the instance has seen.
 
 def _state_dir() -> Path:
     d = os.environ.get("NC_OCR_STATE_DIR") or os.environ.get("STATE_DIRECTORY", "")
@@ -79,32 +78,6 @@ def _state_dir() -> Path:
 
 
 _INDEX_FILE = _state_dir() / "ocr_index.json"
-_ocr_index: dict[str, dict] = {}
-_index_lock = threading.Lock()
-
-
-def _load_index() -> None:
-    global _ocr_index
-    try:
-        if _INDEX_FILE.exists():
-            _ocr_index = json.loads(_INDEX_FILE.read_text())
-            with _ocrd_lock:
-                _ocrd_paths.update(
-                    p for p, m in _ocr_index.items() if m.get("status") == "done"
-                )
-            log.info("loaded OCR index: %d entries from %s", len(_ocr_index), _INDEX_FILE)
-    except Exception as exc:  # never block startup on a bad index
-        log.warning("could not load OCR index %s: %s", _INDEX_FILE, exc)
-
-
-def _save_index() -> None:
-    try:
-        _INDEX_FILE.parent.mkdir(parents=True, exist_ok=True)
-        tmp = _INDEX_FILE.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(_ocr_index))
-        tmp.replace(_INDEX_FILE)
-    except Exception as exc:
-        log.warning("could not save OCR index: %s", exc)
 
 
 def _index_record(nc_path: str, status: str, engine: str | None,
@@ -117,38 +90,36 @@ def _index_record(nc_path: str, status: str, engine: str | None,
     the user replaced the file since we OCR'd it — otherwise a stale
     ``done`` would keep hiding the "Send to OCR" action forever.
     """
-    with _index_lock:
-        _ocr_index[nc_path] = {
-            "status": status,
-            "engine": engine if status == "done" else None,
-            "reason": reason,
-            "node_id": node_id,
-            "finished": time.time(),
-            "size": size,
-            "etag": etag,
-        }
-        _save_index()
+    jobstore.file_put({
+        "path": nc_path,
+        "status": status,
+        "engine": engine if status == "done" else None,
+        "reason": reason,
+        "node_id": node_id,
+        "finished": time.time(),
+        "size": size,
+        "etag": etag,
+    })
 
 
 def _is_recently_processed(node_id: int) -> bool:
-    with _processed_lock:
-        ts = _processed_ids.get(node_id)
-        if ts is None:
-            return False
-        if time.time() - ts > _PROCESSED_TTL:
-            del _processed_ids[node_id]
-            return False
-        return True
+    """Kept for callers that only want to look, without claiming."""
+    return not jobstore.claim_node(node_id, _PROCESSED_TTL)
+
+
+def _claim_node(node_id: int) -> bool:
+    """Atomically claim ``node_id`` for processing.
+
+    Delegates to SQLite: the claim survives a restart, so a deploy no
+    longer makes us forget which files we just processed. On a DB error
+    it fails open (process the file) rather than skipping it forever.
+    """
+    return jobstore.claim_node(node_id, _PROCESSED_TTL)
 
 
 def _mark_processed(node_id: int) -> None:
-    with _processed_lock:
-        _processed_ids[node_id] = time.time()
-        # Prune old entries
-        now = time.time()
-        stale = [k for k, v in _processed_ids.items() if now - v > _PROCESSED_TTL]
-        for k in stale:
-            del _processed_ids[k]
+    """Refresh the claim timestamp after a successful run."""
+    jobstore.claim_node(node_id, 0.0) if node_id else None
 
 
 # --- WebDAV client ---
@@ -163,6 +134,10 @@ def _webdav_url(nc_path: str) -> str:
     from urllib.parse import quote
     # Strip leading slash, then remove '<user>/files/' prefix to get relative path
     rel = nc_path.lstrip('/')
+    # Refuse anything that could escape the user's own profile: a '..'
+    # segment must never reach the server, even if a client sends one.
+    if '..' in Path(rel).parts:
+        raise ValueError(f"refusing unsafe Nextcloud path: {nc_path!r}")
     parts = rel.split('/', 2)
     if len(parts) >= 3 and parts[1] == 'files':
         user = parts[0]
@@ -181,16 +156,22 @@ def _webdav_download(nc_path: str, dest: Path) -> None:
     """Download file from NC via WebDAV GET."""
     url = _webdav_url(nc_path)
     log.info("WebDAV GET %s", url)
-    resp = requests.get(
-        url,
-        auth=(NC_USER, NC_PASSWORD),
-        stream=True,
-        timeout=120,
-    )
-    resp.raise_for_status()
-    with dest.open("wb") as f:
-        for chunk in resp.iter_content(8192):
-            f.write(chunk)
+    def _do_get():
+        r = requests.get(
+            url,
+            auth=(NC_USER, NC_PASSWORD),
+            stream=True,
+            timeout=120,
+        )
+        r.raise_for_status()
+        # Write inside the retried closure: a stream that dies midway
+        # would otherwise leave a truncated file behind.
+        with dest.open("wb") as f:
+            for chunk in r.iter_content(8192):
+                f.write(chunk)
+        return r
+
+    _retry(_do_get, what=f"WebDAV GET {nc_path}")
 
 
 # --- Per-engine version stamping (used by _stamp_metadata) -----------------
@@ -244,23 +225,53 @@ def _webdav_upload(nc_path: str, src: Path) -> None:
     """Upload file to NC via WebDAV PUT (creates new version automatically)."""
     url = _webdav_url(nc_path)
     log.info("WebDAV PUT %s", url)
-    with src.open("rb") as f:
-        resp = requests.put(
-            url,
-            data=f,
-            auth=(NC_USER, NC_PASSWORD),
-            headers={"Content-Type": "application/octet-stream"},
-            timeout=300,
-        )
-    resp.raise_for_status()
+    def _do_put():
+        with src.open("rb") as f:
+            r = requests.put(
+                url,
+                data=f,
+                auth=(NC_USER, NC_PASSWORD),
+                headers={"Content-Type": "application/octet-stream"},
+                timeout=300,
+            )
+        r.raise_for_status()
+        return r
+
+    resp = _retry(_do_put, what=f"WebDAV PUT {nc_path}")
     log.info("WebDAV PUT %s → %d", nc_path, resp.status_code)
+
+
+#: Transient failures (NC restarting, DAV lock contention, a blip on
+#: the tailnet) used to kill a job permanently. Retry with backoff.
+_RETRY_ATTEMPTS = 3
+_RETRY_BASE_DELAY = 1.0
+
+
+def _retry(fn, *, what: str, attempts: int = _RETRY_ATTEMPTS):
+    """Call ``fn`` with exponential backoff on transient failures."""
+    last: Exception | None = None
+    for i in range(attempts):
+        try:
+            return fn()
+        except (requests.RequestException, TimeoutError, OSError) as exc:
+            last = exc
+            if i + 1 < attempts:
+                delay = _RETRY_BASE_DELAY * (2 ** i)
+                log.warning("%s failed (%s) — retry %d/%d in %.1fs",
+                            what, exc, i + 1, attempts - 1, delay)
+                time.sleep(delay)
+    log.error("%s failed after %d attempts: %s", what, attempts, last)
+    raise last  # type: ignore[misc]
 
 
 def _webdav_delete(nc_path: str) -> None:
     """Delete file from NC via WebDAV DELETE (for image→PDF replacement)."""
     url = _webdav_url(nc_path)
     log.info("WebDAV DELETE %s", url)
-    resp = requests.delete(url, auth=(NC_USER, NC_PASSWORD), timeout=30)
+    resp = _retry(
+        lambda: requests.delete(url, auth=(NC_USER, NC_PASSWORD), timeout=30),
+        what=f"WebDAV DELETE {nc_path}",
+    )
     resp.raise_for_status()
 
 
@@ -472,11 +483,38 @@ def _needs_ocr_decision(path: Path, force: bool) -> bool:
 
     try:
         cls = classify_pdf(path)
-        return bool(cls.get("needs_ocr", True))
+        needs = bool(cls.get("needs_ocr", True))
     except Exception as exc:
         # Classifier crashed — default to OCR (better safe than skip).
         log.warning("pdf_classify raised (%s); defaulting to OCR", exc)
         return True
+
+    if needs:
+        return True
+
+    # Text-density guard. The inspector (pdf-inspector / heuristic)
+    # calls a page "text_based" whenever it finds text objects, even
+    # when the page is really an image scan carrying a stamp or a
+    # watermark. Measured on real uploads: two phone-photo scans
+    # classified as text_based with 1 and 4 characters of extractable
+    # text, and were silently skipped — no OCR, no text layer. If
+    # there is essentially no text per page, treat it as a scan.
+    try:
+        import fitz
+        with fitz.open(str(path)) as doc:
+            pages = max(1, doc.page_count)
+            chars = sum(len(page.get_text().strip()) for page in doc)
+        per_page = chars / pages
+        if per_page < MIN_TEXT_CHARS_PER_PAGE:
+            log.info(
+                "pdf_classify said text_based but only %.1f chars/page "
+                "on %s; OCR-ing anyway", per_page, path.name,
+            )
+            return True
+    except Exception as exc:  # noqa: BLE001 — guard is best-effort
+        log.warning("text-density guard failed (%s); trusting classifier", exc)
+
+    return False
 
 
 def _process_file(nc_path: str, node_id: int, engine: str | None = None,
@@ -579,86 +617,376 @@ import queue
 import itertools
 
 _job_seq = itertools.count(1)
-_jobs: dict[int, dict] = {}          # job_id -> job record
-_jobs_lock = threading.Lock()
-_MAX_JOBS_HISTORY = 500              # keep last N finished jobs
+#: Workers are woken by this signal; the work list itself is the
+#: ``jobs`` table in SQLite, so a backlog of a million files costs
+#: nothing in RAM.
+_work_available = threading.Event()
+#: Idle workers wake up this often even without a signal, so a lost
+#: notification can never wedge the queue.
+_IDLE_POLL_SECONDS = 5.0
 
-# Single-worker OCR queue: webhook endpoint enqueues, worker thread processes.
-_ocr_queue: "queue.Queue[dict]" = queue.Queue()
+
+#: Settings the panel may change: short key -> (env var, default).
+#: Reading honours env (nix, authoritative) -> SQLite override -> default.
+_SETTING_SPEC: dict[str, tuple[str, int]] = {
+    "workers": ("NC_OCR_WORKERS", 2),
+    "max_concurrent_google": ("NC_OCR_MAX_CONCURRENT_GOOGLE", 2),
+    "max_concurrent_tesseract": ("NC_OCR_MAX_CONCURRENT_TESSERACT", 1),
+    "max_concurrent_minimax": ("NC_OCR_MAX_CONCURRENT_MINIMAX", 1),
+}
+#: Settings that only take effect after a restart (the worker pool and
+#: the semaphores are built at import time).
+_RESTART_SETTINGS = {"workers"}
+
+# Open the store before reading any setting out of it. Clearing the
+# restart flag here is what makes "applied" mean applied: we only get
+# this far by having restarted.
+jobstore.init()
+jobstore.setting_delete("_restart_pending")
+
+
+def _int_env(name: str, default: int) -> int:
+    """Positive int for a setting, honouring the precedence above.
+
+    A value saved from the panel wins, so the operator can change the
+    worker pool without a redeploy; the nix value stays the default and
+    is what a fresh database falls back to.
+    """
+    raw = jobstore.settings_all().get(name)
+    if raw in (None, ""):
+        raw = os.environ.get(name)
+    try:
+        return max(1, int(raw))
+    except (TypeError, ValueError):
+        return default
+
+
+def _setting_values() -> tuple[dict[str, int], dict[str, int], dict[str, str]]:
+    """(current, defaults, source) per short key, for the panel."""
+    stored = jobstore.settings_all()
+    current: dict[str, int] = {}
+    defaults: dict[str, int] = {}
+    sources: dict[str, str] = {}
+    for key, (env_name, default) in _SETTING_SPEC.items():
+        defaults[key] = default
+        raw = stored.get(env_name)
+        if raw not in (None, ""):
+            sources[key] = "db"
+        else:
+            raw = os.environ.get(env_name)
+            sources[key] = "env" if raw not in (None, "") else "default"
+        try:
+            current[key] = max(1, int(raw))
+        except (TypeError, ValueError):
+            current[key] = default
+            sources[key] = "default"
+    return current, defaults, sources
+
+
+def _pending_restart() -> bool:
+    return bool(jobstore.settings_all().get("_restart_pending"))
+
+
+#: How many worker threads pull from the work list.
+_WORKERS = _int_env("NC_OCR_WORKERS", 2)
+
+#: Per-engine concurrency ceilings. Raising ``NC_OCR_WORKERS`` is safe:
+#: a worker only starts a job after taking its engine's slot, so the
+#: Google Vision / MiniMax quotas cannot be exceeded by adding workers.
+_ENGINE_SLOTS = {
+    "google": threading.Semaphore(
+        _int_env("NC_OCR_MAX_CONCURRENT_GOOGLE", 2)),
+    "tesseract": threading.Semaphore(
+        _int_env("NC_OCR_MAX_CONCURRENT_TESSERACT", 1)),
+    "minimax": threading.Semaphore(
+        _int_env("NC_OCR_MAX_CONCURRENT_MINIMAX", 1)),
+}
+_DEFAULT_SLOT = threading.Semaphore(
+    _int_env("NC_OCR_MAX_CONCURRENT_DEFAULT", 2))
+
+
+def _path_in_flight(nc_path: str) -> bool:
+    """True if this path is queued or running right now.
+
+    Answered from the ``files`` table (one keyed lookup), not from an
+    in-memory dict — the index has to work for a million files.
+    """
+    rec = jobstore.file_get(nc_path)
+    return bool(rec) and rec.get("status") in ("queued", "running")
 
 
 def _record_job(job: dict) -> None:
-    with _jobs_lock:
-        _jobs[job["id"]] = job
-        # Prune history
-        finished = [j for j in _jobs.values() if j["status"] in ("done", "error", "skipped")]
-        if len(finished) > _MAX_JOBS_HISTORY:
-            for j in sorted(finished, key=lambda x: x["id"])[: len(finished) - _MAX_JOBS_HISTORY]:
-                del _jobs[j["id"]]
+    """No-op shim, kept so the call sites stay readable.
+
+    Job state lives in SQLite now (``jobstore.record_update``); the old
+    in-memory mirror is gone, so a million-file backlog costs no RAM.
+    """
+    return None
+
+
+def _engine_slot(engine: str | None):
+    """Concurrency ceiling for this job's engine."""
+    key = (engine or os.environ.get("NC_OCR_ENGINE") or "google").lower()
+    return _ENGINE_SLOTS.get(key, _DEFAULT_SLOT)
+
+
+def _run_job(job: dict) -> None:
+    """Process one claimed job and persist its outcome."""
+    item = job
+    job["status"] = "running"
+    job["started"] = job.get("started") or time.time()
+    # Mirror to durable history (best-effort; never raises).
+    jobstore.record_update(job)
+    try:
+        log.info("worker: job %d start: %s (engine=%s force=%s)",
+                 job["id"], job["path"], job["engine"], item.get("force"))
+        # Take the engine's slot: this is what keeps an API quota intact
+        # when NC_OCR_WORKERS is raised.
+        with _engine_slot(item.get("engine")):
+            result = _process_file(item["nc_path"], item["node_id"],
+                                   item["engine"], item.get("force", False))
+        job["status"] = "done" if not result.get("skipped") else "skipped"
+        job["result"] = result
+        if result.get("skipped"):
+            job["reason"] = result.get("reason", "")
+        log.info("worker: job %d %s: %s", job["id"], job["status"], job["path"])
+    except Exception as exc:
+        job["status"] = "error"
+        job["error"] = str(exc)
+        log.error("worker: job %d failed: %s — %s", job["id"], job["path"], exc)
+    finally:
+        job["finished"] = time.time()
+        _record_job(job)
+        # Persist the final state to SQLite. ``record_update`` is
+        # upsert-by-id and never raises into the caller — the OCR
+        # pipeline must not break because the history DB is down.
+        jobstore.record_update(job)
+        node_id = item["node_id"]
+        force = item.get("force", False)
+        # ``force`` re-OCRs skip the recently_processed guard so the
+        # user can deliberately re-OCR a file we just processed. The
+        # index write below records the path either way.
+        if node_id and not force:
+            _mark_processed(node_id)
+        # Persist outcome (incl. the engine that actually ran) so the
+        # metrics survive a service restart.
+        job_result = job.get("result")
+        engine_used = None
+        if isinstance(job_result, dict):
+            engine_used = job_result.get("engine")
+        # Fingerprint the file as we left it (size + etag), so the NC
+        # app can tell a still-valid "done" from a replaced file.
+        size_after, etag_after = (None, None)
+        if job["status"] in ("done", "skipped"):
+            size_after, etag_after = _webdav_stat(item["nc_path"])
+        _index_record(
+            item["nc_path"],
+            job["status"],
+            engine_used or job.get("engine"),
+            job.get("reason") or job.get("error"),
+            node_id or 0,
+            size=size_after,
+            etag=etag_after,
+        )
+        # Billable usage. Vision charges one unit per page (each PDF page
+        # counts as an individual image), so count pages, not requests —
+        # and only for jobs that really went to an engine (skipped files
+        # are born-digital and never leave the box).
+        if job["status"] == "done":
+            _pages = 0
+            if isinstance(job_result, dict):
+                for key in ("vlm_pages", "pages", "page_count"):
+                    val = job_result.get(key)
+                    if isinstance(val, (list, tuple)):
+                        _pages = max(_pages, len(val))
+                    elif isinstance(val, int):
+                        _pages = max(_pages, val)
+            jobstore.usage_add(engine_used or job.get("engine"), pages=_pages)
 
 
 def _ocr_worker() -> None:
-    """Sequential OCR worker: processes queue items one at a time."""
+    """Worker loop: claim a job from the SQLite work list and run it.
+
+    The backlog lives in the DB, not in this process, so any number of
+    these can run (``NC_OCR_WORKERS``). Idle workers wait on
+    ``_work_available`` with a timeout, which also covers a signal that
+    was set while a job was being processed.
+    """
     while True:
-        item = _ocr_queue.get()
-        job = item["job"]
         try:
-            job["status"] = "running"
-            job["started"] = time.time()
-            log.info("worker: job %d start: %s (engine=%s force=%s)",
-                     job["id"], job["path"], job["engine"], item.get("force"))
-            result = _process_file(item["nc_path"], item["node_id"],
-                                   item["engine"], item.get("force", False))
-            job["status"] = "done" if not result.get("skipped") else "skipped"
-            job["result"] = result
-            if result.get("skipped"):
-                job["reason"] = result.get("reason", "")
-            log.info("worker: job %d %s: %s", job["id"], job["status"], job["path"])
-        except Exception as exc:
-            job["status"] = "error"
-            job["error"] = str(exc)
-            log.error("worker: job %d failed: %s — %s", job["id"], job["path"], exc)
-        finally:
-            job["finished"] = time.time()
-            _record_job(job)
-            node_id = item["node_id"]
-            force = item.get("force", False)
-            # ``force`` re-OCRs skip the recently_processed guard so the
-            # user can deliberately re-OCR a file we just processed. The
-            # _ocrd_paths bookkeeping still records the path (it's the
-            # same file the worker just touched).
-            if node_id and not force:
-                _mark_processed(node_id)
-            if job["status"] == "done":
-                with _ocrd_lock:
-                    _ocrd_paths.add(item["nc_path"])
-            # Persist outcome (incl. the engine that actually ran) so the
-            # metrics survive a service restart.
-            job_result = job.get("result")
-            engine_used = None
-            if isinstance(job_result, dict):
-                engine_used = job_result.get("engine")
-            # Fingerprint the file as we left it (size + etag), so the NC
-            # app can tell a still-valid "done" from a replaced file.
-            size_after, etag_after = (None, None)
-            if job["status"] in ("done", "skipped"):
-                size_after, etag_after = _webdav_stat(item["nc_path"])
-            _index_record(
-                item["nc_path"],
-                job["status"],
-                engine_used or job.get("engine"),
-                job.get("reason") or job.get("error"),
-                node_id or 0,
-                size=size_after,
-                etag=etag_after,
-            )
-            _ocr_queue.task_done()
+            job = jobstore.claim_next()
+        except Exception as exc:  # noqa: BLE001 — never kill the loop
+            log.error("worker: claim failed: %s", exc)
+            job = None
+        if job is None:
+            _work_available.wait(timeout=_IDLE_POLL_SECONDS)
+            _work_available.clear()
+            continue
+        _run_job(job)
 
 
-threading.Thread(target=_ocr_worker, daemon=True, name="ocr-worker").start()
+# Jobs left 'running' by a crash or restart go back in the queue before
+# any worker starts.
+_requeued = jobstore.requeue_stale()
+if _requeued:
+    log.info("startup: re-queued %d job(s) abandoned by a restart", _requeued)
+for _worker_idx in range(_WORKERS):
+    threading.Thread(target=_ocr_worker, daemon=True,
+                     name=f"ocr-worker-{_worker_idx}").start()
+log.info("started %d OCR worker(s) (NC_OCR_WORKERS)", _WORKERS)
 
-# Restore the durable index before serving traffic.
-_load_index()
+
+# --- Vision spend + rate quota ---------------------------------------------
+#: Free units per month per feature, then USD per 1000 units.
+#: Source: cloud.google.com/vision/pricing — "each page is treated as an
+#: individual image" and "each feature applied to an image is a billable
+#: unit", so for us one unit = one page.
+VISION_FREE_UNITS = 1000
+VISION_USD_PER_1000 = 1.50
+#: How often to re-read the rate quota. The metric is sampled once a
+#: minute and lags up to four, so polling faster than this adds nothing.
+_VISION_QUOTA_INTERVAL = float(os.environ.get("NC_OCR_VISION_QUOTA_INTERVAL", "900"))
+
+
+def _vision_credentials_path() -> str:
+    """Locate the Vision service-account JSON, or "" when unavailable."""
+    p = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+    if p and Path(p).exists():
+        return p
+    d = os.environ.get("CREDENTIALS_DIRECTORY", "")
+    if d:
+        cand = Path(d) / "google-ocr-key"
+        if cand.exists():
+            return str(cand)
+    return ""
+
+
+def _vision_quota_once() -> None:
+    """Read the Vision rate quota and last-minute usage into settings.
+
+    Strictly read-only, and silent on every failure: without google-auth,
+    without the credential file, or without the viewer roles the panel
+    simply shows no reading instead of the service breaking.
+    """
+    path = _vision_credentials_path()
+    if not path:
+        return
+    try:
+        import datetime as _dt
+        import urllib.parse
+        import urllib.request
+
+        import google.auth.transport.requests as _gtr
+        from google.oauth2 import service_account
+
+        info = json.loads(Path(path).read_text())
+        proj = info.get("project_id")
+        creds = service_account.Credentials.from_service_account_info(
+            info, scopes=["https://www.googleapis.com/auth/cloud-platform"])
+        creds.refresh(_gtr.Request())
+        hdr = {"Authorization": "Bearer " + creds.token}
+
+        def _get(url: str) -> dict:
+            req = urllib.request.Request(url, headers=hdr)
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                return json.loads(resp.read())
+
+        limit = None
+        url = (f"https://cloudquotas.googleapis.com/v1/projects/{proj}"
+               "/locations/global/services/vision.googleapis.com/quotaInfos")
+        for qi in _get(url).get("quotaInfos", []):
+            if qi.get("quotaId") == "DocumentTextDetectionRequestsPerMinutePerProject":
+                dims = qi.get("dimensionsInfos") or [{}]
+                val = dims[0].get("details", {}).get("value")
+                if val is not None:
+                    limit = int(val)
+
+        now = _dt.datetime.now(_dt.timezone.utc)
+        flt = ('metric.type="serviceruntime.googleapis.com/quota/rate/net_usage"'
+               ' AND resource.type="consumer_quota"'
+               ' AND resource.label.service="vision.googleapis.com"')
+        murl = (f"https://monitoring.googleapis.com/v3/projects/{proj}/timeSeries?"
+                + urllib.parse.urlencode({
+                    "filter": flt,
+                    "interval.startTime": (now - _dt.timedelta(minutes=10))
+                    .isoformat().replace("+00:00", "Z"),
+                    "interval.endTime": now.isoformat().replace("+00:00", "Z")}))
+        peak = 0
+        for series in _get(murl).get("timeSeries", []):
+            for pt in series.get("points", []):
+                val = pt.get("value", {})
+                raw = val.get("int64Value", val.get("doubleValue", 0))
+                try:
+                    peak = max(peak, int(float(raw)))
+                except (TypeError, ValueError):
+                    continue
+
+        if limit:
+            jobstore.setting_put("_vision_limit_per_min", str(limit))
+        jobstore.setting_put("_vision_used_per_min", str(peak))
+        jobstore.setting_put("_vision_checked", str(int(time.time())))
+        jobstore.setting_put("_vision_quota_ok", "1")
+        log.info("vision quota: %s of %s requests/min used", peak, limit or "?")
+    except Exception as exc:  # noqa: BLE001 — quota reading must never matter
+        jobstore.setting_put("_vision_quota_ok", "")
+        log.warning("vision quota read failed: %s", exc)
+
+
+def _vision_quota_loop() -> None:
+    while True:
+        _vision_quota_once()
+        time.sleep(_VISION_QUOTA_INTERVAL)
+
+
+threading.Thread(target=_vision_quota_loop, name="vision-quota",
+                 daemon=True).start()
+
+
+def _vision_summary() -> dict:
+    """Vision spend this month plus the last rate-quota reading."""
+    month = jobstore.usage_month("google")
+    pages = month["pages"]
+    stored = jobstore.settings_all()
+    try:
+        limit = int(stored.get("_vision_limit_per_min") or 1800)
+    except (TypeError, ValueError):
+        limit = 1800
+    try:
+        used = int(stored.get("_vision_used_per_min") or 0)
+    except (TypeError, ValueError):
+        used = 0
+    try:
+        checked = float(stored.get("_vision_checked") or 0) or None
+    except (TypeError, ValueError):
+        checked = None
+    return {
+        "pages_month": pages,
+        "jobs_month": month["jobs"],
+        "cost_usd": round(pages * VISION_USD_PER_1000 / 1000, 4),
+        "free_units": VISION_FREE_UNITS,
+        "free_left": max(0, VISION_FREE_UNITS - pages),
+        "limit_per_min": limit,
+        "used_per_min": used,
+        "used_percent": round(used / limit * 100, 1) if limit else 0.0,
+        "quota_checked": checked,
+        "quota_ok": bool(stored.get("_vision_quota_ok")),
+    }
+
+# One-time migration: the OCR index used to be a JSON file loaded into
+# memory. It now lives in the ``files`` table, so a million-entry index
+# costs no RAM and no JSON parse at startup.
+try:
+    if _INDEX_FILE.exists() and jobstore.file_count() == 0:
+        _migrated = jobstore.file_import(json.loads(_INDEX_FILE.read_text()))
+        if _migrated:
+            log.info("migrated %d index entries from %s into SQLite",
+                     _migrated, _INDEX_FILE)
+            _INDEX_FILE.rename(_INDEX_FILE.with_suffix(".json.migrated"))
+except Exception as exc:  # noqa: BLE001
+    log.warning("index migration failed: %s", exc)
+# Open the SQLite job history. ``init()`` is a no-op if the DB is
+# unreachable; every later ``record_*`` call stays silent in that case.
+jobstore.init()
 
 
 def _enqueue(nc_path: str, node_id: int, engine: str | None = None,
@@ -674,6 +1002,8 @@ def _enqueue(nc_path: str, node_id: int, engine: str | None = None,
     job = {
         "id": next(_job_seq),
         "path": nc_path,
+        "nc_path": nc_path,
+        "node_id": node_id,
         "engine": engine,
         "force": force,
         "status": "queued",
@@ -685,19 +1015,53 @@ def _enqueue(nc_path: str, node_id: int, engine: str | None = None,
         "reason": None,
     }
     _record_job(job)
-    _ocr_queue.put({"job": job, "nc_path": nc_path, "node_id": node_id,
-                    "engine": engine, "force": force})
+    # Mirror to durable SQLite history (best-effort, never raises).
+    jobstore.record_enqueue(job)
+    # The row is already in SQLite (``record_enqueue`` above) — that IS
+    # the queue. Mark the file in-flight so a repeat scan skips it,
+    # then wake a worker.
+    _prev = jobstore.file_get(nc_path) or {}
+    jobstore.file_put({**_prev, "path": nc_path, "status": "queued",
+                       "node_id": node_id})
+    _work_available.set()
     return job
 
 
 def _check_secret(x_webhook_secret: str | None) -> None:
-    if WEBHOOK_SECRET and x_webhook_secret != WEBHOOK_SECRET:
+    """Fail closed: an unset secret must never mean "no auth"."""
+    import hmac
+
+    if not WEBHOOK_SECRET:
+        log.error("webhook secret is not configured — refusing request")
+        raise HTTPException(status_code=503,
+                            detail="webhook secret not configured")
+    if not hmac.compare_digest(str(x_webhook_secret or ""), WEBHOOK_SECRET):
         raise HTTPException(status_code=401, detail="invalid secret")
 
 
 # --- FastAPI app ---
 
-app = FastAPI(title="nc-ocr-flow webhook receiver")
+# Docs endpoints off: FastAPI serves /openapi.json, /docs and /redoc
+# unauthenticated by default, which hands anyone on the loopback the
+# full API schema — including the name and shape of the secret header.
+app = FastAPI(
+    title="nc-ocr-flow webhook receiver",
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+)
+
+#: Nothing this service accepts is large — the payloads are event
+#: notifications. Reject oversized bodies instead of parsing them.
+_MAX_BODY_BYTES = 2 * 1024 * 1024
+
+
+@app.middleware("http")
+async def _limit_body_size(request: Request, call_next):
+    raw = request.headers.get("content-length")
+    if raw and raw.isdigit() and int(raw) > _MAX_BODY_BYTES:
+        return JSONResponse({"detail": "payload too large"}, status_code=413)
+    return await call_next(request)
 
 
 class WebhookPayload(BaseModel):
@@ -749,7 +1113,7 @@ async def handle_webhook(
     # ``force`` (set by the NC app's "Re-OCR anyway" action) bypasses
     # this guard — the user is asking for a deliberate re-OCR.
     force = bool(body.get("force", False))
-    if not force and node_id and _is_recently_processed(node_id):
+    if not force and not _claim_node(node_id):
         log.info("skip recently processed: id=%s path=%s", node_id, nc_path)
         return {"status": "skipped", "reason": "recently_processed"}
 
@@ -769,18 +1133,152 @@ async def status(
 ):
     """Job queue status for the panel / NC app."""
     _check_secret(x_webhook_secret)
-    with _jobs_lock:
-        jobs = sorted(_jobs.values(), key=lambda j: j["id"])
-    queued = [j for j in jobs if j["status"] == "queued"]
-    running = [j for j in jobs if j["status"] == "running"]
-    finished = [j for j in jobs if j["status"] in ("done", "error", "skipped")][-limit:]
+    # Everything comes from SQLite now — the in-memory job mirror is
+    # gone, so the panel and the workers read the same state.
+    counts = jobstore.stats()
     return {
         "service": "nc-ocr-flow",
-        "queue_depth": _ocr_queue.qsize(),
-        "queued": queued,
-        "running": running,
-        "history": finished[::-1],  # newest first
+        "queue_depth": counts.get("queued", 0),
+        "workers": _WORKERS,
+        "running_count": counts.get("running", 0),
+        "queued": jobstore.query(limit=limit, status="queued"),
+        "running": jobstore.query(limit=limit, status="running"),
+        "history": jobstore.query(limit=limit),
     }
+
+
+def _parse_since(value: str | None) -> float | None:
+    """Coerce the ``since`` query param to a unix epoch (seconds).
+
+    Accepts a numeric string (epoch seconds, optionally with decimals)
+    or an ISO-8601 date/time. Returns ``None`` on parse failure so the
+    downstream SQLite query just returns everything.
+    """
+    if value is None or value == "":
+        return None
+    s = value.strip()
+    if not s:
+        return None
+    # Numeric first — most clients send epoch seconds.
+    try:
+        return float(s)
+    except ValueError:
+        pass
+    try:
+        from datetime import datetime, timezone
+        iso = s.replace("Z", "+00:00") if s.endswith("Z") else s
+        dt = datetime.fromisoformat(iso)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.timestamp()
+    except ValueError:
+        return None
+
+
+@app.get("/settings")
+async def get_settings(
+    x_webhook_secret: str | None = Header(None, alias="X-Webhook-Secret"),
+):
+    """Current settings, where each value came from, and the defaults."""
+    _check_secret(x_webhook_secret)
+    current, defaults, sources = _setting_values()
+    return {
+        "settings": current,
+        "defaults": defaults,
+        "sources": sources,
+        "restart_required": _pending_restart(),
+    }
+
+
+@app.post("/settings")
+async def put_settings(
+    body: dict,
+    x_webhook_secret: str | None = Header(None, alias="X-Webhook-Secret"),
+):
+    """Save setting overrides (stored in SQLite, applied on restart).
+
+    Unknown keys and non-positive values are rejected with 422. Changing
+    the worker count needs a restart because the pool is built at import
+    time — safe now, since in-flight jobs are requeued on startup.
+    """
+    _check_secret(x_webhook_secret)
+    saved: list[str] = []
+    for key, value in (body or {}).items():
+        if key not in _SETTING_SPEC:
+            raise HTTPException(status_code=422,
+                                detail=f"unknown setting: {key}")
+        try:
+            ival = int(value)
+        except (TypeError, ValueError):
+            raise HTTPException(
+                status_code=422,
+                detail=f"{key} must be a positive integer") from None
+        if ival < 1:
+            raise HTTPException(
+                status_code=422,
+                detail=f"{key} must be at least 1 (got {ival})")
+        jobstore.setting_put(_SETTING_SPEC[key][0], str(ival))
+        saved.append(key)
+    restart = any(k in _RESTART_SETTINGS for k in saved)
+    if restart:
+        jobstore.setting_put("_restart_pending", "1")
+    current, _defaults, sources = _setting_values()
+    return {"saved": saved, "settings": current, "sources": sources,
+            "restart_required": restart or _pending_restart()}
+
+
+@app.get("/jobs")
+async def list_jobs(
+    limit: int = 50,
+    status: str | None = None,
+    since: str | None = None,
+    path_contains: str | None = None,
+    x_webhook_secret: str | None = Header(None, alias="X-Webhook-Secret"),
+):
+    """Durable job history backed by SQLite.
+
+    Query params:
+      limit          — max rows to return (default 50, hard-capped at 500)
+      status         — exact-match filter, e.g. "done", "error", "queued"
+      since          — unix epoch (seconds) or ISO-8601 date; only jobs
+                       with ``created >= since`` are returned
+      path_contains  — substring filter on the file's NC path
+
+    Returns ``{"count": N, "limit": L, "jobs": [...]}``. Secret-protected
+    like every other endpoint here — see ``_check_secret``.
+    """
+    _check_secret(x_webhook_secret)
+    lim = max(1, min(int(limit), 500))
+    since_f = _parse_since(since)
+    rows = jobstore.query(
+        limit=lim,
+        status=status,
+        since=since_f,
+        path_contains=path_contains,
+    )
+    return {"count": len(rows), "limit": lim, "jobs": rows}
+
+
+@app.get("/jobs/stats")
+async def jobs_stats(
+    x_webhook_secret: str | None = Header(None, alias="X-Webhook-Secret"),
+):
+    """Aggregate counts by status (plus ``total``)."""
+    _check_secret(x_webhook_secret)
+    return jobstore.stats()
+
+
+@app.get("/jobs/{job_id}")
+async def get_job(
+    job_id: int,
+    x_webhook_secret: str | None = Header(None, alias="X-Webhook-Secret"),
+):
+    """Fetch one historical job by id, or 404 if not in the SQLite history."""
+    _check_secret(x_webhook_secret)
+    job = jobstore.get(int(job_id))
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"job {job_id} not found")
+    return job
 
 
 @app.get("/states")
@@ -802,25 +1300,13 @@ async def states(
     want = {p for p in paths if p}
 
     out: dict[str, dict] = {}
-    with _index_lock:
-        if all_files:
-            out = {p: dict(m) for p, m in _ocr_index.items()}
-        else:
-            for p in want:
-                m = _ocr_index.get(p)
-                if m:
-                    out[p] = dict(m)
-
-    # A live queue entry is more accurate than the last recorded outcome.
-    with _jobs_lock:
-        live = [j for j in _jobs.values() if j["status"] in ("queued", "running")]
-    for j in live:
-        p = str(j.get("path") or "")
-        if all_files or p in want:
-            rec = out.setdefault(p, {})
-            rec["status"] = j["status"]
-            rec["job_id"] = j["id"]
-            rec["finished"] = j.get("finished") or rec.get("finished")
+    if all_files:
+        out = jobstore.file_all()
+    else:
+        for p in want:
+            m = jobstore.file_get(p)
+            if m:
+                out[p] = m
 
     return {"states": out, "unknown": sorted(want - set(out))}
 
@@ -838,8 +1324,7 @@ async def stats(
     OCR-able files — because only Nextcloud knows the file tree.
     """
     _check_secret(x_webhook_secret)
-    with _index_lock:
-        idx = list(_ocr_index.values())
+    idx = list(jobstore.file_all().values())
 
     scanned = [m for m in idx if m.get("status") == "done"]
     skipped = [m for m in idx if m.get("status") == "skipped"]
@@ -863,6 +1348,9 @@ async def stats(
         "errors": len(errors),
         "by_engine": by_engine,
         "skip_reasons": skip_reasons,
+        # Spend and rate-limit visibility for the panel (see _vision_summary).
+        "vision": _vision_summary(),
+        "usage": jobstore.usage_summary(7),
     }
 
 
@@ -900,8 +1388,7 @@ async def rescan(
     # Rescan must bypass recently_processed guard: clear the marker.
     # When force=True, the worker won't re-mark either — see _ocr_worker.
     if body.node_id and not body.force:
-        with _processed_lock:
-            _processed_ids.pop(body.node_id, None)
+        jobstore.node_forget(body.node_id)
 
     job = _enqueue(nc_path, body.node_id, body.engine, force=body.force)
     return {"status": "queued", "job_id": job["id"],
@@ -962,8 +1449,15 @@ async def scan_all(
         if Path(rel).suffix.lower() not in PROCESSABLE_EXTS:
             continue
         nc_path = f"/{NC_USER}/files/{rel}"
-        if body.skip_ocrd and nc_path in _ocrd_paths:
-            skipped_ocrd += 1
+        if body.skip_ocrd:
+            _rec = jobstore.file_get(nc_path)
+            if _rec and _rec.get("status") == "done":
+                skipped_ocrd += 1
+                continue
+        # node_id is unknown from a listing, so dedup by path: skip
+        # files whose job is already queued or running.
+        if _path_in_flight(nc_path):
+            log.info("scan-all: skip in-flight %s", nc_path)
             continue
         _enqueue(nc_path, 0, body.engine)
         enqueued += 1
@@ -979,10 +1473,41 @@ async def health():
 
 
 @app.get("/panel")
-async def panel():
-    """Serve the OCR status panel (secret is entered in the page itself)."""
+async def panel(request: Request):
+    """Serve the OCR status panel.
+
+    Local-only (the service already binds to 127.0.0.1, this is
+    defence in depth) and never framed: the page asks the user for the
+    webhook secret, so embedding it in a foreign frame is a phishing
+    surface.
+    """
+    client_host = ""
+    try:
+        client_host = (request.client.host if request.client else "") or ""
+    except Exception:  # noqa: BLE001
+        client_host = ""
+    if client_host not in ("127.0.0.1", "::1", "localhost"):
+        raise HTTPException(status_code=403, detail="panel is local-only")
+
     static = Path(__file__).parent / "static" / "panel.html"
-    return HTMLResponse(content=static.read_text(encoding="utf-8"))
+    return HTMLResponse(
+        content=static.read_text(encoding="utf-8"),
+        headers={
+            "X-Frame-Options": "DENY",
+            "Content-Security-Policy": (
+                "default-src 'self'; "
+                "script-src 'self' 'unsafe-inline'; "
+                "style-src 'self' 'unsafe-inline'; "
+                "img-src 'self' data:; "
+                "connect-src 'self'; "
+                "frame-ancestors 'none'; "
+                "base-uri 'none'; "
+                "form-action 'none'"
+            ),
+            "Referrer-Policy": "no-referrer",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 def main():

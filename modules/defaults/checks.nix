@@ -13,6 +13,17 @@
         # more than elsewhere. Same shape as erebus-build.
         serenity-build = inputs.self.nixosConfigurations.serenity.config.system.build.toplevel;
 
+        # The exact VM apps.serenity-smoke boots: same host config, same extra
+        # module. Kept as a buildable handle rather than only an app, so it can
+        # be realised (and pushed to a binary cache) without booting anything.
+        # This is the output a fleet-wide cache would seed from, if attic gets
+        # built; CI no longer touches it, because a hosted runner cannot build
+        # this closure inside its timeout.
+        serenity-smoke-vm =
+          (inputs.self.nixosConfigurations.serenity.extendModules {
+            modules = [ (import ../../tests/serenity-smoke.nix) ];
+          }).config.system.build.vm;
+
         # Hermes cron dispatch fix (upstream #111484, first shipped v2026.9.21).
         #
         # Pre-fix, a SUCCESSFUL scope probe was cached permanently

@@ -65,6 +65,28 @@
           sha256 = "sha256-UpqXVXf5im68cG/r+YkEeGh08KuwXTjOacQMFA2OF18=";
         };
 
+      # PP-LCNet_x1_0_doc_ori — 4-class document-orientation classifier
+      # (PaddleOCR). Used by nc_ocr_flow.doc_ori as stage-1 of the
+      # orientation detector (margin-gated; falls through to the
+      # 4-rotation OCR vote when the margin < 0.15). Picked for
+      # its 99.06% top-1 on the PaddleOCR benchmark; Tesseract OSD
+      # routinely returns wrong angles on real Russian scans.
+      # Source URL picked from the PaddleOcrNet HF repo (the
+      # official PaddlePaddle/PP-LCNet_x1_0_doc_ori release).
+      # Model size ~6.4 MB, sha256 verified against the local
+      # copy in /var/lib/hermes/.hermes/cache/scratch/models/
+      # PP-LCNet_x1_0_doc_ori.onnx.
+      #
+      # Note: lives under `nc-ocr-flow/`, NOT `nc-ocr/` — the
+      # `nc-ocr/` directory is owned by a separate merged-dir
+      # derivation (`nc-ocr-models`) that drops sibling files,
+      # so per-file entries under that prefix are silently lost.
+      environment.etc."nc-ocr-flow/pp_lcnet_x1_0_doc_ori.onnx".source =
+        pkgs.fetchurl {
+          url = "https://huggingface.co/PaddleOcrNet/PaddleOcrNet-models/resolve/main/PP-LCNet_x1_0_doc_ori.onnx";
+          sha256 = "sha256-2FsxhQda/KGoMVf3PqwuUrWY1y6dR90ZzEovNgXiPj8=";
+        };
+
       systemd.services.nextcloud-cron.path = lib.mkAfter [
         pkgs.ocrmypdf
         pkgs.tesseract5
@@ -114,6 +136,15 @@
           # tesseract = local ocrmypdf fallback. minimax available via
           # NC_OCR_ENGINE=minimax. Surya/monkey/L2 routing removed 2026-09.
           NC_OCR_ENGINE = "google";
+
+          # Параллелизм. Очередь задач живёт в SQLite, поэтому воркеров
+          # можно поднимать без роста памяти. Каждый движок имеет свой
+          # потолок одновременных задач — это и есть защита квот API:
+          # поднять NC_OCR_WORKERS можно, не превысив лимиты Google/VLM.
+          NC_OCR_WORKERS = "2";
+          NC_OCR_MAX_CONCURRENT_GOOGLE = "2";
+          NC_OCR_MAX_CONCURRENT_TESSERACT = "1";
+          NC_OCR_MAX_CONCURRENT_MINIMAX = "1";
           # Google Cloud Vision (service-account key via CREDENTIALS_DIRECTORY)
           NC_OCR_GOOGLE_PROJECT = "spectacle-xandria";
           NC_OCR_GOOGLE_BUCKET = "ocr-project-tmp";
@@ -123,6 +154,10 @@
           TESSDATA_PREFIX = "${pkgs.tesseract5}/share/tessdata";
           # Doc/photo gate: fp32 MobileNetV3-Small (see environment.etc."nc-ocr/...").
           NC_OCR_MOBILENET_MODEL = "/etc/static/nc-ocr/mobilenet_v3_small_fp32.onnx";
+          # Stage-1 page-orientation classifier: PP-LCNet_x1_0_doc_ori.
+          # Used by nc_ocr_flow.doc_ori; falls back to the 4-rotation
+          # OCR vote when the margin is < 0.15 (see orientation.DOC_ORI_MARGIN_THRESHOLD).
+          NC_OCR_ORIENTATION_MODEL = "/etc/static/nc-ocr-flow/pp_lcnet_x1_0_doc_ori.onnx";
           # onnxruntime imports numpy, which needs libz; without it `import numpy`
           # dies and every image hit the "classifier failed" path.
           LD_LIBRARY_PATH = "${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.zlib}/lib";

@@ -56,6 +56,36 @@
     padding: .7rem 1.2rem; border-radius: 8px; display: none; font-size: .88rem; }
   .flash.err { background: #47161a; color: #ff6b6b; }
   .err-msg { color: #ff6b6b; font-size: .78rem; }
+  details.settings { margin: 1rem 0; background: #1e2128; border: 1px solid #2e323c;
+    border-radius: 8px; padding: .6rem 1rem; }
+  details.settings > summary { cursor: pointer; font-weight: 600; font-size: .95rem; }
+  .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem 1rem;
+    margin-top: .8rem; align-items: center; }
+  .settings-grid label { font-size: .85rem; }
+  .settings-grid .src { color: #8b90a0; font-size: .75rem; }
+  .settings-grid input[type=number] {
+    background: #14161a; color: #e2e4e9; border: 1px solid #2e323c; border-radius: 6px;
+    padding: .35rem .55rem; font-size: .88rem; width: 6rem;
+  }
+  .settings-grid .default-hint { color: #8b90a0; font-size: .72rem; }
+  .settings-actions { margin-top: .8rem; display: flex; gap: .5rem; align-items: center; }
+  .settings-actions button {
+    background: #3563e9; border: none; color: #fff; border-radius: 6px;
+    padding: .45rem 1.1rem; cursor: pointer; font-size: .88rem;
+  }
+  .settings-actions button:hover { background: #2a52c9; }
+  .settings-actions button:disabled { background: #2e323c; cursor: not-allowed; }
+  .settings-err { color: #ff6b6b; font-size: .82rem; margin-top: .5rem; }
+  .settings-notice { color: #e8c832; background: #3a3413; border-radius: 6px;
+    padding: .55rem .8rem; font-size: .85rem; margin-top: .6rem; }
+  .load-line { color: #8b90a0; font-size: .85rem; margin: .5rem 0 .25rem; }
+  .usage-line { font-size: .9rem; margin: .35rem 0; line-height: 1.45; }
+  .usage-month { color: #8b90a0; font-size: .88rem; margin: .3rem 0 .6rem; }
+  .usage-rate-ok   { color: #e2e4e9; }
+  .usage-rate-warn { color: #e8c832; }
+  .usage-rate-crit { color: #ff6b6b; }
+  .usage-rate-fail { color: #ff6b6b; font-weight: 600; }
+  .usage-rate-stale { color: #e8c832; }
 </style>
 </head>
 <body>
@@ -85,6 +115,30 @@
     <button onclick="scanAll()">Сканировать всё (skip OCR-нутых)</button>
   </div>
 
+  <details class="settings" id="settingsSection">
+    <summary>Настройки</summary>
+    <div class="settings-grid" id="settingsGrid"></div>
+    <div class="settings-actions">
+      <button id="settingsSaveBtn" onclick="saveSettings()" disabled>Сохранить</button>
+      <button onclick="loadSettings()" style="background:#2e323c">Обновить</button>
+      <span class="default-hint">значения из <code>env</code> перезапускаются вместе с сервисом</span>
+    </div>
+    <div id="settingsErr" class="settings-err" style="display:none"></div>
+    <div id="settingsNotice" class="settings-notice" style="display:none"></div>
+  </details>
+
+  <details class="settings" id="usageSection">
+    <summary>Расход и лимиты</summary>
+    <div id="usageRate" class="usage-line">Google Vision: —</div>
+    <div id="usageMonth" class="usage-month">За месяц: —</div>
+    <table id="usageDays">
+      <thead><tr><th>Дата</th><th>Движок</th><th>Задач</th><th>Страниц</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </details>
+
+  <div class="load-line" id="loadLine">очередь: —, в работе: —, воркеров: —</div>
+
   <div class="stats" id="stats"></div>
 
   <h1 style="font-size:1rem">Активные</h1>
@@ -107,12 +161,13 @@ const secret = () => localStorage.getItem(SKEY) || '';
 const $ = (id) => document.getElementById(id);
 
 $('secret').value = secret();
-if (secret()) refresh();
+if (secret()) { refresh(); loadSettings(); }
 setInterval(() => { if (secret()) refresh(); }, 5000);
 
 function saveSecret() {
   localStorage.setItem(SKEY, $('secret').value.trim());
   refresh();
+  loadSettings();
 }
 
 function flash(msg, err=false) {
@@ -140,11 +195,26 @@ async function refresh() {
     const d = await api('/status?limit=100');
     $('conn').textContent = '✓ подключено';
     renderStats(d);
+    renderLoad(d);
     renderActive(d);
     renderHistory(d);
   } catch (e) {
     $('conn').textContent = '✗ ' + e.message;
   }
+  // /stats is best-effort: a 404 / 500 must not blank the rest of the panel.
+  try {
+    const s = await api('/stats');
+    renderUsage(s);
+  } catch (e) {
+    renderUsage(null);
+  }
+}
+
+function renderLoad(d) {
+  const q = (d.queue_depth ?? '—');
+  const r = (d.running && d.running.length != null) ? d.running.length : (d.running ?? '—');
+  const w = (d.workers ?? '—');
+  $('loadLine').textContent = `очередь: ${q}, в работе: ${r}, воркеров: ${w}`;
 }
 
 function renderStats(d) {
@@ -204,6 +274,190 @@ function renderHistory(d) {
     </tr>`).join('') : '<tr><td colspan="5" class="empty">нет истории</td></tr>';
   // NOTE: innerHTML is used with esc() applied to every interpolated dynamic
   // value (path, status, engine, error) — safe against XSS from filenames.
+}
+
+function fmtNum(n) {
+  return Number.isFinite(n) ? n.toLocaleString('ru-RU') : '—';
+}
+
+function fmtUsd(n) {
+  return Number.isFinite(n) ? n.toFixed(4) : '—';
+}
+
+function fmtRelAgo(unixSec) {
+  const s = Math.round(Date.now() / 1000 - Number(unixSec));
+  if (!Number.isFinite(s) || s < 0) return 'только что';
+  if (s < 60)        return `${s}с`;
+  if (s < 3600)      return `${Math.floor(s / 60)}м`;
+  if (s < 86400)     return `${Math.floor(s / 3600)}ч${Math.floor((s % 3600) / 60)}м`;
+  return `${Math.floor(s / 86400)}д`;
+}
+
+function renderUsage(d) {
+  const rateEl  = $('usageRate');
+  const monthEl = $('usageMonth');
+  const tbEl    = $('usageDays').querySelector('tbody');
+  const v = (d && d.vision) || {};
+  const usage = (d && Array.isArray(d.usage)) ? d.usage : [];
+
+  // ---- rate line ----
+  if (v.quota_ok === false) {
+    rateEl.className = 'usage-line usage-rate-fail';
+    rateEl.textContent = 'Google Vision: квота не читается';
+  } else {
+    const used   = v.used_per_min;
+    const limit  = v.limit_per_min;
+    const pct    = v.used_percent;
+    const ageSec = (v.quota_checked != null)
+      ? Math.round(Date.now() / 1000 - Number(v.quota_checked))
+      : null;
+    const stale  = ageSec != null && ageSec > 3600;
+    const warn   = Number.isFinite(pct) && pct >= 95;
+    const yellow = Number.isFinite(pct) && pct >= 80 && !warn;
+
+    const cls = warn ? 'usage-rate-crit'
+              : yellow ? 'usage-rate-warn'
+              : stale ? 'usage-rate-stale'
+              : 'usage-rate-ok';
+    rateEl.className = 'usage-line ' + cls;
+
+    let txt = 'Google Vision: ';
+    txt += (Number.isFinite(used) && Number.isFinite(limit))
+      ? `${fmtNum(used)} из ${fmtNum(limit)} запросов/мин (${Number.isFinite(pct) ? pct.toFixed(1) : '—'}%)`
+      : '—';
+    if (ageSec != null) {
+      txt += ` · проверено ${fmtRelAgo(v.quota_checked)} назад`;
+    }
+    rateEl.textContent = txt;
+  }
+
+  // ---- monthly line ----
+  const pages  = v.pages_month;
+  const cost   = v.cost_usd;
+  const free   = v.free_left;
+  const total  = v.free_units;
+  monthEl.className = 'usage-month';
+  monthEl.textContent = (Number.isFinite(pages) || Number.isFinite(cost) || Number.isFinite(free))
+    ? `За месяц: ${fmtNum(pages)} страниц · ~$${fmtUsd(cost)} · бесплатных осталось ${fmtNum(free)} из ${fmtNum(total)}`
+    : 'За месяц: —';
+
+  // ---- 7-day table ----
+  if (!usage.length) {
+    tbEl.innerHTML = '<tr><td colspan="4" class="empty">нет данных</td></tr>';
+    return;
+  }
+  tbEl.innerHTML = usage.slice(0, 7).map(u => `
+    <tr>
+      <td>${esc(u.day)}</td>
+      <td>${esc(u.engine)}</td>
+      <td>${fmtNum(u.jobs)}</td>
+      <td>${fmtNum(u.pages)}</td>
+    </tr>`).join('');
+}
+
+const SETTINGS_KEYS = ['workers', 'max_concurrent_google', 'max_concurrent_tesseract', 'max_concurrent_minimax'];
+let currentSettings = null;     // last /settings response (server-authoritative)
+let currentDefaults = null;     // last defaults from /settings
+let currentSources  = null;     // last sources from /settings
+
+async function loadSettings() {
+  const errEl = $('settingsErr');
+  errEl.style.display = 'none';
+  if (!secret()) return;
+  try {
+    const d = await api('/settings');
+    currentSettings = d.settings || {};
+    currentDefaults = d.defaults || {};
+    currentSources  = d.sources  || {};
+    renderSettings();
+  } catch (e) {
+    errEl.textContent = 'Не удалось загрузить настройки: ' + e.message;
+    errEl.style.display = 'block';
+  }
+}
+
+function renderSettings() {
+  if (!currentSettings) return;
+  $('settingsNotice').style.display = 'none';
+  const rows = SETTINGS_KEYS.map(k => {
+    const v = currentSettings[k];
+    const def = currentDefaults[k];
+    const src = currentSources[k] || 'default';
+    return `
+      <label for="set_${k}">${k}</label>
+      <div>
+        <input type="number" id="set_${k}" data-key="${esc(k)}" min="0" step="1" value="${esc(v)}">
+        <span class="default-hint">по умолчанию ${esc(def)}</span>
+        <span class="src">· ${esc(srcLabel(src))}</span>
+      </div>`;
+  }).join('');
+  $('settingsGrid').innerHTML = rows;
+  SETTINGS_KEYS.forEach(k => {
+    const el = $('set_' + k);
+    el.addEventListener('input', onSettingsChange);
+  });
+  $('settingsSaveBtn').disabled = true;
+}
+
+function srcLabel(s) {
+  if (s === 'env') return 'значение: env (перезапуск)';
+  if (s === 'db') return 'значение: db';
+  return 'значение: default';
+}
+
+function onSettingsChange() {
+  $('settingsSaveBtn').disabled = !hasDirtySettings();
+}
+
+function hasDirtySettings() {
+  if (!currentSettings) return false;
+  return SETTINGS_KEYS.some(k => {
+    const el = $('set_' + k);
+    if (!el) return false;
+    const v = Number(el.value);
+    return Number.isFinite(v) && v !== Number(currentSettings[k]);
+  });
+}
+
+function dirtySettingsPayload() {
+  if (!currentSettings) return {};
+  const out = {};
+  SETTINGS_KEYS.forEach(k => {
+    const el = $('set_' + k);
+    if (!el) return;
+    const v = Number(el.value);
+    if (Number.isFinite(v) && v !== Number(currentSettings[k])) out[k] = v;
+  });
+  return out;
+}
+
+async function saveSettings() {
+  const errEl = $('settingsErr');
+  const noticeEl = $('settingsNotice');
+  errEl.style.display = 'none';
+  noticeEl.style.display = 'none';
+  const payload = dirtySettingsPayload();
+  if (!Object.keys(payload).length) return;
+  const btn = $('settingsSaveBtn');
+  btn.disabled = true; btn.textContent = 'Сохраняю…';
+  try {
+    const d = await api('/settings', { method: 'POST', body: JSON.stringify(payload) });
+    currentSettings = d.settings || currentSettings;
+    currentSources  = d.sources  || currentSources;
+    renderSettings();
+    if (d.restart_required) {
+      noticeEl.textContent = 'Чтобы применить число воркеров, нужен перезапуск сервиса nc-ocr-webhook. Незавершённые задачи не потеряются — они вернутся в очередь.';
+      noticeEl.style.display = 'block';
+    }
+    flash(`сохранено: ${(d.saved || []).join(', ') || 'без изменений'}`);
+    refresh();
+  } catch (e) {
+    errEl.textContent = 'Не удалось сохранить: ' + e.message;
+    errEl.style.display = 'block';
+    btn.disabled = false;
+  } finally {
+    btn.textContent = 'Сохранить';
+  }
 }
 
 async function rescan() {

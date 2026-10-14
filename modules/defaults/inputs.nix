@@ -27,7 +27,14 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     determinate.url = "https://flakehub.com/f/DeterminateSystems/determinate/*";
-    nix-maid.url = "github:viperML/nix-maid";
+    # Codeberg, not GitHub: upstream migrated and the GitHub input stops
+    # resolving on 2026-10-31 (upstream prints a deprecation notice at eval
+    # time). Note the pinned rev is NOT preservable — the GitHub mirror's tip is
+    # a mirror-only commit ("Add github deprecation notice") that is absent from
+    # Codeberg's history, so switching necessarily moves nix-maid forward
+    # (src/maid/default.nix and friends). Verified with the serenity smoke gate,
+    # which covers maid-activation.service.
+    nix-maid.url = "git+https://codeberg.org/viperML/nix-maid";
     nixfmt-rs.url = "github:Mic92/nixfmt-rs";
     sops-nix = {
       url = "github:Mic92/sops-nix";

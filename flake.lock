@@ -2096,17 +2096,17 @@
     },
     "nix-maid": {
       "locked": {
-        "lastModified": 1788342320,
-        "narHash": "sha256-mhjKZ+PqNInkCO9SFCQo0JO6H8FPosdokT1wePFvhxI=",
-        "owner": "viperML",
-        "repo": "nix-maid",
-        "rev": "92f983d34e183c32703aefd63d0884535988a53a",
-        "type": "github"
+        "lastModified": 1790770868,
+        "narHash": "sha256-9OEVMURNKXNBqXxlCXmJ0jv0QHR8CR7A0n7pJKRbOik=",
+        "ref": "refs/heads/master",
+        "rev": "13d29cdde641216c0bb7ee8ec3229f865c7dc51a",
+        "revCount": 134,
+        "type": "git",
+        "url": "https://codeberg.org/viperML/nix-maid"
       },
       "original": {
-        "owner": "viperML",
-        "repo": "nix-maid",
-        "type": "github"
+        "type": "git",
+        "url": "https://codeberg.org/viperML/nix-maid"
       }
     },
     "nix-vm-test": {

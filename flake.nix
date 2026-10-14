@@ -58,7 +58,7 @@
       url = "github:srinivasr/nirimod";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    nix-maid.url = "github:viperML/nix-maid";
+    nix-maid.url = "git+https://codeberg.org/viperML/nix-maid";
     nixfmt-rs.url = "github:Mic92/nixfmt-rs";
     nixos-anywhere = {
       url = "github:nix-community/nixos-anywhere";

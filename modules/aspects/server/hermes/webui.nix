@@ -58,7 +58,11 @@
         # shared aspect cannot point at one host's secrets file. This aspect only
         # consumes /run/secrets/hermes/webui-password.
         # Any host declaring it must keep restartUnits = [ "hermes-webui.service" ]:
-        # sops-nix reloadUnits sends a signal the python server ignores.
+        # sops-nix's reloadUnits sends a signal the python server ignores, whereas
+        # restartUnits is honoured as a genuine restart — `systemctl --no-block
+        # try-restart` when the host sets sops.useSystemdActivation, or a
+        # switch-to-configuration restart list under the activation path. Correct
+        # in both modes, and stronger in the systemd one.
       };
   };
 }

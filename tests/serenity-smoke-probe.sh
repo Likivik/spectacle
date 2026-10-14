@@ -184,11 +184,14 @@ echo "--- secret pipeline: no present-but-empty assignments in unit env files --
 # sops-env, the gateway came up with no bot credential, and Telegram was dead
 # for ~11h until a plain restart.
 EMPTY_FILES=""
+MISSING_FILES=""
 while IFS= read -r f; do
   [ -n "$f" ] || continue
   if [ ! -r "$f" ]; then
-    echo "  MISSING: $f"
-    EMPTY_FILES="$EMPTY_FILES $f"
+    # Tracked separately from a blank assignment: both are fatal, but "the file
+    # is not there" and "the file defines an empty key" have entirely different
+    # causes, and lumping them under one label sends you down the wrong path.
+    MISSING_FILES="$MISSING_FILES $f"
     continue
   fi
   bad=$(grep -nE '^[A-Za-z_][A-Za-z0-9_]*=$' "$f" 2>/dev/null || true)
@@ -198,11 +201,48 @@ while IFS= read -r f; do
     EMPTY_FILES="$EMPTY_FILES $f"
   fi
 done < "$SMOKE_ENV_FILES"
-if [ -n "$EMPTY_FILES" ]; then
+if [ -n "${MISSING_FILES// /}" ]; then
+  echo "ENV_FILE_MISSING:$MISSING_FILES"
+  FAILED=1
+fi
+if [ -n "${EMPTY_FILES// /}" ]; then
   echo "ENV_EMPTY_ASSIGNMENT_BAD:$EMPTY_FILES"
   FAILED=1
-else
+fi
+if [ -z "${MISSING_FILES// /}${EMPTY_FILES// /}" ]; then
   echo "ENV_NO_EMPTY_ASSIGNMENTS_OK"
+fi
+
+echo "--- secret pipeline: provisioned by a systemd unit, not activation ---"
+# Proves the mode switch took effect AND that the dummy age key was placed
+# before the unit ran. With useSystemdActivation=false this unit does not exist
+# at all (sops decrypts inside the `setupSecrets` activation script), so
+# "absent" here means the host silently went back to activation-time
+# provisioning — which is the ordering gap this change exists to close.
+SOPS_STATE=$(systemctl is-active sops-install-secrets.service 2>/dev/null || true)
+if [ "$SOPS_STATE" = "active" ]; then
+  echo "SOPS_SYSTEMD_ACTIVATION_OK"
+  # The ordering is the whole point, so assert it rather than assume it: our key
+  # unit must appear in the consumer's After=.
+  ORD=$(systemctl show -p After sops-install-secrets.service --value 2>/dev/null | tr ' ' '\n' | grep -c 'smoke-age-key' || true)
+  if [ "${ORD:-0}" -ge 1 ]; then
+    echo "  ordering asserted: smoke-age-key.service is in After= (${ORD})"
+  else
+    echo "SOPS_KEY_ORDERING_BAD: smoke-age-key.service is not in sops-install-secrets' After="
+    FAILED=1
+  fi
+else
+  echo "SOPS_SYSTEMD_ACTIVATION_BAD: sops-install-secrets.service is '${SOPS_STATE:-absent}'"
+  # Report WHY. An inactive sops-install-secrets installs NO secrets, so every
+  # downstream symptom (missing files, gateway with no token) is a consequence —
+  # and "inactive" rather than "failed" usually means a Requires= dependency
+  # failed, which points somewhere else entirely.
+  for u in sops-install-secrets smoke-age-key; do
+    echo "--- $u ---"
+    timeout 15 systemctl status "$u" --no-pager -l 2>&1 | head -10 || true
+    timeout 15 journalctl -u "$u" -n 20 --no-pager 2>&1 | tail -20 || true
+  done
+  FAILED=1
 fi
 
 echo "--- secret pipeline: the sops template rendered every key non-empty ---"

@@ -125,12 +125,12 @@ in
   # key in the world-readable store would be a leak. So it is installed to /run
   # at boot.
   #
-  # It also cannot come from tmpfiles: serenity has useSystemdActivation=false
-  # (no sysusers), so sops-nix decrypts inside the `setupSecrets` ACTIVATION
-  # SCRIPT, and activation scripts run before any systemd unit. Hence an
-  # activation script of our own, appended to setupSecrets' deps. That is
-  # additive — sops-nix declares its own deps (specialfs/users/groups) and list
-  # options concatenate — so nothing of sops-nix's is overwritten.
+  # It also cannot come from tmpfiles: tmpfiles-setup is not ordered against
+  # sops-install-secrets, so the key could be placed too late. It is placed by a
+  # unit of our own ordered Before=sops-install-secrets.service instead.
+  # Before the host switched to systemd activation this had to be an activation
+  # script appended to setupSecrets' deps — nothing else ran early enough to
+  # order against. That hack disappearing is the payoff of the switch.
   sops = {
     age.keyFile = lib.mkForce "/run/smoke-age-key.txt";
     age.plugins = lib.mkForce [ ];
@@ -148,10 +148,34 @@ in
     validateSopsFiles = lib.mkForce false;
   };
 
-  system.activationScripts."smoke-age-key" = ''
-    install -m 0400 -o root -g root ${./smoke-age-key.txt} /run/smoke-age-key.txt
-  '';
-  system.activationScripts.setupSecrets.deps = [ "smoke-age-key" ];
+  # Placed by a unit ordered before sops-install-secrets.service. `before` alone
+  # is not enough — a unit that is only `before` something can be skipped
+  # entirely if nothing pulls it in, so it is also wantedBy sysinit.target and
+  # requiredBy the consumer.
+  systemd.services."smoke-age-key" = {
+    wantedBy = [ "sysinit.target" ];
+    requiredBy = [ "sops-install-secrets.service" ];
+    before = [ "sops-install-secrets.service" ];
+    # REQUIRED, not cosmetic. With the default (yes) this unit inherits
+    # After=basic.target, and basic.target is reached THROUGH sysinit.target,
+    # while sops-install-secrets must run BEFORE sysinit.target. That is an
+    # ordering cycle, and systemd breaks it by DELETING the sops job — so no
+    # secrets are installed and the only symptom is a unit that never ran.
+    # sops-nix sets the same flag on its own unit for exactly this reason.
+    unitConfig.DefaultDependencies = "no";
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+    };
+    # Absolute path: a unit gets systemd's minimal PATH, where coreutils is NOT
+    # present on NixOS. `install` would fail, and because
+    # sops-install-secrets.service Requires this unit, that leaves the consumer
+    # INACTIVE (not failed) — so no secrets are installed at all and the failure
+    # looks nothing like a PATH problem.
+    script = ''
+      ${pkgs.coreutils}/bin/install -m 0400 -o root -g root ${./smoke-age-key.txt} /run/smoke-age-key.txt
+    '';
+  };
 
   # --- tailscale needs a tailnet + auth key ---
   services.tailscale.enable = lib.mkForce false;

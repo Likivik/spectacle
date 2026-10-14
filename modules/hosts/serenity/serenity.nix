@@ -121,6 +121,30 @@
         sops.age.keyFile = "/var/lib/sops/tpm-identity.txt";
         sops.age.sshKeyPaths = lib.mkForce [ ];
 
+        # ── provision secrets from a systemd UNIT, not the activation script ──
+        # Default is `systemd.sysusers.enable || services.userborn.enable` (both
+        # false here) → activation, which runs BEFORE systemd's units exist.
+        # That ordering gap is the root of two separate hazards:
+        #   * the old hand-rolled sops-env generator raced
+        #     systemd-tmpfiles-setup, and there was no way to order it — both
+        #     ran during activation;
+        #   * the serenity-smoke gate's dummy age key had to be threaded into
+        #     setupSecrets' deps, because no unit ran early enough to place it.
+        # With this on, `sops-install-secrets.service` (oneshot, wantedBy+before
+        # sysinit.target, after local-fs.target) does the work and the ordering
+        # becomes declarative. It is also the path sops-nix itself tests.
+        #
+        # Behaviour that changes: `restartUnits` now goes through systemctl
+        # (SOPS_RESTART_UNITS_VIA_SYSTEMCTL=1). `hermes/webui-password` uses it,
+        # so that path is exercised by the smoke gate.
+        #
+        # Serenity FIRST, deliberately. This changes how EVERY secret on the
+        # host is provisioned, each host builds its own closure, and the smoke
+        # gate only covers serenity — erebus, traversal and poweredge still use
+        # activation and need their own verification before they follow.
+        # Tracked: https://github.com/Likivik/spectacle/issues/2
+        sops.useSystemdActivation = true;
+
         sops.secrets."registration-token" = {
           sopsFile = ../../../secrets/serenity/secrets.yaml;
           owner = "gitea-runner";

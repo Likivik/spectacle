@@ -53,6 +53,15 @@ ALLOW='boot\.mount|panther\.mount|Storage\.mount|Storage-Git\.mount|swap|zfs[^ ]
 BAD=$(timeout 20 systemctl --failed --no-legend --plain 2>/dev/null | awk '{print $1}' | grep -v '^$' | grep -Ev "$ALLOW" | tr '\n' ' ' || true)
 if [ -n "${BAD// /}" ]; then
   echo "UNEXPECTED_FAILED_UNITS: $BAD"
+  # Report WHY, not just which. Without this a failed system unit is a bare
+  # name, and "is this my change or the environment?" becomes unanswerable from
+  # the gate's own output - the same blindness that let a user-unit failure go
+  # unreported earlier.
+  for u in $BAD; do
+    echo "--- why $u failed ---"
+    timeout 15 systemctl status "$u" --no-pager -l 2>&1 | head -14 || true
+    timeout 15 journalctl -u "$u" -n 25 --no-pager 2>&1 | tail -25 || true
+  done
   FAILED=1
 else
   echo "no unexpected system failures"
@@ -167,6 +176,105 @@ esac
 # no release since v2026.9.24 has bumped (upstream #135217). Expected stale here; it
 # becomes stamp-derived when upstream #135223 lands. Not gated — upstream's bug.
 echo "  (parenthesised date is expected stale until upstream #135223)"
+
+echo "--- secret pipeline: no present-but-empty assignments in unit env files ---"
+# A present-but-empty assignment in a LATER EnvironmentFile silently overrides
+# the real value from an earlier one — systemd only lets a later file win for
+# keys it actually defines. 2026-10-14: a switch left TELEGRAM_BOT_TOKEN= in
+# sops-env, the gateway came up with no bot credential, and Telegram was dead
+# for ~11h until a plain restart.
+EMPTY_FILES=""
+while IFS= read -r f; do
+  [ -n "$f" ] || continue
+  if [ ! -r "$f" ]; then
+    echo "  MISSING: $f"
+    EMPTY_FILES="$EMPTY_FILES $f"
+    continue
+  fi
+  bad=$(grep -nE '^[A-Za-z_][A-Za-z0-9_]*=$' "$f" 2>/dev/null || true)
+  if [ -n "$bad" ]; then
+    echo "  EMPTY ASSIGNMENT in $f:"
+    echo "$bad" | sed 's/^/    /'
+    EMPTY_FILES="$EMPTY_FILES $f"
+  fi
+done < "$SMOKE_ENV_FILES"
+if [ -n "$EMPTY_FILES" ]; then
+  echo "ENV_EMPTY_ASSIGNMENT_BAD:$EMPTY_FILES"
+  FAILED=1
+else
+  echo "ENV_NO_EMPTY_ASSIGNMENTS_OK"
+fi
+
+echo "--- secret pipeline: the sops template rendered every key non-empty ---"
+# Keys come from the EVALUATED template content the host passed in, so adding a
+# key extends this automatically — no hand-list to rot.
+#
+# sops-nix renders this file in the SAME sops-install-secrets pass that installs
+# the secrets, and refuses to proceed when a placeholder has no matching secret.
+# So a missing or blank key here means the file was NOT produced by sops-nix —
+# e.g. someone reintroduced a hand-written generator, which is precisely the
+# 2026-10-14 bug (a `cat` that failed wrote `KEY=`).
+RENDERED="${SMOKE_RENDERED_ENV:-}"
+if [ ! -r "$RENDERED" ]; then
+  echo "RENDERED_ENV_MISSING: ${RENDERED:-<unset>}"
+  FAILED=1
+else
+  echo "  rendered: $RENDERED ($(grep -c . "$RENDERED" 2>/dev/null || echo 0) assignments)"
+  MISSING=""
+  BLANK=""
+  while IFS= read -r k; do
+    [ -n "$k" ] || continue
+    n=$(grep -cE "^${k}=" "$RENDERED" 2>/dev/null || true)
+    if [ "${n:-0}" -eq 0 ]; then
+      MISSING="$MISSING $k"
+      continue
+    fi
+    v=$(grep -E "^${k}=" "$RENDERED" | head -1 | cut -d= -f2-)
+    [ -n "$v" ] || BLANK="$BLANK $k"
+  done < "$SMOKE_EXPECTED_KEYS"
+  if [ -n "${MISSING// /}${BLANK// /}" ]; then
+    [ -n "${MISSING// /}" ] && echo "RENDERED_ENV_KEY_MISSING:$MISSING"
+    [ -n "${BLANK// /}" ] && echo "RENDERED_ENV_KEY_BLANK:$BLANK"
+    FAILED=1
+  else
+    echo "RENDERED_ENV_ALL_KEYS_NONEMPTY_OK"
+  fi
+fi
+
+echo "--- secret pipeline: gateway credential delivery ---"
+# The guest does a REAL (dummy) sops round-trip, so delivery is asserted rather
+# than stubbed — a stubbed env file is non-empty by construction, which is why
+# this used to be impossible to test here. The gateway process must hold the
+# dummy token:
+#   blank  -> the 2026-10-14 incident signature
+#   absent -> the unit never loaded the rendered file at all
+#   other  -> something delivered a value sops did not render
+GW_PID=""
+TOK=""
+for _i in $(seq 1 12); do
+  GW_PID=$(timeout 15 sudo -u hermes XDG_RUNTIME_DIR="/run/user/$UID_H" systemctl --user show -p MainPID --value hermes-gateway 2>/dev/null || true)
+  if [ -n "$GW_PID" ] && [ "$GW_PID" != 0 ] && [ -r "/proc/$GW_PID/environ" ]; then
+    TOK=$(tr '\0' '\n' < "/proc/$GW_PID/environ" | grep -E '^TELEGRAM_BOT_TOKEN=' | head -1 | cut -d= -f2-)
+    [ -n "$TOK" ] && break
+  fi
+  sleep 5
+done
+if [ -z "$GW_PID" ] || [ "$GW_PID" = 0 ]; then
+  echo "GATEWAY_PID_UNAVAILABLE"
+  FAILED=1
+elif [ -z "$TOK" ]; then
+  if tr '\0' '\n' < "/proc/$GW_PID/environ" | grep -qE '^TELEGRAM_BOT_TOKEN=$'; then
+    echo "GATEWAY_CREDENTIAL_IN_ENV_BLANK: gateway holds an EMPTY TELEGRAM_BOT_TOKEN"
+  else
+    echo "GATEWAY_CREDENTIAL_IN_ENV_ABSENT: gateway never loaded the rendered env file"
+  fi
+  FAILED=1
+elif [ "$TOK" = "${SMOKE_DUMMY_VALUE:-}" ]; then
+  echo "GATEWAY_CREDENTIAL_DELIVERED_OK"
+else
+  echo "GATEWAY_CREDENTIAL_UNEXPECTED: non-empty token that is not the rendered dummy value"
+  FAILED=1
+fi
 
 echo "--- summary ---"
 timeout 20 systemctl list-units --type=service --state=running --no-legend --plain 2>/dev/null | wc -l | sed 's/^/running services: /'

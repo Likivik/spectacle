@@ -41,41 +41,83 @@
       playwrightConfig = import ./_playwright.nix { inherit config pkgs lib; };
       litellmConfig = import ./_litellm.nix { inherit config pkgs lib; };
 
-      # ── Extra-profile wiring (parameterized; default stays hardcoded) ──
-      mkSopsEnv = { home, botTokenSecret, apiPort, apiKeySecret, ... }:
-        ''
-          mkdir -p "${home}"
-          {
-            TG=$(cat /run/secrets/${botTokenSecret} 2>/dev/null || true)
-            EXA=$(cat /run/secrets/hermes/exa-api-key 2>/dev/null || true)
-            MM=$(cat /run/secrets/hermes/minimax-api-key 2>/dev/null || true)
-            SYN=$(cat /run/secrets/hermes/synthetic-api-key 2>/dev/null || true)
-            APIK=$(cat /run/secrets/${apiKeySecret} 2>/dev/null || true)
-            LFPK=$(cat /run/secrets/langfuse/hermes-erebus/public-key 2>/dev/null || true)
-            LFSK=$(cat /run/secrets/langfuse/hermes-erebus/secret-key 2>/dev/null || true)
-            ORK=$(cat /run/secrets/hermes-mitmproxy/llm-providers/openrouter/api-key 2>/dev/null || true)
-            GH=$(cat /run/secrets/hermes-mitmproxy/github/pat-hermes-full 2>/dev/null || true)
-            echo "TELEGRAM_BOT_TOKEN=$TG"
-            echo "EXA_API_KEY=$EXA"
-            echo "MINIMAX_API_KEY=$MM"
-            echo "SYNTHETIC_API_KEY=$SYN"
-            # Per-profile gateway API listener: own port + own key, so each
-            # profile's api_server never collides with another profile's.
-            echo "API_SERVER_ENABLED=true"
-            echo "API_SERVER_HOST=0.0.0.0"
-            echo "API_SERVER_PORT=${toString apiPort}"
-            echo "API_SERVER_KEY=$APIK"
-            echo "HERMES_LANGFUSE_PUBLIC_KEY=$LFPK"
-            echo "HERMES_LANGFUSE_SECRET_KEY=$LFSK"
-            echo "HERMES_LANGFUSE_BASE_URL=https://cloud.langfuse.com"
-            echo "OPENROUTER_API_KEY=$ORK"
-            echo "GITHUB_TOKEN=$GH"
-          } > "${home}/sops-env"
-          chown hermes:hermes "${home}/sops-env"
-          chmod 0600 "${home}/sops-env"
-        '';
+      # ── Secrets → env, done by sops-nix instead of by us ──────────────
+      #
+      # sops-nix renders these templates inside the SAME `sops-install-secrets`
+      # manifest pass that installs the secrets, and places the result with
+      # os.Rename — so the file is atomic, ordered after the secrets it reads,
+      # and a placeholder with no matching secret is a hard ERROR instead of a
+      # blank. That is the entire reason this replaced the hand-rolled
+      # activation script that used to `cat` each secret file: that script wrote
+      # `KEY=` whenever a secret was unreadable, and because this file is the
+      # LAST EnvironmentFile a unit loads, systemd let the blank silently win
+      # over the real value. On 2026-10-14 that cost Telegram ~11h.
+      #
+      # Values never reach the Nix store: `sops.placeholder.<name>` evaluates to
+      # "<SOPS:<sha256 of the NAME>:PLACEHOLDER>" and the installer substitutes
+      # the real value at activation. So template content may ONLY contain
+      # placeholders — a literal secret here would land in the world-readable
+      # store. Asserted in pkgs/hermes-tests.
+      #
+      # One list per profile drives the template, the coverage test and the
+      # smoke gate's dummy secret set: add a row, all three follow.
+      commonSecretEnv = [
+        { env = "EXA_API_KEY"; secret = "hermes/exa-api-key"; }
+        { env = "MINIMAX_API_KEY"; secret = "hermes/minimax-api-key"; }
+        { env = "SYNTHETIC_API_KEY"; secret = "hermes/synthetic-api-key"; }
+        { env = "HERMES_LANGFUSE_PUBLIC_KEY"; secret = "langfuse/hermes-erebus/public-key"; }
+        { env = "HERMES_LANGFUSE_SECRET_KEY"; secret = "langfuse/hermes-erebus/secret-key"; }
+        { env = "OPENROUTER_API_KEY"; secret = "hermes-mitmproxy/llm-providers/openrouter/api-key"; }
+        { env = "GITHUB_TOKEN"; secret = "hermes-mitmproxy/github/pat-hermes-full"; }
+      ];
 
-      extraSopsEnv = lib.concatMapStringsSep "\n\n" (p: mkSopsEnv p) extraHermesProfiles;
+      # The default profile additionally carries dashboard password auth.
+      defaultSecretEnv = commonSecretEnv ++ [
+        { env = "HERMES_DASHBOARD_BASIC_AUTH_PASSWORD_HASH"; secret = "hermes/dashboard-basic-auth-hash"; }
+        { env = "HERMES_DASHBOARD_BASIC_AUTH_SECRET"; secret = "hermes/dashboard-basic-auth-secret"; }
+      ];
+
+      # Non-secret settings that every consumer of the env file expects. They
+      # live here (not only in serviceConfig.Environment) because the webui
+      # loads the same file as a different service.
+      commonLiteralEnv = apiPort: [
+        "API_SERVER_ENABLED=true"
+        "API_SERVER_HOST=0.0.0.0"
+        "API_SERVER_PORT=${toString apiPort}"
+        "HERMES_LANGFUSE_BASE_URL=https://cloud.langfuse.com"
+      ];
+
+      mkSopsTemplate = { botTokenSecret, apiKeySecret, apiPort, secretEnv, extraLiterals ? [ ] }: {
+        content = lib.concatStringsSep "\n" (
+          [ "TELEGRAM_BOT_TOKEN=${config.sops.placeholder.${botTokenSecret}}" ]
+          ++ map (r: "${r.env}=${config.sops.placeholder.${r.secret}}") secretEnv
+          ++ [ "API_SERVER_KEY=${config.sops.placeholder.${apiKeySecret}}" ]
+          ++ commonLiteralEnv apiPort
+          ++ extraLiterals
+        ) + "\n";
+        owner = "hermes";
+        mode = "0600";
+      };
+
+      # Template name -> rendered path. `/run/secrets/rendered/<name>`, inside
+      # /run/secrets/ so the smoke gate's path discovery picks it up like any
+      # other secret (sops-install-secrets MkdirAll's the parent).
+      sopsTemplates = {
+        "hermes/sops-env" = mkSopsTemplate {
+          botTokenSecret = "hermes/telegram-bot-token";
+          apiKeySecret = "hermes/api-server-key";
+          apiPort = 8642;
+          secretEnv = defaultSecretEnv;
+          extraLiterals = [ "HERMES_DASHBOARD_BASIC_AUTH_USERNAME=likivik" ];
+        };
+      } // lib.listToAttrs (map (p:
+        lib.nameValuePair "hermes/${p.name}-sops-env" (mkSopsTemplate {
+          inherit (p) botTokenSecret apiKeySecret apiPort;
+          secretEnv = commonSecretEnv;
+        })
+      ) extraHermesProfiles);
+
+      envFileFor = name: config.sops.templates.${name}.path;
 
       # Opt each extra profile out of the host multiplexer so its own unit can
       # serve it. Gated by a grep so the CLI call only happens when the key is
@@ -124,7 +166,7 @@
             ExecStart = "${hermes-pkg}/bin/hermes gateway run";
             EnvironmentFile = [
               "/run/secrets/hermes/env"
-              "${p.home}/sops-env"
+              (envFileFor "hermes/${p.name}-sops-env")
             ];
           };
         }
@@ -141,8 +183,6 @@
       litellmConfig
       (lib.mkIf (extraHermesProfiles != []) {
         systemd.user.services = extraGatewayUnits;
-        system.activationScripts."hermes-secrets-env-extras" =
-          lib.stringAfter [ "hermes-seed" ] extraSopsEnv;
         system.activationScripts."hermes-standalone-profiles" =
           lib.stringAfter [ "hermes-seed" ] (lib.concatMapStringsSep "\n" mkStandalone extraHermesProfiles);
       })
@@ -168,6 +208,37 @@
 
         environment.systemPackages = [ hermes-pkg ];
 
+        # Secrets reach every unit as a rendered env file, never as a
+        # hand-written one. See the sopsTemplates block above for why.
+        sops.templates = sopsTemplates;
+
+        # A literal secret typed into a template would land in the
+        # world-readable Nix store, because template content is written there as
+        # a plain file (only the placeholders are inert). Only placeholders and
+        # the explicitly allow-listed non-secret settings may appear; anything
+        # else fails the build rather than leaking.
+        assertions = [
+          {
+            assertion = lib.all
+              (t:
+                lib.all
+                  (l:
+                    lib.hasInfix "PLACEHOLDER>" l
+                    || lib.elem l (commonLiteralEnv 8642 ++ commonLiteralEnv 8643
+                      ++ [ "HERMES_DASHBOARD_BASIC_AUTH_USERNAME=likivik" ]))
+                  (lib.filter (l: l != "") (lib.splitString "\n" t.content)))
+              (lib.attrValues sopsTemplates);
+            message = ''
+              A sops.templates entry in the hermes-agent aspect has a line that
+              is neither a sops placeholder nor an allow-listed setting.
+              Template content is written to the world-readable Nix store, so a
+              literal secret there is a leak. Add a
+              `{ env = "..."; secret = "..."; }` row to commonSecretEnv (or
+              defaultSecretEnv) instead of typing the value.
+            '';
+          }
+        ];
+
         systemd.user.services.hermes-dashboard = {
           description = "Hermes Agent Dashboard";
           after = [ "network-online.target" ];
@@ -187,48 +258,10 @@
             ExecStart = "${hermes-pkg}/bin/hermes dashboard --host 0.0.0.0 --port 9119 --no-open";
             EnvironmentFile = [
               "/run/secrets/hermes/env"
-              "/var/lib/hermes/.hermes/sops-env"
+              (envFileFor "hermes/sops-env")
             ];
           };
         };
-
-        system.activationScripts."hermes-secrets-env" = lib.stringAfter (
-          lib.optional (config.system.activationScripts ? setupSecrets) "setupSecrets"
-        ) ''
-          # Generate env file from individual sops secrets — same pattern as LiteLLM.
-          # This file is NixOS-managed; hermes never touches it.
-          SEED_DIR=/var/lib/hermes/.hermes
-          ENV_FILE="$SEED_DIR/sops-env"
-          {
-            TG=$(cat /run/secrets/hermes/telegram-bot-token 2>/dev/null || true)
-            EXA=$(cat /run/secrets/hermes/exa-api-key 2>/dev/null || true)
-            MM=$(cat /run/secrets/hermes/minimax-api-key 2>/dev/null || true)
-            SYN=$(cat /run/secrets/hermes/synthetic-api-key 2>/dev/null || true)
-            APIK=$(cat /run/secrets/hermes/api-server-key 2>/dev/null || true)
-            DBAH=$(cat /run/secrets/hermes/dashboard-basic-auth-hash 2>/dev/null || true)
-            DBAS=$(cat /run/secrets/hermes/dashboard-basic-auth-secret 2>/dev/null || true)
-            LFPK=$(cat /run/secrets/langfuse/hermes-erebus/public-key 2>/dev/null || true)
-            LFSK=$(cat /run/secrets/langfuse/hermes-erebus/secret-key 2>/dev/null || true)
-            ORK=$(cat /run/secrets/hermes-mitmproxy/llm-providers/openrouter/api-key 2>/dev/null || true)
-            GH=$(cat /run/secrets/hermes-mitmproxy/github/pat-hermes-full 2>/dev/null || true)
-            echo "TELEGRAM_BOT_TOKEN=$TG"
-            echo "EXA_API_KEY=$EXA"
-            echo "MINIMAX_API_KEY=$MM"
-            echo "SYNTHETIC_API_KEY=$SYN"
-            echo "API_SERVER_KEY=$APIK"
-            # Dashboard password auth (basic provider) — alongside Nous OAuth.
-            echo "HERMES_DASHBOARD_BASIC_AUTH_USERNAME=likivik"
-            echo "HERMES_DASHBOARD_BASIC_AUTH_PASSWORD_HASH=$DBAH"
-            echo "HERMES_DASHBOARD_BASIC_AUTH_SECRET=$DBAS"
-            echo "HERMES_LANGFUSE_PUBLIC_KEY=$LFPK"
-            echo "HERMES_LANGFUSE_SECRET_KEY=$LFSK"
-            echo "HERMES_LANGFUSE_BASE_URL=https://cloud.langfuse.com"
-            echo "OPENROUTER_API_KEY=$ORK"
-            echo "GITHUB_TOKEN=$GH"
-          } > "$ENV_FILE"
-          chown hermes:hermes "$ENV_FILE"
-          chmod 0600 "$ENV_FILE"
-        '';
 
         # Gateway as a real NixOS-managed user unit — same pattern as
         # hermes-dashboard above. Replaces the old imperative
@@ -253,8 +286,8 @@
               "WHATSAPP_ENABLED=false"
               "WHATSAPP_MODE=self-chat"
               # Default profile's gateway API listener — own port (8642),
-              # key comes from sops-env (API_SERVER_KEY). Extra profiles
-              # get their own ports via their sops-env (8643, ...).
+              # key comes from the rendered env file (API_SERVER_KEY). Extra
+              # profiles get their own ports the same way (8643, ...).
               "API_SERVER_ENABLED=true"
               "API_SERVER_HOST=0.0.0.0"
               "API_SERVER_PORT=8642"
@@ -267,7 +300,7 @@
             ExecStart = "${hermes-pkg}/bin/hermes gateway run";
             EnvironmentFile = [
               "/run/secrets/hermes/env"
-              "/var/lib/hermes/.hermes/sops-env"
+              (envFileFor "hermes/sops-env")
             ];
           };
         };
@@ -285,6 +318,11 @@
           rm -rf /var/lib/hermes/.config/systemd/user/hermes-gateway.service.d
           rm -f /var/lib/hermes/.config/systemd/user/hermes-gateway.service
           rm -f /var/lib/hermes/.hermes/.managed
+          # The env file is rendered by sops-nix into /run/secrets/rendered/ now.
+          # The old hand-written copies are unmanaged leftovers: plaintext
+          # secrets in the agent's home that nothing regenerates. Drop them.
+          rm -f /var/lib/hermes/.hermes/sops-env
+          rm -f /var/lib/hermes/.hermes/profiles/*/sops-env
           chown -R hermes:hermes /var/lib/hermes/.config/systemd
         '';
 

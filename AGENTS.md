@@ -22,7 +22,7 @@ whatever checkout you are in.
 
 ```bash
 cd /Storage/Git/spectacle                  # only to create or forget workspaces
-jj workspace add --name spectacle-<sessionid> -r dev \
+jj workspace add --name spectacle-<sessionid> -r main \
    /Storage/Git/Workspaces/spectacle-<sessionid>
 cd /Storage/Git/Workspaces/spectacle-<sessionid>
 jj workspace update-stale                  # after any gap
@@ -32,12 +32,18 @@ All work — editing, testing, deploying — happens inside that workspace, and 
 deploy command must point at it:
 `--flake path:/Storage/Git/Workspaces/<name>#<host>`.
 
-Before moving a shared bookmark, prove you sit on top of it:
-`jj log -r 'dev & ::@'` must return the dev tip. Empty means you branched from an
-older trunk and "merging" would revert every commit landed since — fix it with
-`jj rebase -s <oldest commit of yours> -d dev`, then gate with
-`jj diff --stat --from dev --to @` (it must list only files you touched) before
-`jj bookmark set dev -r @`. Full detail: skill `jj-agent-workspaces`.
+Before publishing anything, prove your change contains only what you touched:
+`jj diff --stat --from main --to @` must list only your files.
+
+Note the squash-merge consequence: after a squash, `main` is a **new** commit, so
+it is never an ancestor of an existing branch and `jj log -r 'main & ::@'` is
+legitimately empty. The diff is the gate, not ancestry.
+
+If the diff lists files you never touched, your change sits on a stale trunk:
+`jj rebase -s <oldest commit of yours> -d main`, then check the diff again.
+Expect duplicate-change conflicts when main already carries a squashed copy of
+work you had; resolve by keeping main's side. Full detail: skill
+`jj-agent-workspaces`.
 
 ## VM smoke — run it locally, it is not a CI check
 
@@ -63,6 +69,44 @@ Honest consequence: CI can no longer catch a build failure — a bad hash, a
 failing build step. Nothing automated covers that any more; the smoke does, and
 only when you actually run it.
 
+## Reaching main (PR flow)
+
+`main` is the only long-lived branch; `dev` is gone. Direct pushes to `main` are
+blocked by a repository ruleset with **no bypass actors** — that includes admins,
+so nobody pushes to `main`, ever.
+
+```bash
+# 1. branch from current main, never from a stale trunk
+jj git fetch
+jj new main                  # or: jj workspace add --name <n> -r main <path>
+# 2. edit, then write a real message
+jj describe -m "what changed and why"
+# 3. push a feature bookmark — never --all: it sweeps other sessions' bookmarks
+jj bookmark set feat/<topic> -r @
+jj git push --bookmark feat/<topic>
+# 4. open the PR
+gh pr create --repo Likivik/spectacle --base main --head feat/<topic> --fill
+```
+
+What the ruleset enforces before a PR can merge:
+
+- **Both required checks pass**: `python tests (nc-ocr-flow)` and
+  `nix eval (all hosts)`. The eval covers *every* host, not just deploy targets.
+- **The branch is up to date with `main`** (`strict_required_status_checks_policy`).
+  GitHub will not merge a PR whose base has moved on. Because a squash merge
+  makes `main` a brand-new commit, every open PR goes `BEHIND` the moment
+  something else lands — rebase and let the checks re-run:
+  `jj git fetch && jj rebase -d main && jj git push --bookmark feat/<topic>`.
+- **No approvals required.** The checks are the gate; a human review is not.
+- **Squash merge only**, so `main` stays linear and one PR is one commit — one
+  `git revert` undoes one task.
+- No force-push, no branch deletion, no merge commits on `main`.
+
+If a required check cannot run at all (broken workflow, missing context), the PR
+becomes unmergeable. Fix the workflow, not the ruleset.
+
+A green PR is **not** permission to deploy — see the deploy flow below.
+
 ## Repo Location
 
 - **Serenity**: `/Storage/Git/spectacle` — **the host the Hermes agent runs on** (moved
@@ -83,7 +127,7 @@ This repo uses **jj** (Jujutsu) on top of git. jj is the primary VCS.
    - `jj new` — start a new change (equivalent of git checkout -b)
    - `jj describe -m "message"` — set commit message
    - `jj log` — view history
-   - `jj bookmark set dev -r @` — point dev bookmark at current change
+   - `jj bookmark set feat/<topic> -r @` — name the change you will push as a PR
    - `jj git push --bookmark <name>` — push ONE bookmark. Never `--all`: it sweeps other sessions' bookmarks into the remote.
    - `jj squash` — combine changes
    - `jj edit <id>` — switch to an existing change
@@ -107,16 +151,16 @@ This repo uses **jj** (Jujutsu) on top of git. jj is the primary VCS.
    saying how long it should take. Time-blindness needs an external clock.
 
    **Agent workflow — in this order, no shortcuts:**
-   1. **Be on latest.** `jj git fetch`, then confirm your `@` sits on `dev`
-      (`jj log -r 'dev'`). A stale checkout silently deploys an old pin —
+   1. **Be on latest.** `jj git fetch`, then confirm your `@` sits on `main`
+      (`jj log -r 'main'`). A stale checkout silently deploys an old pin —
       `/Storage/Git/spectacle` sat 44 commits behind and still pinned
       hermes-agent v2026.9.7 while serenity ran v2026.9.24.
    2. **Work in your own workspace**, never the shared checkout:
-      `jj workspace add --name spectacle-<sessionid> -r dev \
+      `jj workspace add --name spectacle-<sessionid> -r main \
          /Storage/Git/Workspaces/spectacle-<sessionid>`
    3. **Edit** in that workspace.
-   4. **Merge upstream** — rebase onto the latest `dev` and resolve conflicts
-      before building anything.
+   4. **Rebase onto latest main** and resolve conflicts before building
+      anything: `jj git fetch && jj rebase -d main`.
    5. **Only then deploy** (below), from that workspace.
 
    ```bash
@@ -140,8 +184,10 @@ This repo uses **jj** (Jujutsu) on top of git. jj is the primary VCS.
    #    disks/zpool are fine. SKIP this only if you are not changing serenity.
    nix run .#serenity-smoke
 
-   # 3. Push only AFTER dry-build (and the smoke gate) passes
-   jj bookmark set dev -r @ && jj git push --all
+   # 3. Push a feature bookmark, then open a PR. Direct pushes to main are
+   #    forbidden by the ruleset (no bypass actors, not even admins) and the
+   #    merge is squash-only. See "Reaching main (PR flow)" above.
+   jj bookmark set feat/<topic> -r @ && jj git push --bookmark feat/<topic>
 
    # 4. Deploy — LOCAL if you're on the target host, REMOTE otherwise.
    #    Serenity is the LOCAL host now (the agent runs on it).
@@ -220,7 +266,7 @@ This repo uses **jj** (Jujutsu) on top of git. jj is the primary VCS.
    - jj auto-tracks all changes (no `git add` needed)
    - `jj log` to see all changes
    - Before merging to main: `jj squash` + `jj describe` to clean up
-   - Push: `jj bookmark set dev -r @ && jj git push --all`
+   - Push: `jj bookmark set feat/<topic> -r @ && jj git push --bookmark feat/<topic>`
 
 9. **Migrating existing git branches:**
    - jj reads existing git history automatically

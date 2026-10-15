@@ -66,6 +66,21 @@
     in lib.mkMerge [
       # ── Serenity: 3 llama.cpp systemd units + ollama-compat proxy ───────
       (lib.mkIf (config.networking.hostName == "serenity") {
+        # 4 slots = MCP's 3 indexer workers (VECTOR_SYNC_PROCESSOR_WORKERS
+        # default on poweredge) + 1 headroom. Without --parallel llama.cpp
+        # defaults to a single slot, the 3 workers contend, requests queue,
+        # ollama_proxy.py returns 502s, and indexing drops to ~8.5 chunks/min.
+        # ctx-size 8192 / 4 = 2048 tokens per slot, enough for the ~2048-char
+        # chunks the MCP emits (200-char overlap included).
+        #
+        # --batch-size 8192 / -ub 8192 raises llama.cpp's logical and PHYSICAL
+        # batch from the default 512 to 8192 (matches --ctx-size 8192 and bge-m3's
+        # 8192-token max input). The upstream 502 body literally says
+        # "increase the physical batch size" (current: 512); -ub is what actually
+        # lifts the limit, --batch-size is set to the same value so they cannot
+        # disagree. Without this, any single Cyrillic chunk >512 tokens makes
+        # llama.cpp return 500 → ollama_proxy.py re-emits 502, and the MCP burns
+        # its 5-retry backoff (2+4+8+16s) on every dense chunk. Dominant failure.
         systemd.services.llama-embedder = {
           description = "llama.cpp bge-m3 embedder";
           after = [ "network.target" ]; wantedBy = [ "multi-user.target" ];
@@ -75,12 +90,21 @@
             ExecStart = ''
               ${llama-server} --host 0.0.0.0 --port 8081 \
                 -m ${bgeM3} \
-                --embedding --ctx-size 8192 -ngl 99 --threads 4
+                --embedding --ctx-size 8192 -ngl 99 --threads 4 \
+                --parallel 4 --batch-size 8192 -ub 8192
             '';
             Restart = "on-failure"; RestartSec = 5;
             DynamicUser = true; StateDirectory = "llama-cpp-embedder";
           };
         };
+        # 2 slots so concurrent searches at query time do not serialise.
+        # ctx-size 8192 / 2 = 4096 tokens per slot; reranker inputs are short
+        # (query + candidate passage pair), well inside that budget.
+        #
+        # --batch-size 8192 / -ub 8192 matches the embedder. Reranker submits
+        # whole documents/chunks and is exposed to the same 512-token
+        # physical-batch ceiling. -ub is the actual fix; --batch-size is set
+        # to match so they cannot disagree.
         systemd.services.llama-reranker = {
           description = "llama.cpp bge-reranker-v2-m3";
           after = [ "network.target" ]; wantedBy = [ "multi-user.target" ];
@@ -90,7 +114,8 @@
             ExecStart = ''
               ${llama-server} --host 0.0.0.0 --port 8082 \
                 -m ${bgeReranker} \
-                --embedding --pooling rank --reranking -ngl 99 --ctx-size 8192
+                --embedding --pooling rank --reranking -ngl 99 \
+                --ctx-size 8192 --parallel 2 --batch-size 8192 -ub 8192
             '';
             Restart = "on-failure"; RestartSec = 5;
             DynamicUser = true; StateDirectory = "llama-cpp-reranker";

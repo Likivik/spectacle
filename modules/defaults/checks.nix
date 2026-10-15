@@ -22,6 +22,20 @@
           pkgs.linkFarm "ci-checks" [
             { name = "hermes-tests"; path = config.checks.hermes-tests; }
             { name = "hr-bot-units"; path = config.checks.hr-bot-units; }
+
+            # Package builds. CI previously evaluated the flake and ran the
+            # config guards but never *built* the uv2nix or npm packages, so a
+            # lockfile that resolves but cannot build (or whose npmDepsHash no
+            # longer matches) merged and deployed silently.
+            #
+            # These catch lockfile/build breakage. They do NOT catch runtime
+            # incompatibilities — a Dependabot redis 7->8 bump built fine and
+            # then failed at runtime because falkordb 1.6.2 passes a kwarg
+            # redis-py 8 removed. That class needs a VM test, and the ones that
+            # would find it (graphiti-roundtrip, mcp-roundtrip) are excluded
+            # above because a hosted runner cannot boot them in time.
+            { name = "graphiti-mcp"; path = inputs.graphiti-mcp-workspace.packages.${pkgs.system}.graphiti-mcp; }
+            { name = "ocrflow-ncapp"; path = pkgs.callPackage ../../pkgs/ocrflow-ncapp { }; }
           ];
 
         # Config still evaluates + builds (the "won't break Hermes on deploy" guard).

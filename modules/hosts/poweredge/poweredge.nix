@@ -289,7 +289,15 @@
         containers.nextcloud-mcp = {
           autoStart = true;
           containerConfig = {
-            image = "ghcr.io/pi0n00r/nextcloud-mcp-server:v1.5.1.1";
+            # pi0n00r/nextcloud-mcp-server — hardened fork of cbcoutinho.
+            # Bridgette v1.9.9.3 (2026-10-10, f9f595f). Multi-arch image-index
+            # digest pins to an immutable OCI manifest list so a same-tag
+            # rebuild cannot silently swap the running image:
+            #   sha256:fb4833666580ba996437c93b7775cb28c87e978399e4e3c2b83c6f86d6e093b4
+            # (amd64 sha256:1fc77279052502d7b79e9e4c1b7df2582b563e755fae1af3bd57ca35245006d1
+            #  arm64 sha256:b8d104a2f76fed5fa2a0f59f444ce0e25f85ac47f4be2ea78f4295a9f8d30fc7)
+            # Release notes: https://github.com/pi0n00r/nextcloud-mcp-server/releases/tag/v1.9.9.3
+            image = "ghcr.io/pi0n00r/nextcloud-mcp-server:v1.9.9.3@sha256:fb4833666580ba996437c93b7775cb28c87e978399e4e3c2b83c6f86d6e093b4";
             # --network=host: same rationale as qdrant (sidestep netavark DNAT bug)
             networks = [ "host" ];
             # Env vars per upstream docs (README + 'Required configuration' log).
@@ -322,16 +330,115 @@
               # Why not llama.cpp directly? llama.cpp reverted /api/tags in
               # PR #22165 (April 2026). Why not Ollama? CVE-2026-7482 (9.1).
               # Why proxy on serenity: keeps embedder/reranker on GPU host.
-              # VECTOR_SYNC_INTERVAL=60 → re-scan every 60s (default 3600s/1h).
-              # Set short here so initial indexing kicks in within minutes of
-              # a new note being created, instead of waiting for the next
-              # hourly tick. Bump back to 3600 once indexing is healthy.
               ENABLE_SEMANTIC_SEARCH = "true";
-              VECTOR_SYNC_INTERVAL = "60";
               QDRANT_URL = "http://127.0.0.1:6333";
               OLLAMA_BASE_URL = "http://serenity:11434";
               OLLAMA_EMBEDDING_MODEL = "bge-m3";
               SEARCH_MODE = "hybrid";  # dense (via Ollama/proxy) + sparse (Qdrant BM25)
+
+              # --- Vector-sync tuning ---------------------------------------
+              # NB: the correct env-var name is VECTOR_SYNC_SCAN_INTERVAL, NOT
+              # VECTOR_SYNC_INTERVAL — the latter is silently ignored (upstream
+              # docs/configuration.md and env.sample). The deploy previously
+              # set VECTOR_SYNC_INTERVAL=60, which v1.5.1.1 ignored and fell
+              # back to the (then 3600s) default. v1.9.x tightened the default
+              # to 300s. Keep 60s for snappy indexing on this small instance;
+              # bump to 300+ once steady-state.
+              VECTOR_SYNC_SCAN_INTERVAL = "60";
+              # --- File indexing tags ---------------------------------------
+              # VECTOR_SYNC_TAG / VECTOR_SYNC_KEYWORD_TAG name the two system
+              # tags the file scanner matches against. Defaults are
+              # `vector-index` (hybrid) and `keyword-index` (BM25-only) — set
+              # explicitly here so a future upstream rename doesn't silently
+              # change behaviour. Both tags are *on* by default; either one,
+              # applied to a file OR a folder (folder tag recursively selects
+              # descendants), is sufficient. Hybrid wins if both are present.
+              # See docs/configuration.md §"Per-document keyword vs hybrid".
+              #
+              # To make the ENTIRE Nextcloud tree searchable, the operator
+              # must create both tags once and apply `vector-index` at the
+              # tree root. The server cannot do that for itself:
+              #   occ systemtag:add vector-index --visibility visible --assignable
+              #   occ systemtag:add keyword-index --visibility visible --assignable
+              #   # Then in the Nextcloud UI or via WebDAV: apply vector-index
+              #   # to /<user>/files/ (the tag inherits down).
+              VECTOR_SYNC_TAG = "vector-index";
+              VECTOR_SYNC_KEYWORD_TAG = "keyword-index";
+              # EXCLUDED_TAGS — tag-based file/folder exclusion (issue #710,
+              # PR #765 in v1.9.x). Comma-separated list of system-tag names
+              # whose tagged files / folders are hidden from EVERY WebDAV MCP
+              # tool — listings, reads, writes, deletes, moves, copies, search.
+              # A folder tag recursively excludes everything beneath it via
+              # path-prefix match. The vector-sync scanner also honors this
+              # set (PR #765): a file tagged `vector-exclude` is NOT
+              # indexed even if it sits under a folder tagged `vector-index`.
+              # Default: empty (feature off). Setting the env var to a tag
+              # name that does not exist in Nextcloud is a no-op, so it is
+              # safe to ship the config ahead of `occ systemtag:add`.
+              # Threat model: create the tag --user-assignable=false so
+              # users cannot bypass the exclusion by removing the tag from a
+              # file in the WebUI. The tag itself is created manually:
+              #   occ systemtag:add vector-exclude \
+              #     --visibility visible --assignable false
+              EXCLUDED_TAGS = "vector-exclude";
+              # --- Multi-format indexing (v1.9.5+) ---------------------------
+              # v1.5.1.1 hard-coded a PDF-only MIME filter inside the file
+              # scanner; with no PDF files tagged, the Qdrant collection
+              # stayed at 0 file points (the reason nothing was indexed).
+              # v1.9.5 added native DOCX/PPTX/XLSX readers (ADR-036/038) and
+              # v1.9.8.3 expanded tagged-file discovery to "every type an
+              # enabled processor can read" by default — PDF, DOCX, XLSX,
+              # PPTX, plain text, Markdown, CSV, Outlook .msg are all picked
+              # up under a `vector-index` system tag with no env var.
+              #
+              # VECTOR_SYNC_INDEXABLE_MIME_TYPES is therefore intentionally
+              # UNSET. Setting it to e.g. `application/pdf` would re-impose
+              # the v1.5.x narrow scope. Setting it empty disables indexing
+              # entirely (counter-intuitively; upstream logs a warning).
+              # Optional heavier backends, deliberately OFF here:
+              #   ENABLE_TESSERACT=true     — lightweight OCR for images
+              #   ENABLE_DOCLING=true       — Docling for scanned PDFs / VLM
+              #   COLLABORA_URL=http://...  — legacy .doc/.xls/.ppt + ODF
+              # Tesseract is the cheapest image path; Docling + VLM (ADR-032)
+              # is gated on EMBEDDING_GATEWAY_URL on a GPU host and is not
+              # needed for the common formats.
+              # --- Throttle / size caps (left at upstream defaults) --------
+              #   VECTOR_SYNC_PROCESSOR_WORKERS   = 3   (concurrent indexers)
+              #   VECTOR_SYNC_QUEUE_MAX_SIZE      = 10000  (back-pressure cap)
+              #   VECTOR_SYNC_MAX_INDEX_FAILURES  = 5    (dead-letter after 5)
+              #   VECTOR_SYNC_FAST_CONCURRENCY    = unset (inherit workers)
+              #   VECTOR_SYNC_STRUCTURED_CONCURRENCY = unset
+              #   DOCUMENT_CHUNK_SIZE             = 2048 chars per chunk
+              #   DOCUMENT_CHUNK_OVERLAP          = 200  chars
+              #   DOCUMENT_MAX_PDF_SIZE_MB        = 50   (applies to ALL
+              #                                            doc types, not
+              #                                            just PDFs — name
+              #                                            is a misnomer)
+              #   DOCUMENT_PARSE_PROCESS_SLOTS    = 2    (concurrent parse
+              #                                            subprocesses)
+              #   DOCUMENT_PARSE_TIMEOUT_SECONDS  = 120  (per-doc wall clock)
+              #   VERIFICATION_CONCURRENCY        = unset (search-side
+              #                                            fan-out only)
+              # No master pause / drain switch. Indexing is continuous per
+              # VECTOR_SYNC_SCAN_INTERVAL; once a scan starts, it runs to
+              # queue drain. To stop: drop VECTOR_SYNC_SCAN_INTERVAL very high
+              # (effectively pause), or stop the container.
+              # --- First-pass cost estimate ----------------------------------
+              # The initial scan re-queues the whole tagged corpus every
+              # interval (PR #921 confirmed). For the full Nextcloud tree
+              # on this instance (~hundreds to a few thousand files of the
+              # common types), chunking at ~1 chunk/page for PDFs
+              # (DOCUMENT_CHUNK_PAGE_AWARE=true) and ~2048 chars per chunk
+              # for DOCX/XLSX/PPTX/MD/CSV, the first pass embeds in the
+              # background while serving searches. Per-chunk embedding is a
+              # single POST /api/embed against serenity's llama.cpp proxy
+              # (bge-m3, 1024-dim) — expect tens of ms / chunk there, so
+              # VECTOR_SYNC_PROCESSOR_WORKERS=3 caps the request rate at
+              # ~30 chunks/s before Qdrant write becomes the bottleneck.
+              # Subsequent scans are incremental (ETag-based change
+              # detection, per ADR-010); only changed / newly-tagged /
+              # newly-tagged-folder files are re-embedded. Deletions evict
+              # after a grace period.
             };
           };
           # systemd service config: encrypt sops secret → LoadCredentialEncrypted →

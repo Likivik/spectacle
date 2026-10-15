@@ -1,195 +1,291 @@
 #!/usr/bin/env bash
-# verify-mcp-index.sh — post-deploy smoke test for the nextcloud-mcp container
-# on poweredge. Confirms:
-#   1. The new image is running (digest check).
-#   2. The MCP server is responsive on its public endpoint.
-#   3. Qdrant is reachable and the collection has at least the expected
-#      baseline of indexed points (deck_card, note, mail_message, news_item).
-#   4. A hybrid search returns results (smoke test for the embedding path).
+# verify-mcp-index.sh — post-deploy smoke test for the nextcloud-mcp server
+# on poweredge.
 #
-# The file-doc_type point count is intentionally NOT asserted > 0 here — it
-# depends on the operator having tagged at least one folder with `vector-index`
-# AND waited at least one VECTOR_SYNC_SCAN_INTERVAL since deploy. The script
-# REPORTS the current count for the operator to interpret; gating on it would
-# be theatre until files are actually tagged.
+# Confirms:
+#   1. nextcloud-mcp.service is active and the systemd ExecStart references a
+#      recognisable image (parsed from `systemctl show`, not a brittle quadlet
+#      path that may not be readable from this host).
+#   2. The MCP server responds to a streamable-HTTP `initialize` handshake at
+#      /mcp with HTTP 200, an `Mcp-Session-Id` header, and a body that
+#      contains `serverInfo` (does NOT pin a specific server version).
+#   3. Qdrant is reachable and the `poweredge-bge-m3` collection exists and
+#      reports status=green.
+#   4. For each tracked doc_type (file / note / deck_card / mail_message /
+#      news_item) we report total points, placeholder points, and
+#      non-placeholder points — and we ASSERT that at least one
+#      non-placeholder point exists somewhere. This is the meaningful gate:
+#      a non-zero total with is_placeholder:true only means "scanner
+#      discovered files" — it does NOT mean anything is searchable yet.
+#
+# What we deliberately do NOT do:
+#   * We do not run a vector search. Synthesising a valid 1024-dim bge-m3
+#     vector requires the embedder; a zero/random vector produces a
+#     dimension-mismatch or a "nearest to origin" answer that is theatre.
+#   * We do not hard-code the running image digest — it rotates on every
+#     upstream rebuild and a hard-coded expected would produce false
+#     failures after every upgrade. Pass --expected-image to opt in.
+#   * We do not assert doc_type=file > 0. The file scanner only ingests
+#     folders the operator has tagged `vector-index`; before that, file == 0
+#     is the EXPECTED state and asserting > 0 would be a false alarm.
+#
+# Operator tagging (IMPORTANT — the old comment was wrong):
+#   Tagging the Nextcloud files ROOT does NOT work — `occ systemtag:add`
+#   reports success on the root and the scanner expands nothing. Tag each
+#   TOP-LEVEL FOLDER under the user you want indexed; the scanner
+#   recursively expands a directly-tagged folder and so covers the whole
+#   subtree. The tags in use are:
+#     vector-index   — hybrid index (the one that matters)
+#     keyword-index  — keyword-only, optional
+#     vector-exclude — exclusion list (wired via EXCLUDED_TAGS)
+#   Tag example for likivik:
+#     occ systemtag:add vector-index --assignable
+#     for fid in $(occ user:files:list-folders likivik); do
+#       occ systemtag:assign vector-index "$fid"
+#     done
 #
 # Usage:
-#   ./scripts/verify-mcp-index.sh [--mcp-url http://127.0.0.1:8000] \
-#       [--qdrant-url http://127.0.0.1:6333] \
-#       [--collection poweredge-bge-m3]
+#   ./scripts/verify-mcp-index.sh [--mcp-url URL] [--qdrant-url URL] \
+#       [--collection NAME] [--expected-image REF]
 #
 # Exit codes:
-#   0  PASS — every checked subsystem responded as expected.
-#   1  FAIL — at least one subsystem check failed (printed above).
+#   0  PASS  — every required check passed. VERIFY_INDEX_OK printed.
+#   1  FAIL  — at least one required check failed. VERIFY_INDEX_FAIL printed.
 #   2  USAGE — bad CLI args.
 #
 # Markers (stable, CI-friendly):
-#   VERIFY_INDEX_OK   on full pass
-#   VERIFY_INDEX_FAIL on any failure
-#   VERIFY_INDEX_REPORT multi-line body, every line begins with one of
-#     `container:`, `mcp:`, `qdrant:`, `counts:`, `search:`
+#   VERIFY_INDEX_OK     on full pass
+#   VERIFY_INDEX_FAIL   on any required-check failure
+#   VERIFY_INDEX_REPORT multi-line body, every line begins with one of:
+#     container:   mcp:   qdrant:   counts:   content:
 set -euo pipefail
 
 MCP_URL_DEFAULT="http://127.0.0.1:8000"
 QDRANT_URL_DEFAULT="http://127.0.0.1:6333"
 COLLECTION_DEFAULT="poweredge-bge-m3"
-EXPECTED_IMAGE_DIGEST="${EXPECTED_IMAGE_DIGEST:-sha256:fb4833666580ba996437c93b7775cb28c87e978399e4e3c2b83c6f86d6e093b4}"
-EXPECTED_IMAGE_TAG="${EXPECTED_IMAGE_TAG:-v1.9.9.3}"
 
 MCP_URL="${MCP_URL:-$MCP_URL_DEFAULT}"
 QDRANT_URL="${QDRANT_URL:-$QDRANT_URL_DEFAULT}"
 COLLECTION="${COLLECTION:-$COLLECTION_DEFAULT}"
+EXPECTED_IMAGE="${EXPECTED_IMAGE:-}"   # optional; pass via env or --expected-image
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --mcp-url)        MCP_URL="$2"; shift 2 ;;
-    --qdrant-url)     QDRANT_URL="$2"; shift 2 ;;
-    --collection)     COLLECTION="$2"; shift 2 ;;
-    --expected-digest) EXPECTED_IMAGE_DIGEST="$2"; shift 2 ;;
-    --expected-tag)   EXPECTED_IMAGE_TAG="$2"; shift 2 ;;
+    --mcp-url)          MCP_URL="$2"; shift 2 ;;
+    --qdrant-url)       QDRANT_URL="$2"; shift 2 ;;
+    --collection)       COLLECTION="$2"; shift 2 ;;
+    --expected-image)   EXPECTED_IMAGE="$2"; shift 2 ;;
     -h|--help)
-      sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,46p' "$0" | sed 's/^# \{0,1\}//'
       exit 2 ;;
     *) echo "Unknown arg: $1" >&2; exit 2 ;;
   esac
 done
 
-PASS=0; FAIL=0
-ok()   { PASS=$((PASS+1)); printf '  [PASS] %s\n' "$*"; }
-bad()  { FAIL=$((FAIL+1)); printf '  [FAIL] %s\n' "$*" >&2; }
-report() { printf '%s: %s\n' "$1" "$2"; }
+# doc_types we surface. file + note + deck_card cover the current scanner;
+# mail_message + news_item are forward-compatible. Total / placeholder /
+# non-placeholder for each is REPORTED. The gate is "≥1 non-placeholder
+# point across any doc_type", not "file > 0".
+DOC_TYPES=(file note deck_card mail_message news_item)
 
-# --- 1. Container is running on the new image ------------------------------
+PASS=0; FAIL=0; REQUIRED_FAIL=0
+ok()    { PASS=$((PASS+1));      printf '  [PASS] %s\n' "$*"; }
+bad()   { FAIL=$((FAIL+1)); REQUIRED_FAIL=$((REQUIRED_FAIL+1)); printf '  [FAIL] %s\n' "$*" >&2; }
+warn()  { printf '  [WARN] %s\n' "$*"; }
+report(){ printf '%s: %s\n' "$1" "$2"; }
+
+# Pull a count integer out of a Qdrant `count` response. Empty/missing -> "?".
+count_from() {
+  local body="$1"
+  echo "$body" | sed -n 's/.*"count":\([0-9][0-9]*\).*/\1/p' | head -1
+}
+
+# Pull the first `"id":"..."` UUID-ish token out of a Qdrant `scroll` response.
+# Empty/missing -> "".
+id_from_scroll() {
+  local body="$1"
+  echo "$body" | grep -o '"id":"[a-fA-F0-9-]\+"' | head -1 || true
+}
+
+# ─── 1. Container ─────────────────────────────────────────────────────────
 echo '--- container ---'
-if systemctl is-active --quiet nextcloud-mcp.service; then
+SVC_STATE="inactive"
+if systemctl is-active --quiet nextcloud-mcp.service 2>/dev/null; then
+  SVC_STATE="active"
   ok "nextcloud-mcp.service is active"
 else
-  bad "nextcloud-mcp.service is not active (systemctl status nextcloud-mcp.service)"
+  bad "nextcloud-mcp.service is NOT active (systemctl status nextcloud-mcp.service)"
 fi
 
-# Read the running image digest straight from the quadlet's last container.
-# podman inspect returns RepoDigests only for pulled images (after a fresh
-# pull); fall back to the configured unit file if absent.
-DIGEST=""
-if command -v podman >/dev/null 2>&1; then
-  CID=$(podman ps --filter name=nextcloud-mcp --filter status=running --format '{{.ID}}' 2>/dev/null | head -1 || true)
-  if [[ -n "${CID:-}" ]]; then
-    DIGEST=$(podman inspect "$CID" --format '{{index .Image "Digest"}}' 2>/dev/null || true)
+# Read the image straight from the live systemd unit's ExecStart. This works
+# regardless of where the quadlet ends up on disk — podman args are the
+# source of truth.
+IMAGE_REF=""
+if [[ "$SVC_STATE" == "active" ]]; then
+  EXEC_START=$(systemctl show nextcloud-mcp.service -p ExecStart --value 2>/dev/null || true)
+  if [[ -n "$EXEC_START" ]]; then
+    # ExecStart for a quadlet-wrapped podman container embeds the image ref
+    # (e.g. ghcr.io/pi0n00r/nextcloud-mcp-server:v1.9.9.3@sha256:...). It is
+    # always the LAST positional argument of argv[]. Extract just argv[]'s
+    # contents (terminated by the next top-level `;`) and take the last
+    # whitespace-separated token — this sidesteps false matches against
+    # `--env FOO=http://host:port` style arguments.
+    IMAGE_REF=$(echo "$EXEC_START" \
+      | grep -oE 'argv\[\]=[^;]+' \
+      | head -1 \
+      | sed 's/^argv\[\]=//' \
+      | awk '{print $NF}' \
+      || true)
   fi
 fi
-if [[ -n "$DIGEST" ]]; then
-  report "container" "running image digest = $DIGEST"
-  if [[ "$DIGEST" == "$EXPECTED_IMAGE_DIGEST" ]]; then
-    ok "digest matches expected $EXPECTED_IMAGE_DIGEST (image-index pinned)"
-  elif [[ "$DIGEST" == *"$EXPECTED_IMAGE_TAG"* ]]; then
-    report "container" "digest differs from expected but tag $EXPECTED_IMAGE_TAG is present — re-evaluate"
-  else
-    bad "running digest $DIGEST does not match expected $EXPECTED_IMAGE_DIGEST"
-  fi
-else
-  # Best-effort: at least confirm the quadlet-generated unit file references
-  # the new image so the *next* restart uses it.
-  if [[ -r /etc/containers/systemd/nextcloud-mcp.container ]]; then
-    if grep -q "$EXPECTED_IMAGE_TAG" /etc/containers/systemd/nextcloud-mcp.container; then
-      ok "quadlet unit file references $EXPECTED_IMAGE_TAG (no running digest yet)"
+if [[ -n "$IMAGE_REF" ]]; then
+  report "container" "running image = $IMAGE_REF"
+  if [[ -n "$EXPECTED_IMAGE" ]]; then
+    if [[ "$IMAGE_REF" == *"$EXPECTED_IMAGE"* ]]; then
+      ok "running image matches EXPECTED_IMAGE ($EXPECTED_IMAGE)"
     else
-      bad "quadlet unit file does NOT reference $EXPECTED_IMAGE_TAG — is the deploy applied?"
+      bad "running image $IMAGE_REF does not contain EXPECTED_IMAGE"
     fi
   else
-    report "container" "quadlet unit file not present at /etc/containers/systemd/nextcloud-mcp.container (read-only)"
+    report "container" "EXPECTED_IMAGE not set; image match check skipped (set --expected-image or EXPECTED_IMAGE to opt in)"
   fi
+else
+  warn "could not parse a running image out of systemctl show (svc state: $SVC_STATE)"
 fi
 
-# Confirm the rename took effect (regression guard against a future revert
-# of VECTOR_SYNC_SCAN_INTERVAL back to VECTOR_SYNC_INTERVAL).
-if [[ -r /run/nextcloud-mcp.env ]]; then
-  if grep -q '^NEXTCLOUD_HOST=' /run/nextcloud-mcp.env; then
-    ok "/run/nextcloud-mcp.env exists and carries the sops-injected creds"
+# Confirm the sops-injected creds file is present (regression check that the
+# rename didn't silently drop NEXTCLOUD_HOST). Read-only — we never print
+# its contents. The file is mode 600 root-owned, so when run as a
+# non-root operator we can only see that it exists; we still confirm its
+# shape when run with read access.
+if [[ -e /run/nextcloud-mcp.env ]]; then
+  if [[ -r /run/nextcloud-mcp.env ]] && grep -q '^NEXTCLOUD_HOST=' /run/nextcloud-mcp.env; then
+    ok "/run/nextcloud-mcp.env exists and carries NEXTCLOUD_HOST (sops creds present)"
+  elif [[ -r /run/nextcloud-mcp.env ]]; then
+    warn "/run/nextcloud-mcp.env exists but has no NEXTCLOUD_HOST — check the secrets template"
+  else
+    ok "/run/nextcloud-mcp.env exists (mode 600; non-root cannot inspect, but presence confirms template)"
   fi
+else
+  warn "/run/nextcloud-mcp.env missing — secrets template did not provision it"
 fi
 
-# --- 2. MCP HTTP endpoint ------------------------------------------------
+# ─── 2. MCP streamable-HTTP handshake ─────────────────────────────────────
 echo '--- mcp ---'
-# Most MCP deployments expose a /health endpoint; fall back to / if absent.
-HEALTH_OK=0
-for path in /health /healthz /api/v1/health /; do
-  CODE=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 "$MCP_URL$path" 2>/dev/null || echo 000)
-  if [[ "$CODE" =~ ^(200|307|401|403)$ ]]; then
-    ok "MCP endpoint $MCP_URL$path → HTTP $CODE (responsive)"
-    HEALTH_OK=1
-    break
-  fi
-done
-[[ "$HEALTH_OK" -eq 1 ]] || bad "MCP endpoint $MCP_URL did not respond to /health, /api/v1/health, or / within 5s"
+# This server speaks MCP streamable-HTTP at /mcp and has no /health. A
+# healthy server returns HTTP 200 with an `Mcp-Session-Id` response header
+# and an SSE-framed body that contains a `serverInfo` object (per the
+# MCP spec). We DO NOT pin a specific server version.
+INIT_BODY='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"verify","version":"1"}}}'
+INIT_RAW=$(curl -sS -i --max-time 10 \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -X POST "$MCP_URL/mcp" \
+  --data "$INIT_BODY" 2>/dev/null || echo '')
+INIT_STATUS=$(echo "$INIT_RAW" | head -1 | awk '{print $2}')
+INIT_HAS_HEADER=$(echo "$INIT_RAW" | grep -ic '^mcp-session-id:' || true)
+INIT_HAS_SERVERINFO=$(echo "$INIT_RAW" | grep -c '"serverInfo"' || true)
 
-# --- 3. Qdrant collection + baseline point counts --------------------------
+if [[ "$INIT_STATUS" == "200" ]] \
+   && [[ "${INIT_HAS_HEADER:-0}" -ge 1 ]] \
+   && [[ "${INIT_HAS_SERVERINFO:-0}" -ge 1 ]]; then
+  SESSION_ID=$(echo "$INIT_RAW" | awk 'tolower($1)=="mcp-session-id:" {sub(/\r$/,""); print $2}' | head -1)
+  ok "MCP initialize handshake → HTTP 200 + Mcp-Session-Id + serverInfo (session ${SESSION_ID:0:8}…)"
+else
+  bad "MCP initialize handshake failed (status=${INIT_STATUS:-?} session-id=${INIT_HAS_HEADER:-0} serverInfo=${INIT_HAS_SERVERINFO:-0})"
+  report "mcp" "POST $MCP_URL/mcp returned no recognisable initialize response"
+fi
+
+# ─── 3. Qdrant collection health ──────────────────────────────────────────
 echo '--- qdrant ---'
 COLL_INFO=$(curl -sS --max-time 5 "$QDRANT_URL/collections/$COLLECTION" 2>/dev/null || echo '')
-if [[ -z "$COLL_INFO" ]]; then
+# Qdrant wraps the collection health in result.status and a top-level
+# request status=ok. We must pick the FIRST `status` (the collection one),
+# not the top-level one — a naive `.*status..."X"` regex would greedy-match
+# the request status instead. Pick the first `"status":"<word>"` literally.
+COLL_STATUS=$(echo "$COLL_INFO" | { grep -oE '"status":"[a-z]+"' || true; } | head -1 | sed -n 's/"status":"\([a-z]*\)"/\1/p' || true)
+if [[ "$COLL_STATUS" == "green" ]]; then
+  ok "Qdrant collection $COLLECTION exists and is green"
+elif [[ -z "$COLL_INFO" ]]; then
   bad "Qdrant at $QDRANT_URL did not respond for /collections/$COLLECTION"
-elif echo "$COLL_INFO" | grep -q '"status":"green"'; then
-  ok "Qdrant collection $COLLECTION exists and is healthy"
-elif echo "$COLL_INFO" | grep -q '"status"'; then
-  STATUS=$(echo "$COLL_INFO" | sed -n 's/.*"status":"\([a-z]*\)".*/\1/p' | head -1)
-  bad "Qdrant collection $COLLECTION status=$STATUS (raw: $COLL_INFO)"
+elif [[ -n "$COLL_STATUS" ]]; then
+  bad "Qdrant collection $COLLECTION status=$COLL_STATUS"
 else
   bad "Qdrant response unrecognised: $COLL_INFO"
 fi
 
-# --- 4. Per-doc_type point counts ----------------------------------------
+# ─── 4. Per-doc_type counts (placeholder vs real) ────────────────────────
 echo '--- counts ---'
-count_for() {
-  local doc_type="$1"
-  curl -sS --max-time 5 \
+declare -A TOTAL PLACEHOLDER NONPH
+ANY_NONPH=0
+for dt in "${DOC_TYPES[@]}"; do
+  TOTAL[$dt]="?"
+  PLACEHOLDER[$dt]="?"
+  NONPH[$dt]="?"
+
+  T_BODY=$(curl -sS --max-time 5 \
     -H 'Content-Type: application/json' \
     -X POST "$QDRANT_URL/collections/$COLLECTION/points/count" \
-    -d "{\"filter\":{\"must\":[{\"key\":\"doc_type\",\"match\":{\"value\":\"$doc_type\"}}]},\"exact\":true}" \
-    2>/dev/null | sed -n 's/.*"count":\([0-9]*\).*/\1/p' | head -1
-}
+    -d "{\"filter\":{\"must\":[{\"key\":\"doc_type\",\"match\":{\"value\":\"$dt\"}}]},\"exact\":true}" \
+    2>/dev/null || echo '')
+  TOTAL[$dt]="$(count_from "$T_BODY")"
 
-for dt in file note deck_card mail_message news_item; do
-  N=$(count_for "$dt" || echo "?")
-  report "counts" "doc_type=$dt → $N points"
+  P_BODY=$(curl -sS --max-time 5 \
+    -H 'Content-Type: application/json' \
+    -X POST "$QDRANT_URL/collections/$COLLECTION/points/count" \
+    -d "{\"filter\":{\"must\":[{\"key\":\"doc_type\",\"match\":{\"value\":\"$dt\"}},{\"key\":\"is_placeholder\",\"match\":{\"value\":true}}]},\"exact\":true}" \
+    2>/dev/null || echo '')
+  PLACEHOLDER[$dt]="$(count_from "$P_BODY")"
+
+  NP_BODY=$(curl -sS --max-time 5 \
+    -H 'Content-Type: application/json' \
+    -X POST "$QDRANT_URL/collections/$COLLECTION/points/count" \
+    -d "{\"filter\":{\"must\":[{\"key\":\"doc_type\",\"match\":{\"value\":\"$dt\"}},{\"key\":\"is_placeholder\",\"match\":{\"value\":false}}]},\"exact\":true}" \
+    2>/dev/null || echo '')
+  NONPH[$dt]="$(count_from "$NP_BODY")"
+
+  # arithmetic only if all three are integers
+  if [[ "${TOTAL[$dt]}" =~ ^[0-9]+$ && "${PLACEHOLDER[$dt]}" =~ ^[0-9]+$ && "${NONPH[$dt]}" =~ ^[0-9]+$ ]]; then
+    if (( TOTAL[$dt] != PLACEHOLDER[$dt] + NONPH[$dt] )); then
+      warn "doc_type=$dt counts inconsistent: total=${TOTAL[$dt]} != placeholder+non-placeholder (${PLACEHOLDER[$dt]}+${NONPH[$dt]}) — some points may carry no is_placeholder flag"
+    fi
+  fi
+  if [[ "${NONPH[$dt]}" =~ ^[0-9]+$ ]] && (( NONPH[$dt] > 0 )); then
+    ANY_NONPH=1
+  fi
+  report "counts" "doc_type=$dt total=${TOTAL[$dt]} placeholder=${PLACEHOLDER[$dt]} non_placeholder=${NONPH[$dt]}"
 done
 
-# Note: we DO NOT assert file > 0 here. The file scanner is gated on the
-# `vector-index` system tag (or one in EXCLUDED_TAGS's exclusion) — until
-# the operator runs `occ systemtag:add vector-index --assignable` AND tags
-# a folder, file = 0 is the EXPECTED state. See modules/hosts/poweredge/
-# poweredge.nix for the occ commands and the deployment notes.
-
-# --- 5. Hybrid search smoke test -----------------------------------------
-echo '--- search ---'
-# Build a minimal hybrid search request. The bge-m3 embedding is 1024-dim;
-# we pass a zero vector — Qdrant returns "nearest to origin" which is
-# useless semantically but exercises the dense+sparse path end-to-end.
-ZERO_VEC=$(python3 -c 'import json; print(json.dumps([0.0]*1024))' 2>/dev/null || echo '[0]')
-SEARCH_BODY=$(cat <<JSON
-{
-  "vector": {"name": "dense", "vector": $ZERO_VEC},
-  "sparse_vector": {"name": "sparse", "indices": [1], "values": [1.0]},
-  "limit": 3,
-  "with_payload": false
-}
-JSON
-)
-SEARCH_RESP=$(curl -sS --max-time 10 \
+# ─── 5. Real-content assertion ────────────────────────────────────────────
+echo '--- content ---'
+# Scroll ONE real (non-placeholder) file point. Getting a non-empty result
+# is direct evidence that the scanner has actually embedded at least one
+# file — placeholder points don't count.
+SCROLL_BODY='{"filter":{"must":[{"key":"doc_type","match":{"value":"file"}},{"key":"is_placeholder","match":{"value":false}}]},"limit":1,"with_payload":true}'
+SCROLL_RESP=$(curl -sS --max-time 5 \
   -H 'Content-Type: application/json' \
-  -X POST "$QDRANT_URL/collections/$COLLECTION/points/search" \
-  -d "$SEARCH_BODY" 2>/dev/null || echo '')
-if echo "$SEARCH_RESP" | grep -q '"result"'; then
-  NRES=$(echo "$SEARCH_RESP" | grep -o '"id"' | wc -l)
-  ok "hybrid search returned $NRES result(s) (smoke test of dense+sparse path)"
-elif echo "$SEARCH_RESP" | grep -q '"status":"error"'; then
-  bad "hybrid search returned error: $SEARCH_RESP"
+  -X POST "$QDRANT_URL/collections/$COLLECTION/points/scroll" \
+  --data "$SCROLL_BODY" 2>/dev/null || echo '')
+SCROLL_ID=$(id_from_scroll "$SCROLL_RESP")
+if [[ -n "$SCROLL_ID" ]]; then
+  ok "file scroll returned at least one non-placeholder point ($SCROLL_ID)"
 else
-  bad "hybrid search no recognised response: $SEARCH_RESP"
+  report "content" "file scroll returned no non-placeholder point (response=$SCROLL_RESP)"
 fi
 
-# --- Summary --------------------------------------------------------------
+# Gate: the whole pipeline is meaningful iff at least one non-placeholder
+# point exists across ANY doc_type (notes/deck qualify — they were the
+# baseline before the file scanner was enabled). file > 0 is NOT the gate.
+if (( ANY_NONPH == 1 )); then
+  ok "≥1 non-placeholder point exists across ${DOC_TYPES[*]} — indexing is meaningful"
+else
+  bad "no non-placeholder points found in any of ${DOC_TYPES[*]} — only placeholders are indexed, nothing is searchable"
+fi
+
+# ─── Summary ────────────────────────────────────────────────────────────────
 echo '--- summary ---'
-printf 'PASS=%d FAIL=%d\n' "$PASS" "$FAIL"
-if [[ "$FAIL" -eq 0 ]]; then
+printf 'PASS=%d FAIL=%d (required=%d)\n' "$PASS" "$FAIL" "$REQUIRED_FAIL"
+if [[ "$REQUIRED_FAIL" -eq 0 ]]; then
   echo "VERIFY_INDEX_OK"
   exit 0
 else

@@ -456,6 +456,152 @@ def test_concurrent_writes(tmp_path: Path) -> None:
         assert "id" in r and "status" in r
 
 
+def test_record_enqueue_no_silent_collision_after_restart(tmp_path: Path) -> None:
+    """Regression: an in-memory job-id counter that restarts at 1 used to
+    collide with persisted ids after a service restart; the old code
+    silently swallowed the conflict via ``INSERT OR IGNORE``, leaving the
+    queue unobservable. The new contract must:
+
+      * survive a simulated restart (cold reload of the module) without
+        data loss for new enqueues;
+      * raise on an explicit-id collision (loud, never no-op);
+      * auto-assign a fresh, collision-free id when none is provided.
+
+    See PR description for the diagnostic on poweredge.
+    """
+    db_dir = tmp_path / "restart"
+    db_dir.mkdir(parents=True, exist_ok=True)
+    # The Env stays open for the whole test: _isolated_jobstore would
+    # tear it down on return, so a "restart" import that ran OUTSIDE the
+    # env block would silently fall back to /var/lib/nc-ocr and lose
+    # everything to a permission-denied no-op.
+    with _Env(NC_OCR_STATE_DIR=str(db_dir)):
+        # --- pass 1: 50 rows persisted by "process A". ---
+        for name in list(sys.modules):
+            if name == "nc_ocr_flow.jobstore":
+                del sys.modules[name]
+        mod = importlib.import_module("nc_ocr_flow.jobstore")
+        mod._reset_for_tests()
+        mod.init()
+        for i in range(1, 51):
+            mod.record_enqueue(_make_job(i, status="queued"))
+        max_after_first = max(int(r["id"]) for r in mod.query(limit=1000))
+        assert max_after_first == 50, (
+            max_after_first,
+            [r["id"] for r in mod.query(limit=1000)][:5],
+        )
+
+        # --- simulate a service restart: drop the module from
+        # sys.modules so a fresh import (and a fresh interpreter-level
+        # state) executes. The .db file and the rows persist on disk.
+        # NB: do NOT call ``_reset_for_tests`` here — it unlinks the
+        # DB file (``p.unlink()``), which would erase the simulated
+        # "process A" rows we just persisted. Production has no such
+        # reset step.
+        for name in list(sys.modules):
+            if name in ("nc_ocr_flow.jobstore",
+                        "nc_ocr_flow.webhook_server"):
+                del sys.modules[name]
+        mod2 = importlib.import_module("nc_ocr_flow.jobstore")
+        # Mark the (refreshed) module uninitialised so init() re-runs
+        # CREATE TABLE IF NOT EXISTS; the 50 rows above are still on
+        # disk and ``init`` will see them.
+        mod2._INITIALISED = False
+        mod2.init()
+        # Sanity: the reloaded module opens the SAME DB file.
+        assert str(mod2.db_path()).startswith(str(db_dir))
+
+        # --- pass 2: "process B" enqueues without pre-setting an id
+        # (the production contract — the in-memory counter is gone).
+        # SQLite MUST assign ids > 50 (the previous process's
+        # high-water mark) and every row MUST be claimable. The old
+        # INSERT OR IGNORE would have left the queue silently empty
+        # when the new ids collided with 1..50.
+        enqueued: list[int] = []
+        for i in range(1, 21):
+            # The factory types id as int, but the new contract accepts
+            # None; build the dict by hand so it is unambiguously
+            # absent.
+            job = {
+                "id": None,
+                "path": f"/admin/files/Documents/restart-{i:04d}.pdf",
+                "nc_path": f"/admin/files/Documents/restart-{i:04d}.pdf",
+                "node_id": 2000 + i,
+                "engine": "google",
+                "force": False,
+                "status": "queued",
+                "created": 1_700_000_000.0 + i,
+                "started": None,
+                "finished": None,
+                "error": None,
+                "reason": None,
+                "result": None,
+            }
+            assigned = mod2.record_enqueue(job)
+            assert assigned is not None, (
+                "record_enqueue returned None — DB error during a "
+                "happy-path restart. The fix should not regress this."
+            )
+            assert assigned > 50, (
+                f"newly assigned id {assigned} collided with a row from "
+                f"process A (max={max_after_first}). The restart-safety "
+                f"fix is not in place."
+            )
+            enqueued.append(assigned)
+            assert assigned == job["id"], (
+                f"record_enqueue should write the assigned id back into "
+                f"the job dict (got job['id']={job['id']}, returned "
+                f"{assigned})"
+            )
+
+        # All 70 rows (50 old + 20 new) must be reachable; the old
+        # INSERT-OR-IGNORE bug would have left the new 20 rows missing.
+        rows = mod2.query(limit=100)
+        assert len(rows) == 70, (
+            f"restart-survival broken: expected 70 rows (50 old + 20 "
+            f"new), got {len(rows)}. The old INSERT-OR-IGNORE bug "
+            f"would have left the new 20 rows missing."
+        )
+
+        # And the 20 newly-enqueued rows must be claimable by the
+        # worker.
+        claimed_ids = set()
+        while True:
+            job = mod2.claim_next()
+            if job is None:
+                break
+            claimed_ids.add(int(job["id"]))
+        assert set(enqueued).issubset(claimed_ids), (
+            f"only some new rows were claimable: not-claimed="
+            f"{set(enqueued) - claimed_ids}; total claimed="
+            f"{len(claimed_ids)}"
+        )
+
+        # --- pass 3: explicit-id collision must RAISE (loud, not
+        # silent). Pick any id we already wrote and try to enqueue
+        # with the same id. We avoid pytest.raises because the file is
+        # stdlib-only; use unittest's assertRaises directly via the
+        # module (available without import on Python 3.5+).
+        reused = enqueued[0]
+        raised = False
+        try:
+            mod2.record_enqueue(
+                _make_job(reused, status="queued",
+                          path="/admin/files/Documents/collide.pdf")
+            )
+        except RuntimeError as exc:
+            raised = True
+            assert "id collision" in str(exc), (
+                f"unexpected RuntimeError message: {exc}"
+            )
+        else:
+            raise AssertionError(
+                "record_enqueue silently swallowed an explicit-id "
+                "collision — the old INSERT-OR-IGNORE bug is back!"
+            )
+        assert raised, "RuntimeError was not raised"
+
+
 def test_broken_db_path_silent(tmp_path: Path) -> None:
     """A non-creatable DB path must not break callers."""
     blocker = tmp_path / "blocker"
@@ -542,6 +688,14 @@ def test_no_in_memory_job_mirror(tmp_path: Path) -> None:
         assert not hasattr(ws, "_jobs"), "in-memory job mirror came back"
         assert not hasattr(ws, "_MAX_JOBS_HISTORY"), "obsolete cap came back"
         assert ws._record_job({"id": 1, "status": "done"}) is None
+        # The in-memory job-id counter (``itertools.count(1)``) is also
+        # gone: ids are now assigned by SQLite (``record_enqueue``
+        # reads back ``lastrowid``) so they survive a service restart
+        # without colliding with persisted rows. See the regression
+        # test ``test_record_enqueue_no_silent_collision_after_restart``.
+        assert not hasattr(ws, "_job_seq"), (
+            "in-memory job-id counter came back — restart-safety lost"
+        )
 
 
 # ---------------------------------------------------------------------------

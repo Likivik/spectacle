@@ -161,11 +161,33 @@
       # supported CLI, never by hand-editing that file.
       # See hermes_cli/profiles.py:profile_is_standalone + profiles_to_serve.
 
+      # `hermes-gateway-<name>` is a per-profile gateway that uses the
+      # rendered env from the corresponding sops template (placed on disk by
+      # sops-install-secrets.service). Both ordering lines below are mandatory:
+      #   * sops-install-secrets.service — the rendered EnvironmentFile this
+      #     unit reads does not exist before that service completes. Without
+      #     this, the unit starts in parallel and exits on a missing env file
+      #     (2026-10-15 14:02:41 incident). Restart=always masked it; the
+      #     ordering stops the mask instead.
+      #   * hermes-gateway.service — the default-profile gateway. Salem runs
+      #     with `gateway.standalone: true` and refuses to start while
+      #     another gateway owns the host socket but has not yet published
+      #     its served-set (CLI exit 75/TEMPFAIL). Waiting for the default
+      #     gateway removes the race, so the retry chain (typically 3-4
+      #     cycles at RestartSec=5) collapses to one start.
       extraGatewayUnits = lib.listToAttrs (map (p:
         lib.nameValuePair "hermes-gateway-${p.name}" {
           description = "Hermes Agent Gateway (${p.name})";
-          after = [ "network-online.target" ];
-          wants = [ "network-online.target" ];
+          after = [
+            "network-online.target"
+            "sops-install-secrets.service"
+            "hermes-gateway.service"
+          ];
+          wants = [
+            "network-online.target"
+            "sops-install-secrets.service"
+            "hermes-gateway.service"
+          ];
           wantedBy = [ "default.target" ];
           unitConfig.ConditionUser = "hermes";
           serviceConfig = {
@@ -260,8 +282,24 @@
 
         systemd.user.services.hermes-dashboard = {
           description = "Hermes Agent Dashboard";
-          after = [ "network-online.target" ];
-          wants = [ "network-online.target" ];
+          # Order against sops-install-secrets.service so the rendered
+          # EnvironmentFile is present when this unit starts. The sops-env
+          # template is rendered inside sops-install-secrets.service, so before
+          # this ordering (commit "fix(hermes): render the env file with
+          # sops.templates, not a script") the unit started in parallel with
+          # that service, opened an empty EnvironmentFile, and systemd logged
+          # "Failed to load environment files" → first-start exit code.
+          # Restart=always then hid it. Keep the ordering in lockstep with the
+          # sops.templates list above so a future env-file addition does not
+          # silently regress the same race.
+          after = [
+            "network-online.target"
+            "sops-install-secrets.service"
+          ];
+          wants = [
+            "network-online.target"
+            "sops-install-secrets.service"
+          ];
           wantedBy = [ "default.target" ];
 
           unitConfig.ConditionUser = "hermes";
@@ -290,8 +328,21 @@
         # the only copy of the unit file → not-found after every reboot.
         systemd.user.services.hermes-gateway = {
           description = "Hermes Agent Gateway - Messaging Platform Integration";
-          after = [ "network-online.target" ];
-          wants = [ "network-online.target" ];
+          # Order against sops-install-secrets.service: this unit's
+          # EnvironmentFile is a sops.templates render, populated by
+          # sops-install-secrets.service. Without this directive, the user
+          # unit starts in parallel with that service and exits on
+          # "Failed to load environment files" (cf. 2026-10-15 14:02:41
+          # incident). Restart=always masked the race; the ordering stops the
+          # mask instead.
+          after = [
+            "network-online.target"
+            "sops-install-secrets.service"
+          ];
+          wants = [
+            "network-online.target"
+            "sops-install-secrets.service"
+          ];
           wantedBy = [ "default.target" ];
 
           unitConfig.ConditionUser = "hermes";

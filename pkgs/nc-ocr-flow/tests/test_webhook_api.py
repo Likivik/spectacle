@@ -438,10 +438,13 @@ def test_process_file_force_bypasses_skip(monkeypatch, tmp_path):
 
 
 def test_process_file_skips_born_digital(monkeypatch, tmp_path):
-    """classifier says needs_ocr=False → _process_file returns skipped.
+    """classifier says needs_ocr=False AND not stamped → ``born_digital_text_based``.
 
-    No prior Google-stamp (file is fresh) → classifier decides →
-    ``born_digital_or_stamped_good`` skip reason. process_pdf MUST
+    No prior Google-stamp (the stamp check is monkeypatched False below),
+    so the classifier decides the skip. The reason string recorded in the
+    response must distinguish this branch from the ``stamped_good_by_us``
+    branch — both used to be collapsed into ``born_digital_or_stamped_good``
+    and the operator couldn't tell them apart on the panel. process_pdf MUST
     not be called.
     """
     pdf = tmp_path / "y.pdf"
@@ -462,6 +465,11 @@ def test_process_file_skips_born_digital(monkeypatch, tmp_path):
             "has_encoding_issues": False,
         }
 
+    # Force the stamp check False so the test is unambiguously about the
+    # classifier branch — the stamp branch is covered separately by
+    # ``test_process_file_skip_reasons_distinguish_stamped_vs_born_digital``
+    # below.
+    monkeypatch.setattr(ws, "_already_stamped_by_us", lambda _path: False)
     monkeypatch.setattr(ws, "_webdav_download",
                        lambda nc, dest: __import__("shutil").copy2(pdf, dest))
     monkeypatch.setattr(ws, "_webdav_upload", lambda *a, **k: None)
@@ -473,7 +481,122 @@ def test_process_file_skips_born_digital(monkeypatch, tmp_path):
 
     assert calls["proc"] == [], "process_pdf must NOT run when classifier says skip"
     assert res.get("skipped") is True
-    assert res.get("reason") == "born_digital_or_stamped_good"
+    # New contract (was ``born_digital_or_stamped_good``): the reason
+    # recorded in the response must be the classifier branch, NOT the
+    # stamp branch, so an operator can tell them apart on the panel.
+    assert res.get("reason") == ws.SKIP_REASON_BORN_DIGITAL
+    assert res.get("reason") != ws.SKIP_REASON_STAMPED_BY_US
+    # Sanity: the legacy undifferentiated string is no longer emitted.
+    assert res.get("reason") != ws.SKIP_REASON_LEGACY
+
+
+def test_process_file_skip_reasons_distinguish_stamped_vs_born_digital(
+    monkeypatch, tmp_path,
+):
+    """The two skip branches must produce DISTINCT reason strings.
+
+    Pre-PR both branches collapsed into ``born_digital_or_stamped_good``,
+    which made it impossible to tell "we already OCR'd this with Google"
+    apart from "the classifier thinks this is born-digital". This test
+    pins that contract: the stamp branch emits ``stamped_good_by_us`` and
+    the classifier branch emits ``born_digital_text_based``, and the
+    _legacy_ undifferentiated string is no longer emitted by either.
+    """
+    # --- Case 1: stamped by us → ``stamped_good_by_us`` -------------------
+    pdf_stamped = tmp_path / "stamped.pdf"
+    _build_pdf(pdf_stamped, with_text=True)
+
+    def fake_classify_stamped(_path):
+        # Classifier would ALSO say skip (text_based), but the stamp check
+        # short-circuits before the classifier is consulted. We make the
+        # classifier raise to prove the stamp branch doesn't depend on it.
+        raise AssertionError("classify must not be called when stamp matches")
+
+    monkeypatch.setattr(ws, "_already_stamped_by_us", lambda _path: True)
+    monkeypatch.setattr(
+        ws, "_webdav_download",
+        lambda nc, dest: __import__("shutil").copy2(pdf_stamped, dest),
+    )
+    monkeypatch.setattr(ws, "_webdav_upload", lambda *a, **k: None)
+    monkeypatch.setattr(ws, "_stamp_metadata", lambda *a, **k: None)
+    with patch.object(ws, "process_pdf") as proc_mock, \
+         patch.object(ws, "classify_pdf", side_effect=fake_classify_stamped):
+        res_stamped = ws._process_file(
+            "/likivik/files/stamped.pdf", node_id=10,
+            engine="google", force=False,
+        )
+    proc_mock.assert_not_called()
+    assert res_stamped.get("skipped") is True
+    assert res_stamped.get("reason") == ws.SKIP_REASON_STAMPED_BY_US
+    assert res_stamped.get("reason") != ws.SKIP_REASON_BORN_DIGITAL
+    assert res_stamped.get("reason") != ws.SKIP_REASON_LEGACY
+
+    # --- Case 2: clean text_based, NOT stamped → ``born_digital_text_based``
+    pdf_clean = tmp_path / "clean.pdf"
+    _build_pdf(pdf_clean, with_text=True)
+
+    def fake_classify_clean(_path):
+        return {
+            "needs_ocr": False,
+            "pdf_type": "text_based",
+            "confidence": 1.0,
+            "has_encoding_issues": False,
+        }
+
+    monkeypatch.setattr(ws, "_already_stamped_by_us", lambda _path: False)
+    monkeypatch.setattr(
+        ws, "_webdav_download",
+        lambda nc, dest: __import__("shutil").copy2(pdf_clean, dest),
+    )
+    monkeypatch.setattr(ws, "_webdav_upload", lambda *a, **k: None)
+    monkeypatch.setattr(ws, "_stamp_metadata", lambda *a, **k: None)
+    with patch.object(ws, "process_pdf") as proc_mock, \
+         patch.object(ws, "classify_pdf", side_effect=fake_classify_clean):
+        res_clean = ws._process_file(
+            "/likivik/files/clean.pdf", node_id=11,
+            engine="google", force=False,
+        )
+    proc_mock.assert_not_called()
+    assert res_clean.get("skipped") is True
+    assert res_clean.get("reason") == ws.SKIP_REASON_BORN_DIGITAL
+    assert res_clean.get("reason") != ws.SKIP_REASON_STAMPED_BY_US
+    assert res_clean.get("reason") != ws.SKIP_REASON_LEGACY
+
+
+def test_needs_ocr_decision_force_true_returns_true_none(monkeypatch, tmp_path):
+    """Unit-level contract for ``_needs_ocr_decision``: ``force=True`` bypasses.
+
+    The runtime skip behaviour is unchanged by the reason-split PR, but
+    ``_needs_ocr_decision`` is now a ``(bool, str | None)`` pair. When
+    ``force=True`` the function must return ``(True, None)`` — i.e. it
+    does NOT report a skip reason, and the caller (``_process_file``) is
+    not in the skip branch.
+
+    We additionally assert that, even when both the stamp check and the
+    classifier would otherwise say skip, ``force=True`` short-circuits
+    before either is consulted — so the (True, None) return is robust
+    to whatever upstream signals look like.
+    """
+    pdf = tmp_path / "any.pdf"
+    _build_pdf(pdf, with_text=True)
+
+    # Both short-circuit inputs would say skip — but ``force=True`` wins.
+    monkeypatch.setattr(ws, "_already_stamped_by_us", lambda _path: True)
+
+    def would_classify_skip(_path):
+        raise AssertionError(
+            "classify_pdf must NOT be consulted when force=True; the "
+            "stamp check is the first branch and is bypassed by force"
+        )
+
+    with patch.object(ws, "classify_pdf", side_effect=would_classify_skip):
+        needs_ocr, skip_reason = ws._needs_ocr_decision(pdf, force=True)
+
+    assert needs_ocr is True, "force=True must always force OCR"
+    assert skip_reason is None, (
+        "force=True must not carry a skip reason — the function is in "
+        "the 'OCR must run' branch, not the 'skip' branch"
+    )
 
 
 def test_process_file_bad_layer_reocr(monkeypatch, tmp_path):

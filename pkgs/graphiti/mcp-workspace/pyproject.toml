@@ -12,7 +12,7 @@ dependencies = [
     "pyyaml>=6.0.3",
     "typing-extensions>=4.0.0",
     # falkordb 1.6.2 uses redis-py 7.0+ DriverInfo API (added in 7.0)
-    "redis>=7.0,<8",
+    "redis>=8.1.0,<9",
 ]
 
 [build-system]

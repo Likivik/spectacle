@@ -415,6 +415,12 @@
       apps.serenity-smoke =
         let
           vm = inputs.self.nixosConfigurations.serenity.extendModules {
+            # `base` is passed as a specialArg, not as an import argument: the
+            # smoke file is a MODULE (it takes config/pkgs/lib), so calling it
+            # like a function with { base = ...; } leaves every other argument
+            # unbound. The smoke needs the UN-extended config to read the host's
+            # real sops.secrets declarations before it overrides them.
+            specialArgs = { base = inputs.self.nixosConfigurations.serenity; };
             modules = [ (import ../../tests/serenity-smoke.nix) ];
           };
           run-vm = "${vm.config.system.build.vm}/bin/run-serenity-vm";

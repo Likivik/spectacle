@@ -38,13 +38,15 @@
           # The webui runs the agent IN-PROCESS, so it needs the same env the
           # gateway unit gets — otherwise model calls fail HTTP 401 "Invalid API
           # Key" (it only had the password file, so e.g. the MiniMax key was
-          # missing while the gateway had it). sops-env is generated into the
-          # agent's home by the hermes-agent aspect (0600 hermes), so it exists
-          # wherever both aspects are enabled.
+          # missing while the gateway had it). The env file is rendered by the
+          # hermes-agent aspect's sops.templates (0600 hermes), so it exists
+          # wherever both aspects are enabled — hence the hard reference: a host
+          # enabling this aspect without hermes-agent should fail to evaluate
+          # rather than boot a webui with no credentials.
           environmentFiles = [
             "/run/secrets/hermes/webui-password"
             "/run/secrets/hermes/env"
-            "/var/lib/hermes/.hermes/sops-env"
+            config.sops.templates."hermes/sops-env".path
           ];
         };
 

@@ -654,6 +654,73 @@ def file_forget(path: str) -> None:
         log.warning("jobstore: file_forget failed (%s)", exc)
 
 
+def orphaned_queued_paths() -> list[str]:
+    """Paths left ``status='queued'`` with no matching in-flight job row.
+
+    A file row at ``status='queued'`` is an *orphan* when the ``jobs``
+    table has no row whose ``path`` or ``nc_path`` matches the file and
+    whose status is still ``queued`` or ``running``. The two original
+    shapes of this state:
+
+      * an old in-process job-id counter collided on a service restart
+        (fixed earlier — ``record_enqueue`` now reads ``lastrowid``),
+        so the row insert was silently dropped after the file row was
+        already promoted to ``queued``;
+      * the ``jobs`` row was pruned or lost but the file row survived
+        (the SQLite ``jobs`` history is capped at 20 000 rows and the
+        queue worker keeps no in-memory copy).
+
+    The reconciler consumes this list to re-enqueue the path so a
+    worker picks it up. Genuinely running jobs are *not* touched: while
+    a worker holds a job the file row stays at ``queued`` (we only
+    write the terminal status once the worker finishes), so the join
+    below correctly excludes rows that are actively being processed.
+
+    Never raises; returns ``[]`` on any DB error.
+    """
+    if not _ready():
+        return []
+    try:
+        with _connect() as conn:
+            rows = conn.execute(
+                "SELECT f.path FROM files f"
+                " WHERE f.status = 'queued'"
+                "   AND NOT EXISTS ("
+                "     SELECT 1 FROM jobs j"
+                "     WHERE (j.nc_path = f.path OR j.path = f.path)"
+                "       AND j.status IN ('queued', 'running')"
+                "   )"
+            ).fetchall()
+        return [r[0] for r in rows if r[0]]
+    except Exception as exc:  # noqa: BLE001
+        log.warning("jobstore: orphaned_queued_paths failed (%s)", exc)
+        return []
+
+
+def file_reset_to(path: str, status: str = "") -> None:
+    """Reset (or clear) a file row's status field.
+
+    Used by the reconciler when an operator wants to forget a file's
+    in-flight state without deleting the row outright — e.g. when the
+    goal is to make ``/scan-all`` re-pick it up. ``status=""`` clears
+    the status column so the path no longer counts as queued/running
+    in any path-in-flight check.
+
+    Never raises.
+    """
+    if not _ready():
+        return
+    try:
+        with _connect() as conn:
+            conn.execute(
+                "UPDATE files SET status = ?, finished = ?"
+                " WHERE path = ?",
+                (status, time.time() if status else None, path),
+            )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("jobstore: file_reset_to failed (%s)", exc)
+
+
 def file_import(mapping: dict[str, Any]) -> int:
     """One-time import of the legacy ``ocr_index.json`` mapping."""
     if not mapping or not _ready():

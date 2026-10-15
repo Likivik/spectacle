@@ -1,4 +1,0 @@
-:3443 {
-	tls /certs/cert.pem /certs/key.pem
-	reverse_proxy affine:3010
-}

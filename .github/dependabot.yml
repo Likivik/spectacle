@@ -1,0 +1,21 @@
+# Keep the CI actions current.
+#
+# This file exists BECAUSE .github/workflows/ci.yml pins every action to a full
+# commit SHA. Pinning is the supply-chain fix — a tag can be moved and a branch
+# definitely can (`DeterminateSystems/nix-installer-action@main` was a branch, so
+# upstream could change what executed in our CI, holding our token, at any time) —
+# but a pinned SHA never moves on its own. Dependabot is what moves it, in a
+# reviewable commit.
+#
+# One PR per action is deliberate: bumping an action is a trust event, and
+# batching several into one PR hides which upstream actually moved.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "ci"
+    labels:
+      - dependencies

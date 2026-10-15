@@ -12,7 +12,6 @@ in
       den.aspects.server.email
       den.aspects.server.sillytavern
       den.aspects.server.fishaudio-proxy
-      den.aspects.server.beszel
       den.aspects.server.hr-bot
       den.aspects.server.sops
       den.aspects.sops-cli
@@ -336,73 +335,8 @@ in
         '';
       };
 
-      systemd.services.xray-trojan = {
-        description = "xray Trojan+REALITY HTTP CONNECT proxy";
-        after = [ "network-online.target" ];
-        wants = [ "network-online.target" ];
-        serviceConfig = {
-          Type = "simple";
-          User = "root";
-          ExecStartPre =
-            "${pkgs.bash}/bin/bash -ec 'if [ ! -f /opt/trojan/config.json ]; then echo \"no /opt/trojan/config.json — create it\" >&2; exit 1; fi'";
-          ExecStart = "${pkgs.xray}/bin/xray run -c /opt/trojan/config.json";
-          Restart = "on-failure";
-          RestartSec = 5;
-          LimitNOFILE = "infinity";
-        };
-      };
-
-      systemd.tmpfiles.rules = [
-        "d /opt/trojan 0700 root root - -"
-      ];
-
-      system.activationScripts."trojan-config" = lib.stringAfter [ "var" ] ''
-        mkdir -p /opt/trojan
-        ${pkgs.coreutils}/bin/cat > /opt/trojan/config.json << 'TROJANEOF'
-{
-  "inbounds": [{
-    "tag": "http-in",
-    "protocol": "http",
-    "listen": "127.0.0.1",
-    "port": 1081
-  }],
-  "outbounds": [{
-    "tag": "trojan-reality",
-    "protocol": "trojan",
-    "settings": {
-      "servers": [{
-        "address": "5.180.172.173",
-        "port": 443,
-        "password": "5812d9fb-9a4b-489a-a89c-c2fbb0828481",
-        "flow": ""
-      }]
-    },
-    "streamSettings": {
-      "network": "tcp",
-      "security": "reality",
-      "realitySettings": {
-        "serverName": "www.google.com",
-        "fingerprint": "edge",
-        "publicKey": "ZVTSHN3DJ8u3ph7NqjSGfyfv4pTjSa4pseAF19fasEo",
-        "shortId": "80da64",
-        "spiderX": "/"
-      }
-    }
-  }],
-  "routing": {
-    "domainStrategy": "AsIs",
-    "rules": [
-      { "type": "field", "ip": ["10.0.0.0/8", "100.64.0.0/10", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8"], "outboundTag": "direct" },
-      { "type": "field", "ip": ["geoip:private"], "outboundTag": "direct" }
-    ]
-  }
-}
-TROJANEOF
-        ${pkgs.coreutils}/bin/chmod 0600 /opt/trojan/config.json
-      '';
-
       environment.systemPackages = with pkgs; [
-        nodejs_22 uv xray git gh pkgs.jujutsu
+        nodejs_22 uv git gh pkgs.jujutsu
         # Office document skills (docx/xlsx/powerpoint): soffice + pandoc + poppler
         # npm helpers `docx` and `pptxgenjs` are installed by the skill on first require
         libreoffice

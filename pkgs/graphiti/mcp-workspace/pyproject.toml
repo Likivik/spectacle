@@ -7,10 +7,10 @@ requires-python = ">=3.10,<4"
 dependencies = [
     "mcp>=1.27.2,<2",
     "openai>=3.29.0",
-    "graphiti-core[falkordb]==0.29.3",   # pinned: PR #1500 patch applied via uv2nix override
-    "pydantic-settings>=2.0.0",
+    "graphiti-core[falkordb]==0.30.2",   # pinned: PR #1500 patch applied via uv2nix override
+    "pydantic-settings>=2.15.0",
     "pyyaml>=6.0.3",
-    "typing-extensions>=4.0.0",
+    "typing-extensions>=4.16.0",
     # falkordb 1.6.2 uses redis-py 7.0+ DriverInfo API (added in 7.0)
     "redis>=7.0,<8",
 ]

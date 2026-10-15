@@ -53,6 +53,15 @@
         # tailscale serve exposes 8444 → 127.0.0.1:8787 (node-local state,
         # deliberately not in nix — served by a manually-managed listener).
 
+        # The webui is a SYSTEM unit whose EnvironmentFile is the same
+        # sops-rendered `hermes/sops-env` template the user units read. Without
+        # this ordering it races sops-install-secrets.service on every rebuild
+        # (2026-10-15 14:02:41 incident). Restart=always + RestartSec=5 on
+        # hermes-webui hid the failure; this stops the mask instead. Cross-scope
+        # is not a concern here — both sides are system services.
+        systemd.services.hermes-webui.after = [ "sops-install-secrets.service" ];
+        systemd.services.hermes-webui.wants = [ "sops-install-secrets.service" ];
+
         # `hermes/webui-password` is declared by the HOST, not here: the shared
         # server/sops aspect mkForce-nulls sops.defaultSopsFile on purpose, so a
         # shared aspect cannot point at one host's secrets file. This aspect only

@@ -27,6 +27,7 @@
         export NC_OCR_NC_PASSWORD_FILE="$CREDENTIALS_DIRECTORY/nc-ocr-password"
         export NC_OCR_WEBHOOK_SECRET_FILE="$CREDENTIALS_DIRECTORY/nc-ocr-webhook-secret"
         export GOOGLE_APPLICATION_CREDENTIALS="$CREDENTIALS_DIRECTORY/google-ocr-key"
+        export NC_OCR_MINIMAX_KEY_FILE="$CREDENTIALS_DIRECTORY/nc-ocr-minimax-key"
         if [ ! -d "${ocrVenv}" ] || [ ! -f "${ocrVenv}/.installed" ] || [ "${ocrVenv}/.installed" -ot "${ncOcrFlowSrc}/src/nc_ocr_flow/webhook_server.py" ] || [ "${ocrVenv}/.installed" -ot "${ncOcrFlowSrc}/src/nc_ocr_flow/ocr.py" ]; then
           echo "Creating OCR venv..."
           rm -rf "${ocrVenv}"
@@ -176,10 +177,12 @@
             webdavPass = config.sops.secrets."nextcloud/ocr-webdav-password".path;
             webhookSecret = config.sops.secrets."nextcloud/ocr-webhook-secret".path;
             googleKey = config.sops.secrets."nextcloud/ocr-google-key".path;
+            minimaxKey = config.sops.secrets."nextcloud/minimax-api-key".path;
           in [
             "nc-ocr-password:${webdavPass}"
             "nc-ocr-webhook-secret:${webhookSecret}"
             "google-ocr-key:${googleKey}"
+            "nc-ocr-minimax-key:${minimaxKey}"
           ];
         };
 

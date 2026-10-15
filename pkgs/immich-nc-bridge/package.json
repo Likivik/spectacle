@@ -11,9 +11,9 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
-    "@types/node": "^20.0.0"
+    "@types/node": "^26.6.5"
   },
   "devDependencies": {
-    "typescript": "^5.0.0"
+    "typescript": "^7.0.2"
   }
 }

@@ -753,12 +753,18 @@ def _process_file(nc_path: str, node_id: int, engine: str | None = None,
 
 # --- Job tracking (for /status panel + NC app) ---
 import queue
-import itertools
 
-_job_seq = itertools.count(1)
 #: Workers are woken by this signal; the work list itself is the
 #: ``jobs`` table in SQLite, so a backlog of a million files costs
 #: nothing in RAM.
+#:
+#: NB: the row id is assigned by SQLite (``record_enqueue`` reads
+#: back ``lastrowid``) — not by an in-process counter. An earlier
+#: ``itertools.count`` counter restarted at 1 on every service boot;
+#: persisted rows kept their old ids, so the first batch of new
+#: enqueues collided with old rows and ``INSERT OR IGNORE`` discarded
+#: them silently. Letting SQLite auto-assign makes the sequence
+#: collision-free across restarts.
 _work_available = threading.Event()
 #: Idle workers wake up this often even without a signal, so a lost
 #: notification can never wedge the queue.
@@ -1137,9 +1143,15 @@ def _enqueue(nc_path: str, node_id: int, engine: str | None = None,
     the recently-processed guard. The NC app's "Re-OCR anyway" action
     sends this so the user can deliberately re-OCR a file we previously
     classified or stamped.
+
+    The ``id`` is **assigned by SQLite**, not by an in-process counter
+    — that means the row's primary key survives a service restart and
+    cannot collide with whatever the next process happens to call
+    itself. ``record_enqueue`` writes the new id back into ``job`` so
+    the API response reflects the canonical id.
     """
     job = {
-        "id": next(_job_seq),
+        # id intentionally unset — let SQLite's rowid alias assign.
         "path": nc_path,
         "nc_path": nc_path,
         "node_id": node_id,
@@ -1154,7 +1166,9 @@ def _enqueue(nc_path: str, node_id: int, engine: str | None = None,
         "reason": None,
     }
     _record_job(job)
-    # Mirror to durable SQLite history (best-effort, never raises).
+    # Mirror to durable SQLite history. ``record_enqueue`` writes the
+    # canonical id back into ``job`` and may raise on an explicit-id
+    # collision (the bug we just removed).
     jobstore.record_enqueue(job)
     # The row is already in SQLite (``record_enqueue`` above) — that IS
     # the queue. Mark the file in-flight so a repeat scan skips it,

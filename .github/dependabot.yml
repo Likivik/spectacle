@@ -24,18 +24,30 @@ updates:
   # Ecosystem is `uv`, NOT `pip`: these projects are uv2nix-driven, so uv.lock is
   # the build input, and Dependabot keys off the presence of uv.lock. It updates
   # uv.lock only and deliberately does not bump a `>=` constraint in
-  # pyproject.toml — the constraints here are floors rather than pins, so that is
-  # the behaviour we want.
+  # pyproject.toml — the constraints here are floors rather than pins.
   #
   # These entries exist because 45 security alerts accumulated with only
   # github-actions watched: pip/npm drift was invisible until someone ran
   # `uv lock --upgrade` by hand. Security updates were already enabled, so alerts
   # fired; nothing was opening the fix PRs.
+  #
+  # `groups` + a low PR limit are noise control, learned the hard way: ungrouped
+  # with a limit of 10, five ecosystems produced ~16 open PRs at once, mostly
+  # one-package trivia. Patch and minor bumps now arrive as ONE PR per ecosystem.
+  # Majors deliberately stay separate — a major is the bump that needs a real
+  # decision — and security updates are left ungrouped so a vulnerability fix can
+  # be reviewed and reverted on its own.
   - package-ecosystem: uv
     directory: /pkgs/nc-ocr-flow
     schedule:
       interval: weekly
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 3
+    groups:
+      patch-and-minor:
+        applies-to: version-updates
+        update-types:
+          - minor
+          - patch
     commit-message:
       prefix: "chore(deps)"
     labels:
@@ -45,7 +57,20 @@ updates:
     directory: /pkgs/graphiti/mcp-workspace
     schedule:
       interval: weekly
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 3
+    groups:
+      patch-and-minor:
+        applies-to: version-updates
+        update-types:
+          - minor
+          - patch
+    # Dependabot does not honour an upper bound in pyproject.toml, so it keeps
+    # proposing mcp 2.x against `mcp>=1.27.2,<2` — a PR that cannot merge. Ignore
+    # the major until the constraint is deliberately relaxed.
+    ignore:
+      - dependency-name: "mcp"
+        update-types:
+          - version-update:semver-major
     commit-message:
       prefix: "chore(deps)"
     labels:
@@ -56,7 +81,13 @@ updates:
     directory: /pkgs/ocrflow-ncapp/frontend
     schedule:
       interval: weekly
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 3
+    groups:
+      patch-and-minor:
+        applies-to: version-updates
+        update-types:
+          - minor
+          - patch
     commit-message:
       prefix: "chore(deps)"
     labels:
@@ -66,7 +97,13 @@ updates:
     directory: /pkgs/immich-nc-bridge
     schedule:
       interval: weekly
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 3
+    groups:
+      patch-and-minor:
+        applies-to: version-updates
+        update-types:
+          - minor
+          - patch
     commit-message:
       prefix: "chore(deps)"
     labels:
@@ -78,7 +115,13 @@ updates:
     directory: /modules/users/likivik/dotfiles/opencode
     schedule:
       interval: weekly
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 3
+    groups:
+      patch-and-minor:
+        applies-to: version-updates
+        update-types:
+          - minor
+          - patch
     commit-message:
       prefix: "chore(deps)"
     labels:

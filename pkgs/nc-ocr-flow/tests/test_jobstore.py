@@ -684,10 +684,15 @@ def test_no_in_memory_job_mirror(tmp_path: Path) -> None:
                 del sys.modules[mod_name]
         ws = importlib.import_module("nc_ocr_flow.webhook_server")
         # The in-memory job mirror is gone: history lives in SQLite, so
-        # a million-file backlog costs no RAM. _record_job is now a shim.
+        # a million-file backlog costs no RAM. The legacy ``_record_job``
+        # shim was also removed in 0.4 (job state lives only in SQLite,
+        # there is nothing for the shim to do — it just returned None).
         assert not hasattr(ws, "_jobs"), "in-memory job mirror came back"
         assert not hasattr(ws, "_MAX_JOBS_HISTORY"), "obsolete cap came back"
-        assert ws._record_job({"id": 1, "status": "done"}) is None
+        assert not hasattr(ws, "_record_job"), (
+            "_record_job shim came back — it was a no-op in 0.3 and "
+            "deleted in 0.4; reintroducing it is dead code"
+        )
         # The in-memory job-id counter (``itertools.count(1)``) is also
         # gone: ids are now assigned by SQLite (``record_enqueue``
         # reads back ``lastrowid``) so they survive a service restart

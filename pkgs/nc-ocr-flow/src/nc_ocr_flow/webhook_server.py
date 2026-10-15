@@ -85,6 +85,26 @@ SKIP_REASON_TEXT_DENSITY_GUARD = "text_density_guard_low"
 #: compare against either form.
 SKIP_REASON_LEGACY             = "born_digital_or_stamped_good"
 
+#: Image-branch collision: a PDF already exists at the target path,
+#: so converting the image to that PDF would silently destroy the
+#: user's existing PDF. Surfaced as a distinct skip reason so the
+#: operator can resolve the conflict manually (rename, delete, or
+#: reroute the source image).
+SKIP_REASON_PDF_EXISTS         = "pdf_already_exists"
+
+#: Current durable stamp version. Bumped from ``0.3`` to ``0.4``
+#: because the previous parser bug silently returned zero text on a
+#: long stretch of runs — every stamp produced by that broken
+#: pipeline is *untrustworthy* and must be re-OCR'd. The skip check
+#: requires this version: older stamps mean "treat as un-stamped",
+#: which is the user-decided migration policy.
+STAMP_VERSION = "0.4"
+#: XMP namespace URI under which the durable stamp lives. Custom
+#: namespaces don't collide with anything Nextcloud / pikepdf
+#: regenerates, so the stamp survives a WebDAV PUT even when the
+#: producer line is rewritten.
+STAMP_XMP_NS = "http://likivik.com/nc-ocr-flow/1.0/"
+
 # Loop prevention: which node IDs we processed recently. The claim lives
 # in SQLite (jobstore.claim_node) so it survives a restart.
 _PROCESSED_TTL = 300  # 5 minutes
@@ -368,25 +388,45 @@ def _stamp_metadata(
     vlm_failed: list[int] | None = None,
     l2_pages: dict[int, dict] | None = None,
 ) -> None:
-    """Write OCR provenance into PDF metadata (PyMuPDF).
+    """Write OCR provenance into the PDF (PyMuPDF).
 
-    Sets Producer/Subject/Keywords so any PDF reader can show when and
-    how the file was OCR'd.
+    Two storage locations are written on purpose:
 
-    New (0.3) per-engine stamped format:
+      1. **Custom XMP property** under
+         :data:`STAMP_XMP_NS` (``ncocr:stamp = STAMP_VERSION``). This
+         is the *durable* marker — the user observed Nextcloud's
+         storage layer rewriting ``Producer`` to ``pikepdf …`` on every
+         WebDAV PUT, which made the previous Producer-only stamp a
+         silent no-op in production. XMP under a custom namespace is
+         not one of the standard fields any tool regenerates, so it
+         survives the round-trip and remains a reliable "we stamped
+         this" signal for :func:`_already_stamped_by_us`.
 
-      Producer: nc-ocr-flow 0.3 (engine=X)
+      2. **Document Info fields** — Subject / Keywords / Producer — for
+         human-readable provenance when an operator opens the file in
+         a PDF reader. ``Producer`` is best-effort (will likely be
+         rewritten by Nextcloud on the next PUT); ``Subject`` and
+         ``Keywords`` are durable enough on this host that we use
+         ``Subject`` as a secondary fallback in the stamp check.
 
-      Subject:  OCR <ts> input_sha256=<hex64> source=current
-                langs=rus+eng <engine>:api=<api> <engine>:ver=<ver>
+    Versioning
+    ----------
+    Every stamp carries ``stamp_version = STAMP_VERSION``. The skip
+    check requires the *current* version, so any older stamp (the
+    pre-fix ``0.3`` series produced by the silent-zero-text parser
+    bug) means "treat as un-stamped". That is the user-decided
+    migration policy — a one-time re-OCR of every previously-stamped
+    file, which is exactly what we want after the parser fix.
+
+    Subject / Keywords formats (carried over from 0.3):
+
+      Subject:  OCR <ts> stamp_version=<VER> input_sha256=<hex64>
+                source=current langs=rus+eng
+                <engine>:api=<api> <engine>:ver=<ver>
                 tesseract_pages=<ranges> vlm_pages=<ranges>
                 [vlm_failed=<ranges>] [l2=<p:l:c[,esc];...>]
 
-      Keywords: nc-ocr-flow, ocr[, vlm-failed][, handwriting]
-
-    The ``source=current`` marker is reserved (the pristine source was
-    removed in 0.3 — re-OCR always works on the current file via the
-    ``force=True`` flag).
+      Keywords: nc-ocr-flow, ocr, stamp_version=<VER>[, vlm-failed][, handwriting]
     """
     import fitz  # PyMuPDF
     import datetime
@@ -427,12 +467,13 @@ def _stamp_metadata(
     except OSError:
         input_sha = "-"
 
-    meta["producer"] = f"nc-ocr-flow 0.3 (engine={engine})"
+    meta["producer"] = f"nc-ocr-flow {STAMP_VERSION} (engine={engine})"
 
     # Build Subject as a single line — keys appear in a fixed order so
     # /status and triage scripts can grep reliably.
     parts = [
         f"OCR {ts}",
+        f"stamp_version={STAMP_VERSION}",
         f"input_sha256={input_sha}",
         "source=current",
         "langs=rus+eng",
@@ -453,7 +494,7 @@ def _stamp_metadata(
         parts.append(f"l2={';'.join(l2_parts)}")
     meta["subject"] = " ".join(parts)
 
-    kw = "nc-ocr-flow, ocr"
+    kw = f"nc-ocr-flow, ocr, stamp_version={STAMP_VERSION}"
     if vlm_failed:
         kw += ", vlm-failed"
     escalated = [p for p, v in (l2_pages or {}).items() if v.get("escalate")]
@@ -461,17 +502,139 @@ def _stamp_metadata(
         kw += ", handwriting"
     meta["keywords"] = kw
     doc.set_metadata(meta)
+
+    # Durable stamp: a custom XMP property under our private namespace.
+    # Pikepdf and Nextcloud's storage layer do not regenerate custom
+    # XMP namespaces, so this marker is the only field we can trust to
+    # survive an arbitrary number of WebDAV PUT cycles. See the module
+    # docstring of :func:`_already_stamped_by_us` for the matching read
+    # path.
+    doc.set_xml_metadata(_build_stamp_xmp(engine, engine_api, engine_ver))
+
     doc.saveIncr()
     doc.close()
 
 
-def _already_stamped_by_us(path: Path) -> bool:
-    """True if ``path`` carries our 0.3 stamp from a previous OCR run.
+def _build_stamp_xmp(
+    engine: str, engine_api: str = "unknown", engine_ver: str = "unknown"
+) -> str:
+    """Build the XMP packet carrying our durable stamp.
 
-    Returns True only when the Producer line contains both ``nc-ocr-flow``
-    and ``engine=google`` — Google's whole-doc OCR produces the highest-
-    fidelity text layer, so any file with a Google-engine stamp from us
-    can be skipped without risking a worse result.
+    Public so the test suite can construct the same packet without
+    round-tripping through a real PDF (the read path in
+    :func:`_already_stamped_by_us` accepts anything ElementTree can
+    parse, so the test can hand-construct a minimal ``<rdf:Description>``
+    and call the parser directly).
+    """
+    # xml.sax.saxutils.escape guards against engine strings that could
+    # break the XML (e.g. an engine named "foo&bar"); STAMP_VERSION is
+    # a literal so it's not strictly needed but we treat it uniformly.
+    from xml.sax.saxutils import escape
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<x:xmpmeta xmlns:x="adobe:ns:meta/">\n'
+        '<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">\n'
+        f'<rdf:Description xmlns:ncocr="{STAMP_XMP_NS}" rdf:about=""'
+        f' ncocr:stamp="{escape(STAMP_VERSION)}"'
+        f' ncocr:engine="{escape(engine)}"'
+        f' ncocr:engine_api="{escape(engine_api)}"'
+        f' ncocr:engine_ver="{escape(engine_ver)}"'
+        '/>\n'
+        '</rdf:RDF>\n'
+        '</x:xmpmeta>\n'
+    )
+
+
+def _parse_xmp_stamp(stream_bytes: bytes | str) -> dict[str, str]:
+    """Extract our stamp properties from an XMP packet.
+
+    Returns a dict of ``{key: value}`` for every ``ncocr:*`` attribute
+    found on the top-level ``rdf:Description``. Empty dict if the
+    stream cannot be parsed or contains no stamp — never raises.
+
+    Uses ``defusedxml`` when available to defang the well-known XXE /
+    billion-laughs attacks in stdlib's XML parsers. The XMP packet is
+    attacker-controlled in this service (it lives inside a PDF anyone
+    can upload via Nextcloud's WebDAV), so hardening the parser is
+    the right move; we only extract attribute values, never evaluate
+    anything inside the XML. Falls back to stdlib's ElementTree with
+    entity loading disabled if defusedxml is not installed — the
+    fallback is still safer than the default because the parser is
+    given an empty ``parser`` with no external entity resolver.
+    """
+    import logging as _logging
+    import xml.etree.ElementTree as ET
+
+    if isinstance(stream_bytes, bytes):
+        try:
+            text = stream_bytes.decode("utf-8", errors="replace")
+        except Exception:
+            return {}
+    else:
+        text = stream_bytes
+    if not text:
+        return {}
+    try:
+        try:
+            import defusedxml.ElementTree as _defused
+            root = _defused.fromstring(text)
+        except ImportError:
+            # stdlib fallback: parse without a default resolver so
+            # external entities cannot be fetched. The PDF we are
+            # reading is user-supplied, but we only use the parsed
+            # attribute values — never any DTD, never any node text
+            # outside ``rdf:Description`` attributes.
+            parser = ET.XMLParser()
+            try:
+                parser.parser.SetParamEntityParsing(0)  # type: ignore[attr-defined]
+            except Exception:
+                pass
+            root = ET.fromstring(text, parser=parser)
+    except ET.ParseError as exc:
+        _logging.getLogger(__name__).debug("XMP parse failed: %s", exc)
+        return {}
+    out: dict[str, str] = {}
+    for desc in root.iter():
+        tag = desc.tag
+        # Tag is "{<namespace>}Description" — accept both with and
+        # without an explicit namespace declaration.
+        if not (tag == "Description" or tag.endswith("}Description")):
+            continue
+        for k, v in desc.attrib.items():
+            if k.startswith(f"{{{STAMP_XMP_NS}}}"):
+                out[k[len(f"{{{STAMP_XMP_NS}}}"):]] = v
+        # A real PDF usually has exactly one rdf:Description at the
+        # top level, but iterate-all is harmless and matches how some
+        # tools emit the packet.
+    return out
+
+
+def _already_stamped_by_us(path: Path) -> bool:
+    """True if ``path`` carries a current-version stamp from the fixed pipeline.
+
+    Storage locations checked (in order of preference):
+
+      1. **Custom XMP property** under :data:`STAMP_XMP_NS`. The
+         user observed Nextcloud's storage layer rewriting ``Producer``
+         to ``pikepdf …`` on every WebDAV PUT, which made the previous
+         Producer-only stamp a silent no-op in production — the same
+         two files were re-OCR'd 17+ times in a single day. XMP under a
+         custom namespace is not one of the standard fields any tool
+         regenerates, so it survives the round-trip and is the only
+         field we can rely on for a programmatic check.
+
+      2. **Subject fallback** — the long human-readable OCR summary
+         also carries ``stamp_version=STAMP_VERSION``. If the XMP
+         stream was somehow stripped (e.g. a stripping tool the user
+         ran by hand) but Subject is intact, we still recognise the
+         stamp.
+
+    The check is strict about version: any stamp older than
+    :data:`STAMP_VERSION` (or absent) returns ``False``. The previous
+    ``0.3`` series was produced by a parser that silently returned
+    zero text on a long stretch of runs, so those stamps are
+    untrustworthy and the operator has decided a one-time re-OCR of
+    every previously-stamped file is the right migration.
 
     TODO (user-requested policy revisit, NOT a behaviour change in this PR):
     ``stamped_good_by_us`` is recorded as a skip reason but the operator's
@@ -499,8 +662,8 @@ def _already_stamped_by_us(path: Path) -> bool:
           the same files above).
 
     Until the policy is changed, this function and the caller at
-    ``_needs_ocr_decision`` continue to treat ``engine=google`` as
-    trustworthy so we do not blow the Vision-API budget re-OCR'ing
+    ``_needs_ocr_decision`` continue to treat a current-version stamp
+    as trustworthy so we do not blow the Vision-API budget re-OCR'ing
     the entire stamp-flagged set.  That is a deliberate, explicitly
     documented policy choice — not a confident assertion that those
     files are good.
@@ -508,14 +671,27 @@ def _already_stamped_by_us(path: Path) -> bool:
     try:
         import fitz
         with fitz.open(str(path)) as doc:
-            producer = (doc.metadata or {}).get("producer", "") or ""
+            # Primary: read the XMP packet and look for our custom stamp.
+            try:
+                xml_xref = doc.xref_xml_metadata()
+            except Exception:
+                xml_xref = 0
+            if xml_xref:
+                try:
+                    stream = doc.xref_stream(xml_xref) or b""
+                    props = _parse_xmp_stamp(stream)
+                    if props.get("stamp") == STAMP_VERSION:
+                        return True
+                except Exception:
+                    pass
+            # Secondary: Subject carries stamp_version=STAMP_VERSION too.
+            meta = doc.metadata or {}
+            subject = meta.get("subject", "") or ""
+            if f"stamp_version={STAMP_VERSION}" in subject:
+                return True
+            return False
     except Exception:
         return False
-    if "nc-ocr-flow" not in producer:
-        return False
-    if "engine=google" not in producer:
-        return False
-    return True
 
 
 def _needs_ocr_decision(
@@ -607,11 +783,16 @@ def _assert_ocr_produced_blocks(result, nc_path: str) -> None:
     marking the file ``done`` forever. Two follow-on costs:
 
       1. The stamp-skip branch (``_already_stamped_by_us``) kept
-         hiding the file from re-OCR until manual intervention.
+         hiding the file from re-OCR until manual intervention —
+         this PR bumps the stamp version to ``0.4`` so those
+         pre-fix stamps are NOT recognised as a skip, and stores
+         the durable marker in a custom XMP namespace that survives
+         Nextcloud's WebDAV-storage ``Producer`` rewrite.
       2. The user's Nextcloud storage was rewriting ``Producer`` to
-         ``pikepdf …`` (a separate, unfired TODO), so the stamp-based
-         dedup didn't even survive — we just had no second-line
-         defence.
+         ``pikepdf …`` (now fixed by moving the stamp to XMP, see
+         :func:`_stamp_metadata` and :func:`_already_stamped_by_us`),
+         so the stamp-based dedup didn't even survive — we just had
+         no second-line defence.
 
     Raising here takes the existing error path (``_run_job``'s
     ``except Exception`` already records ``status=error`` and writes
@@ -691,8 +872,42 @@ def _process_file(nc_path: str, node_id: int, engine: str | None = None,
                 l2_pages=result.l2_pages,
             )
 
-            # Upload OCR'd PDF (new .pdf path), delete original image
+            # Collision check: the image branch writes to
+            # ``nc_path.with_suffix('.pdf')`` and then deletes the
+            # source image. If the user already has a PDF at that
+            # target path, the upload would *silently* destroy that
+            # PDF — the user's original PDF is replaced with the
+            # freshly-OCR'd image-to-PDF. Detect that here and refuse
+            # to clobber; the operator can rename, delete, or reroute
+            # the source image manually.
             pdf_nc_path = str(Path(nc_path).with_suffix(".pdf"))
+            try:
+                existing_size, _ = _propfind_size_etag(pdf_nc_path)
+            except Exception as exc:  # noqa: BLE001
+                log.warning(
+                    "image branch: PROPFIND %s failed (%s);"
+                    " refusing upload to be safe",
+                    pdf_nc_path, exc,
+                )
+                existing_size = None
+            if existing_size is not None and existing_size > 0:
+                log.warning(
+                    "image branch collision: %s already exists (%d bytes);"
+                    " refusing to overwrite. Source image %s is left in place.",
+                    pdf_nc_path, existing_size, nc_path,
+                )
+                # Do NOT upload, do NOT delete the source image. The
+                # file row is updated to "skipped" so /stats shows the
+                # reason and /scan-all won't keep re-enqueueing it
+                # (until the operator resolves the collision).
+                return {
+                    "path": nc_path,
+                    "skipped": True,
+                    "reason": SKIP_REASON_PDF_EXISTS,
+                    "existing_pdf": pdf_nc_path,
+                }
+
+            # Upload OCR'd PDF (new .pdf path), delete original image
             _webdav_upload(pdf_nc_path, Path(result.output_pdf))
             _webdav_delete(nc_path)
 
@@ -860,15 +1075,6 @@ def _path_in_flight(nc_path: str) -> bool:
     return bool(rec) and rec.get("status") in ("queued", "running")
 
 
-def _record_job(job: dict) -> None:
-    """No-op shim, kept so the call sites stay readable.
-
-    Job state lives in SQLite now (``jobstore.record_update``); the old
-    in-memory mirror is gone, so a million-file backlog costs no RAM.
-    """
-    return None
-
-
 def _engine_slot(engine: str | None):
     """Concurrency ceiling for this job's engine."""
     key = (engine or os.environ.get("NC_OCR_ENGINE") or "google").lower()
@@ -901,7 +1107,6 @@ def _run_job(job: dict) -> None:
         log.error("worker: job %d failed: %s — %s", job["id"], job["path"], exc)
     finally:
         job["finished"] = time.time()
-        _record_job(job)
         # Persist the final state to SQLite. ``record_update`` is
         # upsert-by-id and never raises into the caller — the OCR
         # pipeline must not break because the history DB is down.
@@ -975,6 +1180,99 @@ def _ocr_worker() -> None:
 _requeued = jobstore.requeue_stale()
 if _requeued:
     log.info("startup: re-queued %d job(s) abandoned by a restart", _requeued)
+
+
+def reconcile_orphans() -> dict:
+    """Recover files left ``status='queued'`` with no matching ``jobs`` row.
+
+    Background — two real production shapes that left a file row at
+    ``status='queued'`` with NO corresponding ``jobs`` row, so
+    ``_path_in_flight`` reported it in-flight forever and ``/scan-all``
+    silently skipped it:
+
+      1. **Old in-process job-id collision** (now fixed). A previous
+         version of the service kept an ``itertools.count(1)`` for
+         job ids; on restart it would re-use ids that already existed
+         in the persisted ``jobs`` table. The SQLite insert raised
+         but was swallowed, leaving the file row at ``status='queued'``
+         with nothing in ``jobs``. ``record_enqueue`` now reads
+         ``lastrowid`` from SQLite so this is no longer produced —
+         but rows orphaned by the older builds still exist.
+      2. **Pruned history / lost row.** The ``jobs`` history is capped
+         at 20 000 rows; very long-running services have shed old
+         ``jobs`` rows whose file row was still at ``status='queued'``
+         (e.g. the worker crashed between writing the file row and
+         writing the job row, or the row was pruned before being
+         picked up). The operator wants these recovered too.
+
+    What the function does
+    ----------------------
+    For every path with ``files.status='queued'`` that does NOT have a
+    matching ``jobs`` row at status ``queued`` or ``running``, the
+    function calls ``_enqueue`` to insert a fresh ``jobs`` row and
+    mark the worker pool ready to pick it up. The file row stays at
+    ``status='queued'`` (correct — we just enqueued it again).
+
+    Idempotency
+    -----------
+    Calling this twice is safe: the second call's query finds nothing
+    (the re-enqueued jobs are now present, so the orphan predicate is
+    false) and returns ``{"orphans_found": 0, "recovered": 0, ...}``.
+    If a job row was lost between calls, the second call will pick
+    it up again — that's the correct behaviour.
+
+    Safety
+    ------
+    The query excludes rows whose matching ``jobs`` row is in
+    ``('queued', 'running')``. A genuinely running worker holds a
+    ``jobs.status='running'`` row while the corresponding file row
+    is still ``status='queued'`` (we only write the terminal status
+    once the worker finishes), so the join correctly leaves those
+    rows alone.
+    """
+    try:
+        orphans = jobstore.orphaned_queued_paths()
+    except Exception as exc:  # noqa: BLE001
+        log.error("reconcile_orphans: query failed (%s)", exc)
+        return {"orphans_found": 0, "recovered": 0, "failed": 0, "error": str(exc)}
+    if not orphans:
+        log.info("reconcile_orphans: no orphans found")
+        return {"orphans_found": 0, "recovered": 0, "failed": 0, "errors": []}
+
+    log.warning(
+        "reconcile_orphans: found %d orphaned queued file(s): %s",
+        len(orphans), orphans,
+    )
+    recovered = 0
+    failed: list[dict] = []
+    for nc_path in orphans:
+        try:
+            _enqueue(nc_path, node_id=0, engine=None, force=True)
+            recovered += 1
+            log.info("reconcile_orphans: re-enqueued %s", nc_path)
+        except Exception as exc:  # noqa: BLE001
+            failed.append({"path": nc_path, "error": str(exc)})
+            log.error("reconcile_orphans: re-enqueue %s failed (%s)", nc_path, exc)
+    return {
+        "orphans_found": len(orphans),
+        "recovered": recovered,
+        "failed": len(failed),
+        "errors": failed,
+        "paths": orphans,
+    }
+
+
+# Run the reconciler once at startup so an operator does not have to
+# call the endpoint manually after every restart. The function is
+# idempotent and never raises, so this is safe even when the queue is
+# healthy.
+_reconcile_startup = reconcile_orphans()
+if _reconcile_startup.get("orphans_found"):
+    log.warning(
+        "startup: reconciler recovered %d / %d orphaned queued files",
+        _reconcile_startup["recovered"],
+        _reconcile_startup["orphans_found"],
+    )
 for _worker_idx in range(_WORKERS):
     threading.Thread(target=_ocr_worker, daemon=True,
                      name=f"ocr-worker-{_worker_idx}").start()
@@ -1165,7 +1463,6 @@ def _enqueue(nc_path: str, node_id: int, engine: str | None = None,
         "error": None,
         "reason": None,
     }
-    _record_job(job)
     # Mirror to durable SQLite history. ``record_enqueue`` writes the
     # canonical id back into ``job`` and may raise on an explicit-id
     # collision (the bug we just removed).
@@ -1552,6 +1849,15 @@ class ScanAllRequest(BaseModel):
     folder: str = ""             # NC-relative folder to scan ("Work/1-Аренда"); "" = all
     engine: str | None = None    # google|tesseract|minimax; None → env
     skip_ocrd: bool = True       # skip files already OCR'd by this service
+    #: Force re-OCR of every matched file, regardless of any previous
+    #: stamp and regardless of an existing in-flight job for the same
+    #: path. Default ``False`` preserves the original behaviour. When
+    #: ``True``, ``skip_ocrd`` is treated as ``False`` and the
+    #: ``_path_in_flight`` check is skipped too — useful when the
+    #: operator wants to retry a folder that is partially stuck in the
+    #: queue (the previously-shipped "force" flag on the per-file
+    #: ``/rescan`` could not be expressed on a whole folder before).
+    force: bool = False
 
 
 @app.post("/scan-all")
@@ -1561,9 +1867,23 @@ async def scan_all(
 ):
     """Batch scan: enqueue every processable file under a folder ("" = all).
 
-    Skips files already OCR'd by this service (tracked in _ocrd_paths).
-    Returns immediately with the number of jobs queued; processing is
-    sequential in the single worker (queue Depth visible in /status).
+    Skips files already OCR'd by this service (tracked in the file
+    index, unless ``body.force=True``). Returns immediately with the
+    number of jobs queued; processing is sequential in the single
+    worker (queue depth visible in /status).
+
+    ``body.force=True`` is the "force-re-OCR whole folder" operator
+    lever the per-file ``/rescan`` already exposed. It bypasses:
+
+      * ``skip_ocrd`` — even files with ``status='done'`` are queued;
+      * ``_path_in_flight`` — even files with a queued or running job
+        row get a fresh job appended (last writer wins on the file
+        row when each job finishes);
+      * the stamp check inside ``_process_file`` — the per-file
+        ``force=True`` we pass through to ``_enqueue`` flips the
+        ``_already_stamped_by_us`` gate off.
+
+    Default behaviour is unchanged.
     """
     _check_secret(x_webhook_secret)
     if body.engine is not None and body.engine not in ("google", "tesseract", "minimax"):
@@ -1594,6 +1914,7 @@ async def scan_all(
     from urllib.parse import unquote
     enqueued = 0
     skipped_ocrd = 0
+    forced_in_flight = 0
     for href in found:
         href = unquote(href)
         rel = href.split(f"/remote.php/dav/files/{NC_USER}/", 1)[-1]
@@ -1602,21 +1923,38 @@ async def scan_all(
         if Path(rel).suffix.lower() not in PROCESSABLE_EXTS:
             continue
         nc_path = f"/{NC_USER}/files/{rel}"
-        if body.skip_ocrd:
-            _rec = jobstore.file_get(nc_path)
-            if _rec and _rec.get("status") == "done":
-                skipped_ocrd += 1
+        if not body.force:
+            if body.skip_ocrd:
+                _rec = jobstore.file_get(nc_path)
+                if _rec and _rec.get("status") == "done":
+                    skipped_ocrd += 1
+                    continue
+            # node_id is unknown from a listing, so dedup by path:
+            # skip files whose job is already queued or running.
+            if _path_in_flight(nc_path):
+                log.info("scan-all: skip in-flight %s", nc_path)
                 continue
-        # node_id is unknown from a listing, so dedup by path: skip
-        # files whose job is already queued or running.
-        if _path_in_flight(nc_path):
-            log.info("scan-all: skip in-flight %s", nc_path)
-            continue
-        _enqueue(nc_path, 0, body.engine)
+        else:
+            # Track separately so an operator can see how many of the
+            # "force" enqueues collided with already-in-flight paths.
+            if _path_in_flight(nc_path):
+                forced_in_flight += 1
+                log.info("scan-all: force=true overwriting in-flight %s", nc_path)
+        # Pass force through so the stamp check inside _process_file
+        # is also bypassed for this job.
+        _enqueue(nc_path, 0, body.engine, force=body.force)
         enqueued += 1
-    log.info("scan-all: folder=%r enqueued=%d skipped_ocrd=%d",
-             body.folder, enqueued, skipped_ocrd)
-    return {"status": "queued", "enqueued": enqueued, "skipped_ocrd": skipped_ocrd}
+    log.info(
+        "scan-all: folder=%r enqueued=%d skipped_ocrd=%d force=%s forced_in_flight=%d",
+        body.folder, enqueued, skipped_ocrd, body.force, forced_in_flight,
+    )
+    return {
+        "status": "queued",
+        "enqueued": enqueued,
+        "skipped_ocrd": skipped_ocrd,
+        "force": body.force,
+        "forced_in_flight": forced_in_flight,
+    }
 
 
 
@@ -1661,6 +1999,25 @@ async def panel(request: Request):
             "X-Content-Type-Options": "nosniff",
         },
     )
+
+
+@app.post("/admin/reconcile-orphans")
+async def admin_reconcile_orphans(
+    x_webhook_secret: str | None = Header(None, alias="X-Webhook-Secret"),
+):
+    """Operator-triggered orphan reconciler.
+
+    Returns the same shape as :func:`reconcile_orphans`. The
+    reconciler also runs once at startup; this endpoint exists so an
+    operator can invoke it on demand without restarting the service
+    (e.g. right after a manual SQLite intervention, or after noticing
+    a folder in the panel stuck at ``queued``).
+
+    Auth is the same ``X-Webhook-Secret`` header every other endpoint
+    takes.
+    """
+    _check_secret(x_webhook_secret)
+    return reconcile_orphans()
 
 
 def main():

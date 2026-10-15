@@ -21,7 +21,7 @@ let
     pname = "ocrflow-frontend";
     version = "0.8.0";
     src = ./frontend;
-    npmDepsHash = "sha256-TX+Zn1gNj/gzaHFCcvWsabK5We3tIS1NQCrph9LKkLU=";
+    npmDepsHash = "sha256-Xz1R2dLDRSxnY5Z2KI3SEpXfLqEsAq5cKf+rL6IEp/Y=";
     installPhase = ''
       runHook preInstall
       mkdir -p $out/js

@@ -275,30 +275,81 @@ def _prune(conn: "sqlite3.Connection") -> None:
     )
 
 
-def record_enqueue(job: dict[str, Any]) -> None:
-    """Insert a freshly-enqueued job. No-op if ``id`` already exists.
+def record_enqueue(job: dict[str, Any]) -> int:
+    """Insert a freshly-enqueued job. Returns the assigned ``id``.
 
-    Spec wording: "call ``record_enqueue`` on enqueue". Insert-or-ignore
-    is the safest semantics — if the worker has already written a status
-    update for this id (e.g. on a fast restart), we don't clobber it.
+    Id assignment
+    -------------
+    The DB is the sole source of truth for the ``jobs.id`` sequence —
+    not the in-process counter (which would lose state on every
+    service restart and silently discard new inserts that collided
+    with a previously persisted id). Caller may pre-set ``job['id']``
+    (legacy tests / explicit ids) or leave it unset; in the latter
+    case we omit ``id`` from the INSERT and read back ``lastrowid``.
+
+    Errors
+    ------
+    * Application-level duplicate (an explicit ``id`` already exists)
+      **raises** :class:`RuntimeError`. Silent ``INSERT OR IGNORE`` is
+      the exact shape of the bug we removed; a non-unique id means the
+      previous job with that id is *not* the row we wanted, and there
+      is no safe no-op. Crash loud.
+    * DB-level faults (DB unreachable, disk full, schema mismatch)
+      continue to log + return ``None`` so the OCR pipeline keeps
+      running. The history is a side-channel; the queue is the
+      pipeline. (See the module-level design rule.)
+
+    The new id is written back into ``job['id']`` so callers using the
+    returned dict see the canonical id even when they did not provide
+    one. ``work_available`` (the queue's wakeup primitive) is **not**
+    fired here — the caller already drives it after the SQL returns.
     """
     if not _ready():
-        return
+        return None  # type: ignore[return-value]
+    explicit_id = job.get("id")
+    # Build the value tuple WITHOUT id when the caller didn't set one
+    # so SQLite's rowid alias assigns a fresh, collision-free id.
+    if explicit_id is None:
+        cols = [c for c in _COLUMNS if c != "id"]
+        placeholders = ", ".join("?" for _ in cols)
+        values = [job.get(c) for c in cols]
+    else:
+        cols = list(_COLUMNS)
+        placeholders = ", ".join("?" for _ in cols)
+        values = [job.get(c) for c in cols]
     try:
-        values = _row_from_dict(job)
         with _connect() as conn:
-            conn.execute(
-                "INSERT OR IGNORE INTO jobs ("
-                + ", ".join(_COLUMNS)
+            conn.execute("BEGIN IMMEDIATE")
+            cur = conn.execute(
+                "INSERT INTO jobs ("
+                + ", ".join(cols)
                 + ") VALUES ("
-                + ", ".join("?" for _ in _COLUMNS)
+                + placeholders
                 + ")",
                 values,
             )
+            assigned = int(cur.lastrowid or (explicit_id or 0))
+            conn.execute("COMMIT")
             _prune(conn)
-    except Exception as exc:  # noqa: BLE001
+    except sqlite3.IntegrityError as exc:
+        # Explicit-id collision. Loud: silent no-op is the bug.
+        raise RuntimeError(
+            f"jobstore: id collision on enqueue (id={explicit_id!r}); "
+            f"refusing to silently discard the new job. Did the "
+            f"in-memory job-id counter restart on a service boot "
+            f"while persisted rows are still at the same id? "
+            f"({exc})"
+        ) from exc
+    except sqlite3.Error as exc:  # noqa: BLE001
+        # DB-level fault — preserve the design rule (OCR pipeline must
+        # not break because the history DB is unavailable) and just
+        # log. The job is otherwise lost; the next ``/rescan`` or
+        # webhook event will re-enqueue it.
         log.warning("jobstore: record_enqueue failed for id=%s (%s)",
-                    job.get("id"), exc)
+                    explicit_id, exc)
+        return None  # type: ignore[return-value]
+    job["id"] = assigned
+    return assigned
 
 
 def record_update(job: dict[str, Any]) -> None:

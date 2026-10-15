@@ -295,11 +295,68 @@ def _blocks_from_page(full, page_w: float, page_h: float, page_idx: int) -> list
     return blocks
 
 
+def _word_absolute_coords(bb, page_w: float, page_h: float):
+    """Return (xs, ys) in absolute page pixels for a Word's bounding_box.
+
+    Vision populates one of two coordinate systems on each BoundingPoly
+    for the PDF / whole-doc batch path:
+
+      * ``vertices``           — absolute pixels (same coord space as
+                                  ``Page.width`` / ``Page.height``).
+      * ``normalized_vertices`` — floats in [0, 1]; multiplied by
+                                  ``page_w`` / ``page_h`` to recover
+                                  absolute pixels.
+
+    Pre-fix the parser only read ``vertices``. The Vision whole-doc
+    PDF path leaves ``vertices`` empty and only populates
+    ``normalized_vertices``, so every Word was silently dropped and the
+    whole engine returned zero blocks. We now fall back to
+    ``normalized_vertices`` whenever ``vertices`` is missing or
+    truncated; only when NEITHER yields 4 usable coordinates do we
+    give up.
+
+    Returns ``(None, None)`` to signal "no usable geometry" — callers
+    must log (rate-limited) and drop the word rather than treating
+    it as having bbox (0,0,0,0).
+    """
+    # Absolute coordinates.
+    vs = getattr(bb, "vertices", None) or []
+    if len(vs) >= 4:
+        try:
+            xs = [float(v.x) for v in vs]
+            ys = [float(v.y) for v in vs]
+            return xs, ys
+        except (AttributeError, TypeError, ValueError):
+            pass
+
+    # Normalized coordinates ([0, 1]) — multiply by page dims.
+    nvs = getattr(bb, "normalized_vertices", None) or []
+    if len(nvs) >= 4 and page_w > 0 and page_h > 0:
+        try:
+            xs = [float(v.x) * page_w for v in nvs]
+            ys = [float(v.y) * page_h for v in nvs]
+            return xs, ys
+        except (AttributeError, TypeError, ValueError):
+            pass
+
+    return None, None
+
+
 def _line_blocks(block, page_w: float, page_h: float):
     """Yield (line_text, line_bbox) for each visual line in a Vision block.
 
     Groups words into lines by vertical overlap in native order.
+
+    Vision's BoundingPoly carries either ``vertices`` (absolute pixel
+    coords) or ``normalized_vertices`` ([0,1] floats). Both must be
+    accepted — see ``_word_absolute_coords`` for the bug history. A
+    Word with NEITHER usable form is logged at WARNING (rate-limited
+    per call) and dropped, never silently: that silent drop turned the
+    whole Google engine into a no-op for whole-document PDFs.
     """
+    # Once-per-call budget for the no-geometry warning. Without this
+    # one bad response could spam the log with one WARNING per Word.
+    warned_no_geometry = False
     # Collect words with their per-word bboxes.
     for para in block.paragraphs:
         words = []  # (x0, y0, x1, y1, text)
@@ -307,11 +364,18 @@ def _line_blocks(block, page_w: float, page_h: float):
             sym = "".join(s.text for s in word.symbols).strip()
             if not sym:
                 continue
-            vs = getattr(word.bounding_box, "vertices", None)
-            if not vs or len(vs) < 4:
+            xs, ys = _word_absolute_coords(word.bounding_box, page_w, page_h)
+            if xs is None:
+                if not warned_no_geometry:
+                    log.warning(
+                        "google_engine: dropping Word(s) without usable "
+                        "vertices or normalized_vertices (first text=%r); "
+                        "page_w=%s page_h=%s. Vision response may be "
+                        "truncated — investigate before trusting results.",
+                        sym[:40], page_w, page_h,
+                    )
+                    warned_no_geometry = True
                 continue
-            xs = [float(v.x) for v in vs]
-            ys = [float(v.y) for v in vs]
             words.append((min(xs), min(ys), max(xs), max(ys), sym))
 
         # Group into lines by vertical overlap, preserving native order.

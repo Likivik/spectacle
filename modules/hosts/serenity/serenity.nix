@@ -25,7 +25,7 @@
       # llama (:8081), browser CDP (:9222).
       # Also included: email (himalaya MCP — it runs *on the agent host*, not
       # as a separate service). Deliberately NOT included: searxng (unused —
-      # web.search_backend is exa), sillytavern, beszel, fishaudio-proxy.
+      # web.search_backend is exa), sillytavern, fishaudio-proxy.
       # hr-bot stays on erebus.
       den.aspects.server.hermes-agent
       den.aspects.server.hermes-webui

@@ -57,10 +57,15 @@
       # "<SOPS:<sha256 of the NAME>:PLACEHOLDER>" and the installer substitutes
       # the real value at activation. So template content may ONLY contain
       # placeholders — a literal secret here would land in the world-readable
-      # store. Asserted in pkgs/hermes-tests.
+      # store. Enforced by the assertion below (the key *shapes* are covered
+      # separately by pkgs/hermes-tests).
       #
-      # One list per profile drives the template, the coverage test and the
-      # smoke gate's dummy secret set: add a row, all three follow.
+      # One list per profile drives the template, and the coverage test reads
+      # these rows. The smoke gate's dummy secret set instead follows the host's
+      # sops.secrets declarations — which a row requires anyway, since
+      # `sops.placeholder.<name>` only exists for a declared secret, so an
+      # undeclared one is an eval error rather than a missing env var. Add a row
+      # AND declare the secret, and all three follow.
       commonSecretEnv = [
         { env = "EXA_API_KEY"; secret = "hermes/exa-api-key"; }
         { env = "MINIMAX_API_KEY"; secret = "hermes/minimax-api-key"; }
@@ -85,6 +90,21 @@
         "API_SERVER_HOST=0.0.0.0"
         "API_SERVER_PORT=${toString apiPort}"
         "HERMES_LANGFUSE_BASE_URL=https://cloud.langfuse.com"
+      ];
+
+      # The exact non-placeholder lines a template is permitted to contain.
+      # Deliberately NOT derived from commonLiteralEnv: an allow-list built from
+      # the same binding it validates would approve anything added there —
+      # including a secret, which is the one thing this guard exists to stop.
+      # Adding a legitimate new literal therefore means two edits, and that
+      # duplication is the point: it is an independent statement of intent.
+      permittedLiteralLines = [
+        "API_SERVER_ENABLED=true"
+        "API_SERVER_HOST=0.0.0.0"
+        "API_SERVER_PORT=8642"
+        "API_SERVER_PORT=8643"
+        "HERMES_LANGFUSE_BASE_URL=https://cloud.langfuse.com"
+        "HERMES_DASHBOARD_BASIC_AUTH_USERNAME=likivik"
       ];
 
       mkSopsTemplate = { botTokenSecret, apiKeySecret, apiPort, secretEnv, extraLiterals ? [ ] }: {
@@ -224,8 +244,7 @@
                 lib.all
                   (l:
                     lib.hasInfix "PLACEHOLDER>" l
-                    || lib.elem l (commonLiteralEnv 8642 ++ commonLiteralEnv 8643
-                      ++ [ "HERMES_DASHBOARD_BASIC_AUTH_USERNAME=likivik" ]))
+                    || lib.elem l permittedLiteralLines)
                   (lib.filter (l: l != "") (lib.splitString "\n" t.content)))
               (lib.attrValues sopsTemplates);
             message = ''
@@ -309,9 +328,13 @@
         # hermes-CLI-managed gateway unit so they can't shadow or dangle
         # alongside the NixOS-managed one above. Pure filesystem ops (root),
         # no sudo/PAM — safe during boot-time activation.
-        system.activationScripts."hermes-unit-cleanup" = lib.stringAfter (
-          lib.optional (config.system.activationScripts ? setupSecrets) "setupSecrets"
-        ) ''
+        # No ordering against secret provisioning: this only removes stale unit
+        # files and never reads a secret. It used to depend on `setupSecrets`
+        # conditionally, which went dead the moment serenity moved to
+        # sops.useSystemdActivation = true — that activation script no longer
+        # exists, so the dep silently evaluated to []. Removed rather than left
+        # as a line that looks like it orders against secrets but cannot.
+        system.activationScripts."hermes-unit-cleanup" = ''
           rm -f /var/lib/hermes/.config/systemd/user/default.target.wants/hermes-gateway.service
           rm -f /var/lib/hermes/.config/systemd/user/hermes-agent.service
           rm -f /var/lib/hermes/.config/systemd/user/hermes-dashboard.service

@@ -1,24 +1,22 @@
-"""Guard: .env must not shadow NixOS-managed sops secrets.
+"""Guard: .env must not shadow the NixOS-managed rendered env file.
 
 Regression for the Aug-Sep 2026 gateway auth split-brain: a hand-edited
 API_SERVER_KEY in ~/.hermes/.env silently overrode the sops value that the
 hermes-gateway systemd unit loads via EnvironmentFile= (hermes' dotenv loader
 runs at startup with override=True and wins).
 
-The env file is now rendered by sops-nix (`sops.templates`), in the same
+The env file is rendered by sops-nix (`sops.templates`) in the same
 sops-install-secrets pass that installs the secrets, so it is regenerated on
 every switch. ~/.hermes/.env is NOT NixOS-managed and never regenerated. Any
-secret key present in BOTH files must have identical values — otherwise the
+secret key present in BOTH must have identical values — otherwise the
 deployment's idea of the secret diverges from the running gateway's.
 
-Strategy (hermetic, no live gateway):
-  1. Parse both env files (constructed in a temp HOME).
-  2. For every key defined in both, assert byte-equal values.
-  3. Any mismatch = the .env copy will shadow the managed one at runtime.
-
-Also asserts the sops-managed key list is extractable from the template in
-modules/aspects/server/hermes/hermes-agent.nix — catches drift when someone
-adds a key to the template and the extraction here stops seeing it.
+What is worth testing here, and what is not: the comparison itself is a
+comprehension over two dicts, so a test that feeds it a crafted mismatch only
+tests Python — it would pass forever regardless of this repo. There is no such
+test. What IS tested is (a) the live host, where the comparison gets real
+inputs, and (b) that the key sets it depends on are complete, which is where
+drift would silently disable the guard.
 """
 
 from __future__ import annotations
@@ -31,10 +29,13 @@ import pytest
 REPO = Path(__file__).resolve().parents[2]
 HERMES_MODULE = REPO / "modules/aspects/server/hermes/hermes-agent.nix"
 
-# Keys that are deployment secrets: presence in .env is only legitimate when
-# it matches the rendered env file exactly. Behavioral keys
-# (ENABLED/HOST/PORT) are NOT secrets — .env may legitimately diverge there
-# (different profile config).
+# Keys that are deployment secrets: presence in .env is only legitimate when it
+# matches the rendered env file exactly. Behavioral keys (ENABLED/HOST/PORT) are
+# NOT secrets — .env may legitimately diverge there (different profile config).
+#
+# Hand-maintained, which is a drift risk: add a secret to the template and this
+# list does not grow by itself, silently narrowing the guard. Hence
+# test_every_secret_backed_key_is_listed, which asserts the converse direction.
 SECRET_KEYS = [
     "API_SERVER_KEY",
     "TELEGRAM_BOT_TOKEN",
@@ -45,6 +46,12 @@ SECRET_KEYS = [
     "HERMES_LANGFUSE_SECRET_KEY",
     "OPENROUTER_API_KEY",
     "GITHUB_TOKEN",
+    # Found by test_every_secret_backed_key_is_listed: both are credentials the
+    # template renders from sops, and both were uncovered here — a .env copy of
+    # the dashboard password hash or session secret would have shadowed the
+    # managed value with nothing checking it.
+    "HERMES_DASHBOARD_BASIC_AUTH_PASSWORD_HASH",
+    "HERMES_DASHBOARD_BASIC_AUTH_SECRET",
 ]
 
 _LINE = re.compile(r"^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$")
@@ -71,50 +78,71 @@ def parse_env(path: Path) -> dict[str, str]:
     return out
 
 
-def _template_keys() -> set[str]:
-    """Keys the sops template writes into the rendered env file.
-
-    Three shapes, all of which must be understood — a scan that only knows one
-    of them silently stops covering the others:
-      * `{ env = "KEY"; secret = "..."; }`   — a secret-backed row
-      * `"KEY=${config.sops.placeholder.…}"` — the literal `=` form
-      * `"KEY=<literal>"`                    — a non-secret setting
-    """
-    keys: set[str] = set()
+def _module_text() -> str:
     if not HERMES_MODULE.exists():  # pragma: no cover
         pytest.skip("hermes-agent.nix not found")
-    text = HERMES_MODULE.read_text()
-    keys |= set(re.findall(r'\{ env = "([A-Z][A-Z0-9_]*)";', text))
-    keys |= set(re.findall(r'"([A-Z][A-Z0-9_]*)=\$\{config\.sops\.placeholder', text))
-    keys |= set(re.findall(r'"([A-Z][A-Z0-9_]*)=[^"$]', text))
-    return keys
+    return HERMES_MODULE.read_text()
+
+
+def _row_keys(text: str) -> set[str]:
+    """`{ env = "KEY"; secret = "..."; }` — a secret-backed template row."""
+    return set(re.findall(r'\{ env = "([A-Z][A-Z0-9_]*)";', text))
+
+
+def _placeholder_keys(text: str) -> set[str]:
+    """`"KEY=${config.sops.placeholder.…}"` — the literal `=` form."""
+    return set(re.findall(r'"([A-Z][A-Z0-9_]*)=\$\{config\.sops\.placeholder', text))
+
+
+def _literal_keys(text: str) -> set[str]:
+    """`"KEY=<literal>"` — a non-secret setting. Also matches the units'
+    `Environment = [ "KEY=value" ]` entries, which is harmless: see
+    test_sops_env_keys_are_all_in_the_template."""
+    return set(re.findall(r'"([A-Z][A-Z0-9_]*)=[^"$]', text))
 
 
 def test_sops_env_keys_are_all_in_the_template():
-    """Every key the rendered env file carries must be declared by the sops
-    template — no orphan writes, and no key quietly dropped by a refactor."""
-    keys = _template_keys()
-    assert "API_SERVER_KEY" in keys, (
-        "the sops template must define API_SERVER_KEY (the gateway auth secret)"
-    )
-    assert "TELEGRAM_BOT_TOKEN" in keys, (
-        "the sops template must define TELEGRAM_BOT_TOKEN"
-    )
-    # Every key this file treats as a secret must still be produced somewhere.
+    """Every key this file treats as a secret must still be produced by the
+    module — catches a key quietly dropped by a refactor.
+
+    The scan is deliberately broad, so it also sees unit-level keys
+    (HERMES_HOME, NO_PROXY, …). That does not weaken it: those are not in
+    SECRET_KEYS, and a secret key appears in the template and nowhere else.
+    """
+    text = _module_text()
+    keys = _row_keys(text) | _placeholder_keys(text) | _literal_keys(text)
     missing = [k for k in SECRET_KEYS if k not in keys]
     assert not missing, f"template no longer defines: {missing}"
 
 
-def test_no_hand_rolled_env_generator():
-    """The env file must be produced by sops-nix, not by a `cat`-based
-    activation script.
+def test_every_secret_backed_key_is_listed():
+    """The converse of the check above, and the one that closes a silent hole.
 
-    The 2026-10-14 outage was a generator that wrote `KEY=` when a secret was
-    unreadable; sops-nix renders atomically and refuses to render at all when a
-    placeholder has no secret. Reintroducing a hand-rolled writer would restore
-    the failure mode, so it is asserted against directly.
+    A secret-backed key is one whose value comes from a sops placeholder, either
+    as a row or inline. Every such key must appear in SECRET_KEYS — otherwise a
+    newly added secret is simply not covered by the shadowing comparison, and
+    the guard fails OPEN without ever saying so.
     """
-    text = HERMES_MODULE.read_text()
+    text = _module_text()
+    secret_backed = _row_keys(text) | _placeholder_keys(text)
+    assert secret_backed, "no secret-backed keys found — extraction broken"
+    unlisted = sorted(secret_backed - set(SECRET_KEYS))
+    assert not unlisted, (
+        f"secret-backed keys missing from SECRET_KEYS: {unlisted}. "
+        "Add them, or the .env-shadowing guard silently stops covering them."
+    )
+
+
+def test_no_hand_rolled_env_generator():
+    """A speed bump, not a behavioural test — deliberately, and worth saying so.
+
+    The 2026-10-14 outage came from a `cat`-based activation script that wrote
+    `KEY=` when a secret was unreadable. sops-nix renders atomically and refuses
+    to render at all when a placeholder has no secret, so that failure mode left
+    with the script. This only asserts the script has not been reintroduced by
+    name; it cannot prove the env file still comes from sops-nix.
+    """
+    text = _module_text()
     assert "sops.templates" in text, "env file is no longer rendered by sops-nix"
     assert not re.search(r"hermes-secrets-env", text), (
         "a hand-rolled secrets-env activation script is back; "
@@ -122,47 +150,14 @@ def test_no_hand_rolled_env_generator():
     )
 
 
-def test_dotenv_shadowing_detected(tmp_path: Path):
-    """The core regression: same key, different values in .env vs the rendered
-    env file must be flagged. Mirrors the production layout under tmp_path."""
-    rendered_env = tmp_path / "sops-env"
-    dot_env = tmp_path / ".env"
-    rendered_env.write_text("API_SERVER_KEY=aaaa1111aaaa1111aaaa1111aaaa1111\n")
-    dot_env.write_text("API_SERVER_KEY=bbbb2222bbbb2222bbbb2222bbbb2222\n")
-
-    rendered, dotenv = parse_env(rendered_env), parse_env(dot_env)
-    conflicts = [
-        k
-        for k in SECRET_KEYS
-        if k in rendered and k in dotenv and rendered[k] != dotenv[k]
-    ]
-    assert conflicts == ["API_SERVER_KEY"], (
-        f".env shadows the NixOS-managed env file for: {conflicts}"
-    )
-
-
-def test_dotenv_matching_values_pass(tmp_path: Path):
-    rendered_env = tmp_path / "sops-env"
-    dot_env = tmp_path / ".env"
-    val = "cccc3333cccc3333cccc3333cccc3333"
-    rendered_env.write_text(f"API_SERVER_KEY={val}\n")
-    dot_env.write_text(f"API_SERVER_KEY={val}\n")
-    rendered, dotenv = parse_env(rendered_env), parse_env(dot_env)
-    conflicts = [
-        k
-        for k in SECRET_KEYS
-        if k in rendered and k in dotenv and rendered[k] != dotenv[k]
-    ]
-    assert conflicts == []
-
-
 def test_live_host_no_shadowing():
-    """Runs only where the real /var/lib/hermes layout exists. Skipped in
-    hermetic CI (checks.nix runs with HOME=$(mktemp -d))."""
-    base = Path("/run/secrets/rendered/hermes/sops-env")
-    if not base.exists():
+    """The only test here with real inputs: compares the LIVE rendered env file
+    against ~/.hermes/.env. Skipped where that layout does not exist (hermetic CI
+    runs with HOME=$(mktemp -d))."""
+    rendered_path = Path("/run/secrets/rendered/hermes/sops-env")
+    if not rendered_path.exists():
         pytest.skip("no live rendered env file")
-    rendered = parse_env(base)
+    rendered = parse_env(rendered_path)
     dotenv = parse_env(Path("/var/lib/hermes/.hermes/.env"))
     conflicts = [
         k

@@ -11,7 +11,10 @@
 # decla>rative and durable:
 #   - venv on python3.12 (3.13+ is broken for aiogram here), built in
 #     StateDirectory on first start, idempotent marker file
-#   - token via EnvironmentFile → the existing hiring sops-env (0600 hermes)
+#   - token via EnvironmentFile → its own sops secret
+#     (/run/secrets/hermes/hr-bot-token, 0600 hermes). Not the agent's sops-env:
+#     that file no longer exists, the hermes aspects render their env file with
+#     sops.templates now.
 #   - service survives reboot and tmpfs cleanup (no /tmp dependency)
 {
   den.aspects.server.hr-bot = {

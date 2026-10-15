@@ -109,6 +109,11 @@
         owner = "nextcloud";
         group = "nextcloud";
         mode = "0600";
+        # No restartUnits, deliberately. The four workflow-ocr units bind this as a
+        # LoadCredential but their scripts never read it — verified: zero references
+        # to $CREDENTIALS_DIRECTORY/mail_smtppassword in any of them. The real
+        # consumer is Nextcloud's own mail, which reads the secret per PHP request
+        # via nix_read_secret, so a rotation takes effect without a restart.
       };
 
       sops.secrets."tailscale/auth-key" = {
@@ -116,6 +121,10 @@
         owner = "root";
         group = "root";
         mode = "0400";
+        # tailscaled-autoconnect only runs `tailscale up --auth-key ...` when the
+        # daemon is in NeedsLogin/NeedsMachineAuth/Stopped, so a rotated key is
+        # ignored while it stays Connected. Restarting tailscaled forces that cycle.
+        restartUnits = [ "tailscaled.service" ];
       };
 
       sops.secrets."cloudflare/poweredge-tunnel-token" = {
@@ -123,42 +132,57 @@
         owner = "root";
         group = "root";
         mode = "0400";
+        # Without this, a rebuild writes the new token to /run but the running
+        # cloudflared keeps the OLD one in memory — it reads the token once at
+        # ExecStart. So a rotated tunnel token would silently not take effect
+        # until someone restarted the unit by hand. Discovered while rotating the
+        # token after it leaked in secrets/poweredge/secrets.yaml.tmp.
+        restartUnits = [ "cloudflared-poweredge.service" ];
       };
       sops.secrets."nextcloud/mcp-app-password" = {
         sopsFile = ../../../secrets/poweredge/secrets.yaml;
         owner = "root";
         group = "root";
         mode = "0400";
-      };
-      # OAuth2 client credentials for nc-mcp. Registered via:
-      #   occ oauth2:add-client nc-mcp <redirect_uri>
-      # nc-mcp uses client_credentials flow against Nextcloud OAuth2 endpoint
-      # (works for users with 2FA — app passwords are blocked).
-      sops.secrets."nextcloud/oauth2-client-id" = {
-        sopsFile = ../../../secrets/poweredge/secrets.yaml;
-        owner = "root"; group = "root"; mode = "0400";
-      };
-      sops.secrets."nextcloud/oauth2-client-secret" = {
-        sopsFile = ../../../secrets/poweredge/secrets.yaml;
-        owner = "root"; group = "root"; mode = "0400";
+        # Read once at unit start by the quadlet's ExecStartPre helper, which cats
+        # the credential into /run/nextcloud-mcp.env (the container's
+        # EnvironmentFile). Without this the container keeps the old password.
+        restartUnits = [ "nextcloud-mcp.service" ];
       };
       sops.secrets."nextcloud/ocr-webhook-secret" = {
         sopsFile = ../../../secrets/poweredge/secrets.yaml;
         owner = "nextcloud"; group = "nextcloud"; mode = "0400";
+        # Three consumers, none of which re-read on their own: the occ
+        # config:system:set ocrflow_secret in nextcloud-setup.service.postStart
+        # (whose nixpkgs restartTriggers only cover overrideConfig), plus
+        # LoadCredential in nc-ocr-webhook and nc-ocr-register-webhook.
+        restartUnits = [ "nextcloud-setup.service" "nc-ocr-webhook.service" "nc-ocr-register-webhook.service" ];
       };
       sops.secrets."nextcloud/ocr-webdav-password" = {
         sopsFile = ../../../secrets/poweredge/secrets.yaml;
         owner = "nextcloud"; group = "nextcloud"; mode = "0400";
+        # LoadCredential nc-ocr-password in nc-ocr-webhook (WebDAV auth as likivik),
+        # read once at process start.
+        restartUnits = [ "nc-ocr-webhook.service" ];
       };
       sops.secrets."nextcloud/minimax-api-key" = {
         sopsFile = ../../../secrets/poweredge/secrets.yaml;
         owner = "nextcloud"; group = "nextcloud"; mode = "0400";
+        # Was declared but wired to nothing: the engine reads NC_OCR_MINIMAX_KEY or
+        # NC_OCR_MINIMAX_KEY_FILE (minimax_engine.py:290,293) and the service set
+        # neither, so the minimax engine had no credential at all. Now bound as a
+        # LoadCredential in nc-ocr-webhook and exported by the start script. The
+        # engine is opt-in (NC_OCR_ENGINE=google), so this is inert until selected.
+        restartUnits = [ "nc-ocr-webhook.service" ];
       };
       # Google Cloud Vision service-account JSON key (whole-doc OCR engine).
       # Project spectacle-xandria; SA ocr-worker@spectacle-xandria.iam.gserviceaccount.com.
       sops.secrets."nextcloud/ocr-google-key" = {
         sopsFile = ../../../secrets/poweredge/secrets.yaml;
         owner = "nextcloud"; group = "nextcloud"; mode = "0400";
+        # LoadCredential google-ocr-key in nc-ocr-webhook, exported as
+        # GOOGLE_APPLICATION_CREDENTIALS, read once at process start.
+        restartUnits = [ "nc-ocr-webhook.service" ];
       };
 
       services.tailscale.authKeyFile =

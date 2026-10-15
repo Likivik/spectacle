@@ -21,21 +21,69 @@
       ncOcrFlowSrc = ../../../../pkgs/nc-ocr-flow;
       ocrVenv = "/var/lib/nc-ocr/venv-v4";
 
+      # Files whose content change MUST trigger a venv reinstall.
+      # We track hashes (see ``webhookStartScript`` below) instead of
+      # mtimes because every file inside ``/nix/store`` has a synthetic
+      # mtime of 1970-01-01, so a `-ot` comparison against the venv
+      # marker is always false — the mtime guard never fired and any
+      # Python fix landed after 2026-09-27 never reached the deployed
+      # venv copy.
+      ncOcrFlowSrcFiles = [
+        "${ncOcrFlowSrc}/src/nc_ocr_flow/webhook_server.py"
+        "${ncOcrFlowSrc}/src/nc_ocr_flow/ocr.py"
+        "${ncOcrFlowSrc}/src/nc_ocr_flow/jobstore.py"
+      ];
+
       # Start script: create venv with pip if missing, then run webhook server
       webhookStartScript = pkgs.writeShellScript "nc-ocr-webhook-start" ''
         set -eu
         export NC_OCR_NC_PASSWORD_FILE="$CREDENTIALS_DIRECTORY/nc-ocr-password"
         export NC_OCR_WEBHOOK_SECRET_FILE="$CREDENTIALS_DIRECTORY/nc-ocr-webhook-secret"
         export GOOGLE_APPLICATION_CREDENTIALS="$CREDENTIALS_DIRECTORY/google-ocr-key"
-        if [ ! -d "${ocrVenv}" ] || [ ! -f "${ocrVenv}/.installed" ] || [ "${ocrVenv}/.installed" -ot "${ncOcrFlowSrc}/src/nc_ocr_flow/webhook_server.py" ] || [ "${ocrVenv}/.installed" -ot "${ncOcrFlowSrc}/src/nc_ocr_flow/ocr.py" ]; then
-          echo "Creating OCR venv..."
+        export NC_OCR_MINIMAX_KEY_FILE="$CREDENTIALS_DIRECTORY/nc-ocr-minimax-key"
+
+        # Content-based staleness check. ${ocrVenv}/.installed carries
+        # one "<source-path>=<sha256>" line per file in
+        # ncOcrFlowSrcFiles; if any line disagrees with the current
+        # hash (or any file is missing from the manifest) we rebuild.
+        #
+        # Why not just compare mtimes? Every file under ${"$"}{NIX_STORE:-/nix/store}
+        # has a synthetic mtime of 1970-01-01, which is older than any
+        # ``touch`` a systemd ExecStart can produce. The old
+        # ``[ ".installed" -ot "$src" ]`` test was therefore always
+        # false, and venv rebuilds never happened after the first run.
+        rebuild=0
+        manifest="${ocrVenv}/.installed"
+        if [ ! -d "${ocrVenv}" ] || [ ! -f "$manifest" ]; then
+          rebuild=1
+        else
+          for f in ${lib.concatStringsSep " " ncOcrFlowSrcFiles}; do
+            current=$(sha256sum "$f" 2>/dev/null | awk '{print $1}')
+            expected=$(grep -F "$f=" "$manifest" 2>/dev/null \
+                       | head -n 1 | sed 's/.*=//')
+            if [ -z "$current" ] || [ "$current" != "$expected" ]; then
+              rebuild=1
+              break
+            fi
+          done
+        fi
+
+        if [ "$rebuild" -eq 1 ]; then
+          echo "Creating OCR venv (python3.12)..."
           rm -rf "${ocrVenv}"
           ${pkgs.python312}/bin/python3.12 -m venv ${ocrVenv}
           ${ocrVenv}/bin/pip install --no-cache-dir pymupdf pillow requests img2pdf numpy onnxruntime fastapi uvicorn pydantic
           ${ocrVenv}/bin/pip install --no-cache-dir google-cloud-vision google-cloud-storage
           ${ocrVenv}/bin/pip install --no-cache-dir pdf-inspector
           ${ocrVenv}/bin/pip install --no-cache-dir --no-deps ${ncOcrFlowSrc}
-          touch ${ocrVenv}/.installed
+
+          # Write the manifest of current content hashes so the next
+          # start can tell at a glance whether the venv is fresh.
+          : > "$manifest"
+          for f in ${lib.concatStringsSep " " ncOcrFlowSrcFiles}; do
+            h=$(sha256sum "$f" | awk '{print $1}')
+            printf '%s=%s\n' "$f" "$h" >> "$manifest"
+          done
         fi
         export PYTHONPATH="${ncOcrFlowSrc}/src:''${PYTHONPATH:-}"
         exec ${ocrVenv}/bin/python -m nc_ocr_flow.webhook_server
@@ -176,10 +224,12 @@
             webdavPass = config.sops.secrets."nextcloud/ocr-webdav-password".path;
             webhookSecret = config.sops.secrets."nextcloud/ocr-webhook-secret".path;
             googleKey = config.sops.secrets."nextcloud/ocr-google-key".path;
+            minimaxKey = config.sops.secrets."nextcloud/minimax-api-key".path;
           in [
             "nc-ocr-password:${webdavPass}"
             "nc-ocr-webhook-secret:${webhookSecret}"
             "google-ocr-key:${googleKey}"
+            "nc-ocr-minimax-key:${minimaxKey}"
           ];
         };
 
@@ -189,6 +239,15 @@
           pkgs.poppler-utils
           pkgs.curl
           pkgs.stdenv.cc.cc.lib
+          # ``sha256sum`` / ``awk`` / ``sed`` / ``grep`` for the new
+          # content-based venv-rebuild check. The systemd unit inherits
+          # ``$PATH`` from the systemd manager, which on NixOS does
+          # NOT include coreutils — declaring them here keeps the
+          # start script (which runs without /etc/profile) working.
+          pkgs.coreutils
+          pkgs.gawk
+          pkgs.gnused
+          pkgs.gnugrep
         ];
 
         script = ''

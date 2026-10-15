@@ -591,6 +591,53 @@ def _needs_ocr_decision(
     return False, SKIP_REASON_BORN_DIGITAL
 
 
+def _assert_ocr_produced_blocks(result, nc_path: str) -> None:
+    """Raise if a structured-OCR engine returned zero blocks.
+
+    Two engines populate ``result.page_results`` (google, minimax); the
+    third (``tesseract``) writes the text layer directly via ocrmypdf and
+    deliberately leaves ``page_results=[]`` — that one is exempted.
+
+    Background: the Google engine's bbox parser used to silently drop
+    every Word (Vision populates ``normalized_vertices`` on the
+    whole-doc batch path; pre-fix the code only read ``vertices``), so
+    a "successful" run returned ``page_results`` with empty blocks for
+    every page. The webhook then unconditionally stamped
+    ``Producer = 'nc-ocr-flow 0.3 (engine=google)'`` and uploaded,
+    marking the file ``done`` forever. Two follow-on costs:
+
+      1. The stamp-skip branch (``_already_stamped_by_us``) kept
+         hiding the file from re-OCR until manual intervention.
+      2. The user's Nextcloud storage was rewriting ``Producer`` to
+         ``pikepdf …`` (a separate, unfired TODO), so the stamp-based
+         dedup didn't even survive — we just had no second-line
+         defence.
+
+    Raising here takes the existing error path (``_run_job``'s
+    ``except Exception`` already records ``status=error`` and writes
+    ``error`` to the SQLite job row). The file is left UN-stamped and
+    UN-uploaded, so the next webhook or ``/rescan`` retries it. The
+    error message names file, engine, and block count so an operator
+    triaging the panel can act on it.
+    """
+    # Inline the canonical names instead of importing the registry, to
+    # avoid loading engine modules just for a string compare and to
+    # keep this function stable across engine renames.
+    if result.engine_used not in ("google", "minimax"):
+        return
+
+    pages = result.page_results or []
+    total_blocks = sum(len(p.blocks) for p in pages)
+    if total_blocks > 0:
+        return
+
+    raise RuntimeError(
+        f"OCR engine={result.engine_used} produced 0 blocks across "
+        f"{len(pages)} page(s) for {nc_path!r}: empty result; file not "
+        f"stamped or uploaded, eligible for retry"
+    )
+
+
 def _process_file(nc_path: str, node_id: int, engine: str | None = None,
                   force: bool = False) -> dict:
     """Download, OCR, upload back. Returns result dict.
@@ -625,6 +672,14 @@ def _process_file(nc_path: str, node_id: int, engine: str | None = None,
             # Document image: convert to PDF, OCR
             pdf_path = _image_to_pdf(local_file)
             result = process_pdf(pdf_path, engine=engine)
+
+            # Gate the stamp + upload on a non-empty OCR result. An
+            # engine that returned zero blocks (the documented Google
+            # bbox-parser bug, or any future regression that drops text
+            # silently) must NOT mark the file ``done`` — the worker
+            # sees the raise as ``status=error`` and the next webhook
+            # /rescan retries it. See :func:`_assert_ocr_produced_blocks`.
+            _assert_ocr_produced_blocks(result, nc_path)
 
             # Stamp PDF metadata: engine, timestamp, pages per engine
             _stamp_metadata(
@@ -669,6 +724,11 @@ def _process_file(nc_path: str, node_id: int, engine: str | None = None,
             log.info("OCR-ing PDF (engine=%s force=%s): %s", engine, force, nc_path)
             result = process_pdf(local_file, engine=engine)
 
+            # Gate the stamp + upload on a non-empty OCR result. See the
+            # image branch above for the rationale and
+            # :func:`_assert_ocr_produced_blocks` for the engine list.
+            _assert_ocr_produced_blocks(result, nc_path)
+
             # Stamp PDF metadata: engine, timestamp, pages per engine
             _stamp_metadata(
                 Path(result.output_pdf),
@@ -693,12 +753,18 @@ def _process_file(nc_path: str, node_id: int, engine: str | None = None,
 
 # --- Job tracking (for /status panel + NC app) ---
 import queue
-import itertools
 
-_job_seq = itertools.count(1)
 #: Workers are woken by this signal; the work list itself is the
 #: ``jobs`` table in SQLite, so a backlog of a million files costs
 #: nothing in RAM.
+#:
+#: NB: the row id is assigned by SQLite (``record_enqueue`` reads
+#: back ``lastrowid``) — not by an in-process counter. An earlier
+#: ``itertools.count`` counter restarted at 1 on every service boot;
+#: persisted rows kept their old ids, so the first batch of new
+#: enqueues collided with old rows and ``INSERT OR IGNORE`` discarded
+#: them silently. Letting SQLite auto-assign makes the sequence
+#: collision-free across restarts.
 _work_available = threading.Event()
 #: Idle workers wake up this often even without a signal, so a lost
 #: notification can never wedge the queue.
@@ -1077,9 +1143,15 @@ def _enqueue(nc_path: str, node_id: int, engine: str | None = None,
     the recently-processed guard. The NC app's "Re-OCR anyway" action
     sends this so the user can deliberately re-OCR a file we previously
     classified or stamped.
+
+    The ``id`` is **assigned by SQLite**, not by an in-process counter
+    — that means the row's primary key survives a service restart and
+    cannot collide with whatever the next process happens to call
+    itself. ``record_enqueue`` writes the new id back into ``job`` so
+    the API response reflects the canonical id.
     """
     job = {
-        "id": next(_job_seq),
+        # id intentionally unset — let SQLite's rowid alias assign.
         "path": nc_path,
         "nc_path": nc_path,
         "node_id": node_id,
@@ -1094,7 +1166,9 @@ def _enqueue(nc_path: str, node_id: int, engine: str | None = None,
         "reason": None,
     }
     _record_job(job)
-    # Mirror to durable SQLite history (best-effort, never raises).
+    # Mirror to durable SQLite history. ``record_enqueue`` writes the
+    # canonical id back into ``job`` and may raise on an explicit-id
+    # collision (the bug we just removed).
     jobstore.record_enqueue(job)
     # The row is already in SQLite (``record_enqueue`` above) — that IS
     # the queue. Mark the file in-flight so a repeat scan skips it,

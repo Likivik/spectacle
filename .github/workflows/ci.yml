@@ -119,3 +119,28 @@ jobs:
             echo "configs that do not evaluate:$failed"
             exit 1
           fi
+
+  nix-checks:
+    name: nix checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: DeterminateSystems/nix-installer-action@main
+        with:
+          extra-conf: |
+            experimental-features = nix-command flakes
+            accept-flake-config = true
+
+      - name: Build the CI-safe check aggregate
+        # ONE attr on purpose, so a new test suite joins CI by adding a line to
+        # `checks.ci` in modules/defaults/checks.nix — no edit here, and no
+        # ruleset edit, because this job's name is the required check and it
+        # never changes.
+        #
+        # Deliberately NOT `nix build .#checks`: that set includes
+        # serenity-smoke-vm plus the *-boot VM tests, none of which can finish
+        # on a hosted runner. See the comment on checks.ci for why membership is
+        # an explicit list rather than a name pattern.
+        run: nix build -L .#checks.x86_64-linux.ci

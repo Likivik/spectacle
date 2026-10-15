@@ -9,6 +9,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -396,12 +397,35 @@ def test_process_file_force_bypasses_skip(monkeypatch, tmp_path):
     pdf = tmp_path / "x.pdf"
     _build_pdf(pdf, with_text=True)
 
+    def fake_proc_with_blocks(pdf_path, engine=None):
+        """Helper: stub process_pdf that returns a non-empty page_results,
+        so it clears the ``_assert_ocr_produced_blocks`` zero-block gate
+        introduced in this PR. Without this stub the old test kept
+        returning ``ProcessResult(page_results=[])`` and now (correctly)
+        trips the gate."""
+        from nc_ocr_flow.ocr import ProcessResult
+        from nc_ocr_flow.ocr_models import OcrBlock, OcrResult
+        return ProcessResult(
+            output_pdf=str(pdf_path),
+            engine_used="google",
+            page_results=[
+                OcrResult(
+                    blocks=[OcrBlock(
+                        bbox=(10.0, 10.0, 100.0, 30.0),
+                        text="stub-ocr-text",
+                        confidence=0.95,
+                        label="google-word",
+                    )],
+                    page_width=595.0, page_height=842.0,
+                ),
+            ],
+        )
+
     calls = {"proc": []}
 
     def fake_proc(pdf_path, engine=None):
         calls["proc"].append((str(pdf_path), engine))
-        from nc_ocr_flow.ocr import ProcessResult
-        return ProcessResult(output_pdf=str(pdf_path), engine_used="google")
+        return fake_proc_with_blocks(pdf_path, engine)
 
     # classify returns needs_ocr=False → would normally skip.
     def fake_classify(_path):
@@ -438,10 +462,13 @@ def test_process_file_force_bypasses_skip(monkeypatch, tmp_path):
 
 
 def test_process_file_skips_born_digital(monkeypatch, tmp_path):
-    """classifier says needs_ocr=False → _process_file returns skipped.
+    """classifier says needs_ocr=False AND not stamped → ``born_digital_text_based``.
 
-    No prior Google-stamp (file is fresh) → classifier decides →
-    ``born_digital_or_stamped_good`` skip reason. process_pdf MUST
+    No prior Google-stamp (the stamp check is monkeypatched False below),
+    so the classifier decides the skip. The reason string recorded in the
+    response must distinguish this branch from the ``stamped_good_by_us``
+    branch — both used to be collapsed into ``born_digital_or_stamped_good``
+    and the operator couldn't tell them apart on the panel. process_pdf MUST
     not be called.
     """
     pdf = tmp_path / "y.pdf"
@@ -462,6 +489,11 @@ def test_process_file_skips_born_digital(monkeypatch, tmp_path):
             "has_encoding_issues": False,
         }
 
+    # Force the stamp check False so the test is unambiguously about the
+    # classifier branch — the stamp branch is covered separately by
+    # ``test_process_file_skip_reasons_distinguish_stamped_vs_born_digital``
+    # below.
+    monkeypatch.setattr(ws, "_already_stamped_by_us", lambda _path: False)
     monkeypatch.setattr(ws, "_webdav_download",
                        lambda nc, dest: __import__("shutil").copy2(pdf, dest))
     monkeypatch.setattr(ws, "_webdav_upload", lambda *a, **k: None)
@@ -473,7 +505,122 @@ def test_process_file_skips_born_digital(monkeypatch, tmp_path):
 
     assert calls["proc"] == [], "process_pdf must NOT run when classifier says skip"
     assert res.get("skipped") is True
-    assert res.get("reason") == "born_digital_or_stamped_good"
+    # New contract (was ``born_digital_or_stamped_good``): the reason
+    # recorded in the response must be the classifier branch, NOT the
+    # stamp branch, so an operator can tell them apart on the panel.
+    assert res.get("reason") == ws.SKIP_REASON_BORN_DIGITAL
+    assert res.get("reason") != ws.SKIP_REASON_STAMPED_BY_US
+    # Sanity: the legacy undifferentiated string is no longer emitted.
+    assert res.get("reason") != ws.SKIP_REASON_LEGACY
+
+
+def test_process_file_skip_reasons_distinguish_stamped_vs_born_digital(
+    monkeypatch, tmp_path,
+):
+    """The two skip branches must produce DISTINCT reason strings.
+
+    Pre-PR both branches collapsed into ``born_digital_or_stamped_good``,
+    which made it impossible to tell "we already OCR'd this with Google"
+    apart from "the classifier thinks this is born-digital". This test
+    pins that contract: the stamp branch emits ``stamped_good_by_us`` and
+    the classifier branch emits ``born_digital_text_based``, and the
+    _legacy_ undifferentiated string is no longer emitted by either.
+    """
+    # --- Case 1: stamped by us → ``stamped_good_by_us`` -------------------
+    pdf_stamped = tmp_path / "stamped.pdf"
+    _build_pdf(pdf_stamped, with_text=True)
+
+    def fake_classify_stamped(_path):
+        # Classifier would ALSO say skip (text_based), but the stamp check
+        # short-circuits before the classifier is consulted. We make the
+        # classifier raise to prove the stamp branch doesn't depend on it.
+        raise AssertionError("classify must not be called when stamp matches")
+
+    monkeypatch.setattr(ws, "_already_stamped_by_us", lambda _path: True)
+    monkeypatch.setattr(
+        ws, "_webdav_download",
+        lambda nc, dest: __import__("shutil").copy2(pdf_stamped, dest),
+    )
+    monkeypatch.setattr(ws, "_webdav_upload", lambda *a, **k: None)
+    monkeypatch.setattr(ws, "_stamp_metadata", lambda *a, **k: None)
+    with patch.object(ws, "process_pdf") as proc_mock, \
+         patch.object(ws, "classify_pdf", side_effect=fake_classify_stamped):
+        res_stamped = ws._process_file(
+            "/likivik/files/stamped.pdf", node_id=10,
+            engine="google", force=False,
+        )
+    proc_mock.assert_not_called()
+    assert res_stamped.get("skipped") is True
+    assert res_stamped.get("reason") == ws.SKIP_REASON_STAMPED_BY_US
+    assert res_stamped.get("reason") != ws.SKIP_REASON_BORN_DIGITAL
+    assert res_stamped.get("reason") != ws.SKIP_REASON_LEGACY
+
+    # --- Case 2: clean text_based, NOT stamped → ``born_digital_text_based``
+    pdf_clean = tmp_path / "clean.pdf"
+    _build_pdf(pdf_clean, with_text=True)
+
+    def fake_classify_clean(_path):
+        return {
+            "needs_ocr": False,
+            "pdf_type": "text_based",
+            "confidence": 1.0,
+            "has_encoding_issues": False,
+        }
+
+    monkeypatch.setattr(ws, "_already_stamped_by_us", lambda _path: False)
+    monkeypatch.setattr(
+        ws, "_webdav_download",
+        lambda nc, dest: __import__("shutil").copy2(pdf_clean, dest),
+    )
+    monkeypatch.setattr(ws, "_webdav_upload", lambda *a, **k: None)
+    monkeypatch.setattr(ws, "_stamp_metadata", lambda *a, **k: None)
+    with patch.object(ws, "process_pdf") as proc_mock, \
+         patch.object(ws, "classify_pdf", side_effect=fake_classify_clean):
+        res_clean = ws._process_file(
+            "/likivik/files/clean.pdf", node_id=11,
+            engine="google", force=False,
+        )
+    proc_mock.assert_not_called()
+    assert res_clean.get("skipped") is True
+    assert res_clean.get("reason") == ws.SKIP_REASON_BORN_DIGITAL
+    assert res_clean.get("reason") != ws.SKIP_REASON_STAMPED_BY_US
+    assert res_clean.get("reason") != ws.SKIP_REASON_LEGACY
+
+
+def test_needs_ocr_decision_force_true_returns_true_none(monkeypatch, tmp_path):
+    """Unit-level contract for ``_needs_ocr_decision``: ``force=True`` bypasses.
+
+    The runtime skip behaviour is unchanged by the reason-split PR, but
+    ``_needs_ocr_decision`` is now a ``(bool, str | None)`` pair. When
+    ``force=True`` the function must return ``(True, None)`` — i.e. it
+    does NOT report a skip reason, and the caller (``_process_file``) is
+    not in the skip branch.
+
+    We additionally assert that, even when both the stamp check and the
+    classifier would otherwise say skip, ``force=True`` short-circuits
+    before either is consulted — so the (True, None) return is robust
+    to whatever upstream signals look like.
+    """
+    pdf = tmp_path / "any.pdf"
+    _build_pdf(pdf, with_text=True)
+
+    # Both short-circuit inputs would say skip — but ``force=True`` wins.
+    monkeypatch.setattr(ws, "_already_stamped_by_us", lambda _path: True)
+
+    def would_classify_skip(_path):
+        raise AssertionError(
+            "classify_pdf must NOT be consulted when force=True; the "
+            "stamp check is the first branch and is bypassed by force"
+        )
+
+    with patch.object(ws, "classify_pdf", side_effect=would_classify_skip):
+        needs_ocr, skip_reason = ws._needs_ocr_decision(pdf, force=True)
+
+    assert needs_ocr is True, "force=True must always force OCR"
+    assert skip_reason is None, (
+        "force=True must not carry a skip reason — the function is in "
+        "the 'OCR must run' branch, not the 'skip' branch"
+    )
 
 
 def test_process_file_bad_layer_reocr(monkeypatch, tmp_path):
@@ -491,7 +638,23 @@ def test_process_file_bad_layer_reocr(monkeypatch, tmp_path):
     def fake_proc(pdf_path, engine=None):
         calls["proc"].append((str(pdf_path), engine))
         from nc_ocr_flow.ocr import ProcessResult
-        return ProcessResult(output_pdf=str(pdf_path), engine_used="google")
+        from nc_ocr_flow.ocr_models import OcrBlock, OcrResult
+        # Non-empty page_results — see _assert_ocr_produced_blocks gate.
+        return ProcessResult(
+            output_pdf=str(pdf_path),
+            engine_used="google",
+            page_results=[
+                OcrResult(
+                    blocks=[OcrBlock(
+                        bbox=(10.0, 10.0, 100.0, 30.0),
+                        text="stub-ocr-text",
+                        confidence=0.95,
+                        label="google-word",
+                    )],
+                    page_width=595.0, page_height=842.0,
+                ),
+            ],
+        )
 
     def fake_classify(_path):
         return {
@@ -513,3 +676,214 @@ def test_process_file_bad_layer_reocr(monkeypatch, tmp_path):
     assert calls["proc"], "classifier said needs_ocr=True → process_pdf must run"
     assert res.get("skipped") is not True
     assert res.get("path") == "/likivik/files/z.pdf"
+
+
+# --- zero-block OCR gate (regression: Google bbox-parser bug) ---------------
+#
+# Background: pre-PR the Google engine returned ProcessResult with
+# page_results=[] on every successful-looking run (silent bbox-parser
+# bug). The webhook then unconditionally stamped + uploaded, marking
+# the file ``done`` forever. This test pins the second half of the fix:
+# _process_file MUST raise before stamping / uploading on a zero-block
+# google result, so the worker's existing except path records
+# ``status=error`` and the file stays eligible for retry.
+
+
+def test_process_file_zero_block_does_not_stamp_or_upload(monkeypatch, tmp_path):
+    """google engine returns 0 blocks → gate raises, no upload, no stamp.
+
+    Asserts all three behaviours in one go:
+      1. ``_process_file`` raises ``RuntimeError`` (gate fires).
+      2. ``_webdav_upload`` is never called.
+      3. ``_stamp_metadata`` is never called.
+      4. The error message names the file, the engine, and the block count
+         so an operator triaging the panel can act on it.
+    """
+    pdf = tmp_path / "empty.pdf"
+    _build_pdf(pdf, with_text=False)
+
+    calls = {"upload": [], "stamp": []}
+
+    monkeypatch.setattr(
+        ws, "_webdav_download",
+        lambda nc, dest: __import__("shutil").copy2(pdf, dest),
+    )
+    monkeypatch.setattr(
+        ws, "_webdav_upload",
+        lambda nc, dest, *a, **k: calls["upload"].append((nc, str(dest))),
+    )
+    monkeypatch.setattr(
+        ws, "_stamp_metadata",
+        lambda *a, **k: calls["stamp"].append(a),
+    )
+
+    def fake_proc_empty(pdf_path, engine=None):
+        # The bug shape: a "successful" run whose page_results is empty.
+        from nc_ocr_flow.ocr import ProcessResult
+        return ProcessResult(
+            output_pdf=str(pdf_path),
+            engine_used="google",
+            page_results=[],   # would have been empty pre-fix
+        )
+
+    def fake_classify(_path):
+        return {
+            "needs_ocr": True,
+            "pdf_type": "scanned",
+            "confidence": 0.95,
+            "has_encoding_issues": False,
+        }
+
+    with patch.object(ws, "process_pdf", side_effect=fake_proc_empty), \
+         patch.object(ws, "classify_pdf", side_effect=fake_classify):
+        with pytest.raises(RuntimeError) as ei:
+            ws._process_file(
+                "/likivik/files/empty.pdf", node_id=42,
+                engine="google", force=False,
+            )
+
+    # Gate fired with a message that an operator can actually triage on.
+    msg = str(ei.value)
+    assert "google" in msg, f"engine name missing from error: {msg!r}"
+    assert "/likivik/files/empty.pdf" in msg, f"file path missing: {msg!r}"
+    assert "0 blocks" in msg, f"block count missing: {msg!r}"
+
+    # Stamp and upload must NOT have run — the file stays in-flight,
+    # eligible for the next webhook or /rescan to retry it.
+    assert calls["upload"] == [], (
+        f"zero-block OCR must NOT trigger upload, got {calls['upload']!r}"
+    )
+    assert calls["stamp"] == [], (
+        f"zero-block OCR must NOT trigger stamp, got {calls['stamp']!r}"
+    )
+
+
+def test_process_file_zero_block_image_branch_also_gates(monkeypatch, tmp_path):
+    """Same gate, image branch (image → img2pdf → process_pdf → gates).
+
+    The image branch builds a PDF from the image and then runs the same
+    orchestrator; we stub the orchestrator to return an empty
+    page_results and assert the same raise/upload/stamp invariants.
+    """
+    # Use any small image: a 100x100 white PNG via PIL.
+    from PIL import Image
+    img_path = tmp_path / "page.png"
+    Image.new("RGB", (100, 100), "white").save(img_path)
+
+    calls = {"upload": [], "stamp": [], "delete": []}
+
+    monkeypatch.setattr(
+        ws, "_webdav_download",
+        lambda nc, dest: __import__("shutil").copy2(img_path, dest),
+    )
+    monkeypatch.setattr(
+        ws, "_webdav_upload",
+        lambda nc, dest, *a, **k: calls["upload"].append((nc, str(dest))),
+    )
+    monkeypatch.setattr(
+        ws, "_webdav_delete",
+        lambda nc: calls["delete"].append(nc),
+    )
+    monkeypatch.setattr(
+        ws, "_stamp_metadata",
+        lambda *a, **k: calls["stamp"].append(a),
+    )
+
+    def fake_proc_empty(pdf_path, engine=None):
+        from nc_ocr_flow.ocr import ProcessResult
+        return ProcessResult(
+            output_pdf=str(pdf_path),
+            engine_used="google",
+            page_results=[],
+        )
+
+    # Pretend the classifier says this image IS a document so we
+    # reach the OCR branch. ``ws.classify`` is a module-level binding
+    # imported from .classifier, so monkeypatch.setattr (not
+    # patch.object) is the right tool here.
+    monkeypatch.setattr(
+        ws, "classify",
+        lambda _path: SimpleNamespace(is_document=True, reason="ok"),
+    )
+
+    with patch.object(ws, "process_pdf", side_effect=fake_proc_empty):
+        with pytest.raises(RuntimeError) as ei:
+            ws._process_file(
+                "/likivik/files/orig.png", node_id=7,
+                engine="google", force=False,
+            )
+
+    assert "google" in str(ei.value)
+    assert "/likivik/files/orig.png" in str(ei.value)
+
+    assert calls["upload"] == [], (
+        f"image-branch zero-block must NOT upload, got {calls['upload']!r}"
+    )
+    assert calls["stamp"] == [], (
+        f"image-branch zero-block must NOT stamp, got {calls['stamp']!r}"
+    )
+    assert calls["delete"] == [], (
+        f"image-branch zero-block must NOT delete the original, got "
+        f"{calls['delete']!r}"
+    )
+
+
+def test_process_file_tesseract_engine_bypasses_gate(monkeypatch, tmp_path):
+    """Tesseract writes the layer via ocrmypdf, leaving page_results=[].
+
+    Counting blocks across page_results=[] would always raise; the
+    gate explicitly exempts tesseract so existing flows keep working.
+    This test pins the exemption.
+    """
+    pdf = tmp_path / "tess.pdf"
+    _build_pdf(pdf, with_text=False)
+
+    calls = {"upload": [], "stamp": []}
+
+    monkeypatch.setattr(
+        ws, "_webdav_download",
+        lambda nc, dest: __import__("shutil").copy2(pdf, dest),
+    )
+    monkeypatch.setattr(
+        ws, "_webdav_upload",
+        lambda nc, dest, *a, **k: calls["upload"].append((nc, str(dest))),
+    )
+    monkeypatch.setattr(
+        ws, "_stamp_metadata",
+        lambda *a, **k: calls["stamp"].append(a),
+    )
+
+    def fake_proc_tess(pdf_path, engine=None):
+        # Tesseract's actual ProcessResult shape: page_results=[],
+        # tess_pages=[...]. The gate MUST NOT raise for this.
+        from nc_ocr_flow.ocr import ProcessResult
+        return ProcessResult(
+            output_pdf=str(pdf_path),
+            engine_used="tesseract",
+            page_results=[],
+            tess_pages=[0],
+        )
+
+    def fake_classify(_path):
+        return {
+            "needs_ocr": True,
+            "pdf_type": "scanned",
+            "confidence": 0.95,
+            "has_encoding_issues": False,
+        }
+
+    with patch.object(ws, "process_pdf", side_effect=fake_proc_tess), \
+         patch.object(ws, "classify_pdf", side_effect=fake_classify):
+        # No raise expected — the tesseract exemption must hold.
+        res = ws._process_file(
+            "/likivik/files/tess.pdf", node_id=8,
+            engine="tesseract", force=False,
+        )
+
+    assert res.get("skipped") is not True
+    # Upload happens from the tempdir inside _process_file, not tmp_path;
+    # verify the nc-side path matches and exactly one upload + one stamp ran.
+    assert len(calls["upload"]) == 1
+    nc_uploaded, _dest = calls["upload"][0]
+    assert nc_uploaded == "/likivik/files/tess.pdf"
+    assert len(calls["stamp"]) == 1, "tesseract success must stamp"

@@ -22,8 +22,51 @@ class _Box:
         ]
 
 
+class _BoxNorm:
+    """Word bounding box carrying ONLY normalized_vertices ([0, 1] floats).
+
+    Mirrors the whole-document batch path Vision actually uses: it
+    populates ``normalized_vertices`` and leaves ``vertices`` empty.
+    Pre-fix the parser silently dropped every such Word.
+    """
+
+    def __init__(self, nx0, ny0, nx1, ny1):
+        self.vertices = []  # explicitly empty — matches the bug path.
+        self.normalized_vertices = [
+            _V(nx0, ny0), _V(nx1, ny0), _V(nx1, ny1), _V(nx0, ny1),
+        ]
+
+
+class _BoxEmpty:
+    """Word bounding box with NEITHER vertices nor normalized_vertices.
+
+    Used to drive the "drop with warning" path — both lists present but
+    truncated/empty.
+    """
+
+    def __init__(self):
+        self.vertices = []
+        self.normalized_vertices = []
+
+
 def _w(text, x0, y0, x1, y1):
     return _Word([_Sym(text)], x0, y0, x1, y1)
+
+
+def _w_norm(text, nx0, ny0, nx1, ny1):
+    """Word whose bounding_box carries only normalized_vertices ([0, 1])."""
+    w = _Word.__new__(_Word)
+    w.symbols = [_Sym(text)]
+    w.bounding_box = _BoxNorm(nx0, ny0, nx1, ny1)
+    return w
+
+
+def _w_empty(text):
+    """Word whose bounding_box has neither vertices nor normalized_vertices."""
+    w = _Word.__new__(_Word)
+    w.symbols = [_Sym(text)]
+    w.bounding_box = _BoxEmpty()
+    return w
 
 
 class _Word:
@@ -84,6 +127,130 @@ def test_line_grouping_skips_empty():
     lines = list(google_engine._line_blocks(block, 200, 200))
     assert len(lines) == 1
     assert lines[0][0] == "keep words"
+
+
+# --- normalized_vertices handling (regression: Google bbox-parser bug) -----
+#
+# Background: the live Google Vision whole-document PDF batch path
+# populates ``normalized_vertices`` ([0, 1] floats) and leaves
+# ``vertices`` empty. Pre-fix the parser only read ``vertices``, so
+# every Word was silently dropped and the engine returned zero blocks
+# — masking every OCR result as empty. These tests pin both directions
+# of the fix.
+
+
+def test_line_blocks_accepts_normalized_vertices_only():
+    """Words with only normalized_vertices are emitted at absolute coords.
+
+    Fixture: page is 200x200. Two Words on one line carry [0,1] floats
+    ``(0.05, 0.05)→(0.20, 0.10)`` and ``(0.25, 0.05)→(0.40, 0.10)``.
+    Expect ONE line containing both words; expected absolute bboxes
+    ``(10, 10, 80, 20)`` for word1 and ``(50, 10, 80, 20)`` for word2.
+    Pre-fix this test produced an empty list (the original bug).
+    """
+    para = _Para([
+        _w_norm("Hello", 0.05, 0.05, 0.20, 0.10),
+        _w_norm("World", 0.25, 0.05, 0.40, 0.10),
+    ])
+    block = _Block([para])
+    lines = list(google_engine._line_blocks(block, 200, 200))
+    assert len(lines) == 1, (
+        "Words with only normalized_vertices must NOT be silently "
+        "dropped (regression: pre-PR the parser discarded them all)."
+    )
+    text, bbox = lines[0]
+    # Words on the same y-band join into one line.
+    assert text == "Hello World"
+    # Absolute bboxes derived by multiplying normalized by (page_w, page_h).
+    assert bbox == (10.0, 10.0, 80.0, 20.0), (
+        f"expected absolute bbox (10,10,80,20) for the line, got {bbox!r}"
+    )
+
+
+def test_line_blocks_normalized_two_lines():
+    """Same fix, two visual lines, different y-bands."""
+    para = _Para([
+        # Line 1: top of page, normalized y in [0.10, 0.15]
+        _w_norm("first",  0.05, 0.10, 0.20, 0.15),
+        _w_norm("line",   0.25, 0.10, 0.40, 0.15),
+        # Line 2: middle of page, normalized y in [0.45, 0.50]
+        _w_norm("second", 0.05, 0.45, 0.20, 0.50),
+        _w_norm("line2",  0.25, 0.45, 0.40, 0.50),
+    ])
+    block = _Block([para])
+    # Pass a 1000x1000 page so the math is grep-friendly.
+    lines = list(google_engine._line_blocks(block, 1000, 1000))
+    assert len(lines) == 2
+    assert lines[0][0] == "first line"
+    assert lines[0][1] == (50.0, 100.0, 400.0, 150.0)
+    assert lines[1][0] == "second line2"
+    assert lines[1][1] == (50.0, 450.0, 400.0, 500.0)
+
+
+def test_line_blocks_normalized_page_dims_required():
+    """If the page is zero-dimensional, we cannot scale normalized coords.
+
+    Words with only normalized_vertices and page_w=0 must be DROPPED
+    (with warning), NOT silently written as bbox (0, 0, 0, 0) — which
+    would corrupt the line bbox and downstream clip / merge logic.
+    """
+    para = _Para([_w_norm("lose", 0.1, 0.1, 0.5, 0.5)])
+    block = _Block([para])
+    # page_w=0, page_h=0 — we cannot scale, so drop (with warning).
+    lines = list(google_engine._line_blocks(block, 0.0, 0.0))
+    assert lines == [], (
+        "normalized_vertices with zero page dims must be dropped, not "
+        f"turned into bbox (0,0,0,0); got {lines!r}"
+    )
+
+
+def test_line_blocks_vertices_path_unchanged():
+    """Regression control: the ``vertices`` (absolute coords) path is
+    unchanged. Same fixture as ``test_line_grouping_one_line_native_order``
+    above; absolute coords should produce identical bboxes.
+    """
+    para = _Para([
+        _w("Zebra", 10, 10, 40, 20),
+        _w("Apple", 50, 10, 80, 20),
+        _w("Lemon", 90, 10, 120, 20),
+    ])
+    block = _Block([para])
+    lines = list(google_engine._line_blocks(block, 200, 200))
+    assert len(lines) == 1
+    text, bbox = lines[0]
+    assert text == "Zebra Apple Lemon"
+    assert bbox == (10.0, 10.0, 120.0, 20.0)
+
+
+def test_line_blocks_warning_when_no_geometry(caplog):
+    """Words with NEITHER vertices NOR normalized_vertices are dropped,
+    with a WARNING, not silently.
+
+    The pre-fix code dropped them silently AND ALSO dropped any word
+    with only normalized_vertices — so the warn-on-silent path was
+    useless. Pin both directions here: the warning fires once per
+    _line_blocks call (rate-limited), and the partial result (zero
+    surviving words) does not corrupt the line bboxes.
+    """
+    para = _Para([
+        _w_empty("orphan"),
+        _w_empty("also-orphan"),
+    ])
+    block = _Block([para])
+    with caplog.at_level("WARNING", logger="nc_ocr_flow.engines.google_engine"):
+        lines = list(google_engine._line_blocks(block, 200, 200))
+    assert lines == [], "no-geometry words must produce no lines"
+    # Once-per-call rate limit: one warning covering both Words, NOT one
+    # warning per Word (that would spam the log on a bad response).
+    warns = [
+        r for r in caplog.records
+        if r.levelname == "WARNING"
+        and "vertices or normalized_vertices" in r.getMessage()
+    ]
+    assert len(warns) == 1, (
+        f"expected exactly one (rate-limited) WARNING, got {len(warns)}: "
+        f"{[r.getMessage() for r in warns]}"
+    )
 
 
 # --- process_pdf base-PDF seeding (regression test) ------------------------

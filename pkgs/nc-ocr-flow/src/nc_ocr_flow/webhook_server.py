@@ -61,6 +61,30 @@ PROCESSABLE_EXTS = IMAGE_EXTS | PDF_EXTS
 #: (real uploads: 1 and 4 chars/page were silently skipped).
 MIN_TEXT_CHARS_PER_PAGE = 25
 
+#: Distinct skip reasons recorded in ``files.reason`` and surfaced
+#: through ``/stats`` + the panel ``skip_reasons`` breakdown.  Three
+#: concrete paths inside ``_needs_ocr_decision`` can yield a skip;
+#: before this PR they were all collapsed into a single
+#: ``born_digital_or_stamped_good`` string, which made it impossible
+#: for an operator to tell "we already OCR'd this file" (trustworthy)
+#: apart from "the classifier thinks this is born-digital" (which may
+#: still be a broken pre-existing text layer that we DO want to
+#: re-OCR).  The PR keeps the runtime skip behaviour identical — only
+#: the *reason* string is split.
+SKIP_REASON_STAMPED_BY_US      = "stamped_good_by_us"
+SKIP_REASON_BORN_DIGITAL       = "born_digital_text_based"
+#: Reserved for the text-density guard branch.  Today that branch
+#: FORCES OCR (returns ``needs_ocr=True`` when per-page chars fall
+#: below MIN_TEXT_CHARS_PER_PAGE) and so does not produce a skip —
+#: but the constant is defined so a future "skip" path through that
+#: guard can be reported distinctly instead of being conflated with
+#: the other two.
+SKIP_REASON_TEXT_DENSITY_GUARD = "text_density_guard_low"
+#: The old, undifferentiated string.  External consumers and stored
+#: rows may still reference it; we keep it exported so callers can
+#: compare against either form.
+SKIP_REASON_LEGACY             = "born_digital_or_stamped_good"
+
 # Loop prevention: which node IDs we processed recently. The claim lives
 # in SQLite (jobstore.claim_node) so it survives a restart.
 _PROCESSED_TTL = 300  # 5 minutes
@@ -448,6 +472,38 @@ def _already_stamped_by_us(path: Path) -> bool:
     and ``engine=google`` — Google's whole-doc OCR produces the highest-
     fidelity text layer, so any file with a Google-engine stamp from us
     can be skipped without risking a worse result.
+
+    TODO (user-requested policy revisit, NOT a behaviour change in this PR):
+    ``stamped_good_by_us`` is recorded as a skip reason but the operator's
+    position is that "stamped by us" is a *re-OCR candidate*, not a trusted
+    terminal skip.  Concrete evidence on the 9 ПрофиМаркет files: even
+    after Run-1 stamped them with ``engine=google``, two of them
+    (СГР Бонсолар бессрочно, СГР Double Black) still have a broken
+    *pre-existing* OCRmyPDF/Tesseract text layer underneath, and the
+    extractable text remains mojibake (combining-mark noise, zero Cyrillic).
+    Our Google layer was supposed to replace the broken layer via
+    ``page.add_redact_annot(...) / apply_redactions(...)`` followed by
+    ``_embed_ocr_text``, but the redact step appears not to remove the
+    invisible-mode text in some cases, so the old broken layer is what
+    ``get_text()`` returns.  The stamp branch therefore trusts a Google
+    result that, for these files, isn't actually visible in extraction.
+
+    The user's actual safety criterion for "safe to skip":
+      (a) provenance — Creator/Producer contain no OCR-tool string
+          (``OCRmyPDF``, ``pikepdf``, ``Tesseract``, …) AND no
+          ``nc-ocr-flow`` stamp;
+      (b) deep inspection is clean — pdf-inspector's
+          ``pdf_type == "text_based"`` AND no encoding issues
+          AND no invisible-text-layer flags on any page raster; AND
+      (c) ``text_based`` ALONE is not sufficient (see (a)+(c) in
+          the same files above).
+
+    Until the policy is changed, this function and the caller at
+    ``_needs_ocr_decision`` continue to treat ``engine=google`` as
+    trustworthy so we do not blow the Vision-API budget re-OCR'ing
+    the entire stamp-flagged set.  That is a deliberate, explicitly
+    documented policy choice — not a confident assertion that those
+    files are good.
     """
     try:
         import fitz
@@ -462,24 +518,39 @@ def _already_stamped_by_us(path: Path) -> bool:
     return True
 
 
-def _needs_ocr_decision(path: Path, force: bool) -> bool:
-    """Decide whether ``path`` actually needs OCR.
+def _needs_ocr_decision(
+    path: Path, force: bool
+) -> tuple[bool, str | None]:
+    """Decide whether ``path`` actually needs OCR, and report WHY if not.
 
-    Returns False (skip) only when ``force`` is False AND one of:
-      - The file already carries a Google-engine stamp from us, OR
+    Returns ``(needs_ocr, skip_reason)``:
+      * ``(True,  None)``  — OCR must run; no skip was decided.
+      * ``(False, reason)`` — skip; ``reason`` is one of
+        :data:`SKIP_REASON_STAMPED_BY_US` /
+        :data:`SKIP_REASON_BORN_DIGITAL` /
+        :data:`SKIP_REASON_TEXT_DENSITY_GUARD`.
+
+    A skip is taken when ``force`` is False AND one of:
+      - The file already carries a Google-engine stamp from us
+        → :data:`SKIP_REASON_STAMPED_BY_US`;
       - pdf-inspector (or the heuristic fallback) classifies it as
-        text_based with no encoding issues.
+        text_based with no encoding issues
+        → :data:`SKIP_REASON_BORN_DIGITAL`.
 
     The Google-stamp check is fast (PyMuPDF metadata read) and avoids
     loading pdf-inspector on files we already OCR'd with our best
     engine. The pdf-inspector call is the expensive path but only runs
     once per newly-seen file.
+
+    See :func:`_already_stamped_by_us` for the user-flagged caveat that
+    "stamped by us" is treated as trustworthy here as a deliberate,
+    temporary policy — not as a confident assertion.
     """
     if force:
-        return True
+        return True, None
 
     if _already_stamped_by_us(path):
-        return False
+        return False, SKIP_REASON_STAMPED_BY_US
 
     try:
         cls = classify_pdf(path)
@@ -487,10 +558,10 @@ def _needs_ocr_decision(path: Path, force: bool) -> bool:
     except Exception as exc:
         # Classifier crashed — default to OCR (better safe than skip).
         log.warning("pdf_classify raised (%s); defaulting to OCR", exc)
-        return True
+        return True, None
 
     if needs:
-        return True
+        return True, None
 
     # Text-density guard. The inspector (pdf-inspector / heuristic)
     # calls a page "text_based" whenever it finds text objects, even
@@ -510,11 +581,61 @@ def _needs_ocr_decision(path: Path, force: bool) -> bool:
                 "pdf_classify said text_based but only %.1f chars/page "
                 "on %s; OCR-ing anyway", per_page, path.name,
             )
-            return True
+            # Force OCR — this branch does NOT produce a skip today.
+            # ``SKIP_REASON_TEXT_DENSITY_GUARD`` is reserved for a future
+            # skip path through this guard (see its definition).
+            return True, None
     except Exception as exc:  # noqa: BLE001 — guard is best-effort
         log.warning("text-density guard failed (%s); trusting classifier", exc)
 
-    return False
+    return False, SKIP_REASON_BORN_DIGITAL
+
+
+def _assert_ocr_produced_blocks(result, nc_path: str) -> None:
+    """Raise if a structured-OCR engine returned zero blocks.
+
+    Two engines populate ``result.page_results`` (google, minimax); the
+    third (``tesseract``) writes the text layer directly via ocrmypdf and
+    deliberately leaves ``page_results=[]`` — that one is exempted.
+
+    Background: the Google engine's bbox parser used to silently drop
+    every Word (Vision populates ``normalized_vertices`` on the
+    whole-doc batch path; pre-fix the code only read ``vertices``), so
+    a "successful" run returned ``page_results`` with empty blocks for
+    every page. The webhook then unconditionally stamped
+    ``Producer = 'nc-ocr-flow 0.3 (engine=google)'`` and uploaded,
+    marking the file ``done`` forever. Two follow-on costs:
+
+      1. The stamp-skip branch (``_already_stamped_by_us``) kept
+         hiding the file from re-OCR until manual intervention.
+      2. The user's Nextcloud storage was rewriting ``Producer`` to
+         ``pikepdf …`` (a separate, unfired TODO), so the stamp-based
+         dedup didn't even survive — we just had no second-line
+         defence.
+
+    Raising here takes the existing error path (``_run_job``'s
+    ``except Exception`` already records ``status=error`` and writes
+    ``error`` to the SQLite job row). The file is left UN-stamped and
+    UN-uploaded, so the next webhook or ``/rescan`` retries it. The
+    error message names file, engine, and block count so an operator
+    triaging the panel can act on it.
+    """
+    # Inline the canonical names instead of importing the registry, to
+    # avoid loading engine modules just for a string compare and to
+    # keep this function stable across engine renames.
+    if result.engine_used not in ("google", "minimax"):
+        return
+
+    pages = result.page_results or []
+    total_blocks = sum(len(p.blocks) for p in pages)
+    if total_blocks > 0:
+        return
+
+    raise RuntimeError(
+        f"OCR engine={result.engine_used} produced 0 blocks across "
+        f"{len(pages)} page(s) for {nc_path!r}: empty result; file not "
+        f"stamped or uploaded, eligible for retry"
+    )
 
 
 def _process_file(nc_path: str, node_id: int, engine: str | None = None,
@@ -552,6 +673,14 @@ def _process_file(nc_path: str, node_id: int, engine: str | None = None,
             pdf_path = _image_to_pdf(local_file)
             result = process_pdf(pdf_path, engine=engine)
 
+            # Gate the stamp + upload on a non-empty OCR result. An
+            # engine that returned zero blocks (the documented Google
+            # bbox-parser bug, or any future regression that drops text
+            # silently) must NOT mark the file ``done`` — the worker
+            # sees the raise as ``status=error`` and the next webhook
+            # /rescan retries it. See :func:`_assert_ocr_produced_blocks`.
+            _assert_ocr_produced_blocks(result, nc_path)
+
             # Stamp PDF metadata: engine, timestamp, pages per engine
             _stamp_metadata(
                 Path(result.output_pdf),
@@ -575,20 +704,30 @@ def _process_file(nc_path: str, node_id: int, engine: str | None = None,
 
         if ext in PDF_EXTS:
             # Born-digital / stamped-good skip decision. ``force=True``
-            # bypasses it (used by the "Re-OCR anyway" action).
-            if not _needs_ocr_decision(local_file, force):
+            # bypasses it (used by the "Re-OCR anyway" action). The
+            # reason returned by ``_needs_ocr_decision`` is one of
+            # ``SKIP_REASON_*`` — recording the actual branch lets the
+            # operator tell "stamped by us" apart from "classifier
+            # thinks born-digital" without re-running the classifier.
+            needs_ocr, skip_reason = _needs_ocr_decision(local_file, force)
+            if not needs_ocr:
                 log.info(
-                    "skip born-digital / stamped-good: %s (force=%s)",
-                    nc_path, force,
+                    "skip %s: %s (force=%s)",
+                    nc_path, skip_reason, force,
                 )
                 return {
                     "path": nc_path,
                     "skipped": True,
-                    "reason": "born_digital_or_stamped_good",
+                    "reason": skip_reason,
                 }
 
             log.info("OCR-ing PDF (engine=%s force=%s): %s", engine, force, nc_path)
             result = process_pdf(local_file, engine=engine)
+
+            # Gate the stamp + upload on a non-empty OCR result. See the
+            # image branch above for the rationale and
+            # :func:`_assert_ocr_produced_blocks` for the engine list.
+            _assert_ocr_produced_blocks(result, nc_path)
 
             # Stamp PDF metadata: engine, timestamp, pages per engine
             _stamp_metadata(
@@ -614,12 +753,18 @@ def _process_file(nc_path: str, node_id: int, engine: str | None = None,
 
 # --- Job tracking (for /status panel + NC app) ---
 import queue
-import itertools
 
-_job_seq = itertools.count(1)
 #: Workers are woken by this signal; the work list itself is the
 #: ``jobs`` table in SQLite, so a backlog of a million files costs
 #: nothing in RAM.
+#:
+#: NB: the row id is assigned by SQLite (``record_enqueue`` reads
+#: back ``lastrowid``) — not by an in-process counter. An earlier
+#: ``itertools.count`` counter restarted at 1 on every service boot;
+#: persisted rows kept their old ids, so the first batch of new
+#: enqueues collided with old rows and ``INSERT OR IGNORE`` discarded
+#: them silently. Letting SQLite auto-assign makes the sequence
+#: collision-free across restarts.
 _work_available = threading.Event()
 #: Idle workers wake up this often even without a signal, so a lost
 #: notification can never wedge the queue.
@@ -998,9 +1143,15 @@ def _enqueue(nc_path: str, node_id: int, engine: str | None = None,
     the recently-processed guard. The NC app's "Re-OCR anyway" action
     sends this so the user can deliberately re-OCR a file we previously
     classified or stamped.
+
+    The ``id`` is **assigned by SQLite**, not by an in-process counter
+    — that means the row's primary key survives a service restart and
+    cannot collide with whatever the next process happens to call
+    itself. ``record_enqueue`` writes the new id back into ``job`` so
+    the API response reflects the canonical id.
     """
     job = {
-        "id": next(_job_seq),
+        # id intentionally unset — let SQLite's rowid alias assign.
         "path": nc_path,
         "nc_path": nc_path,
         "node_id": node_id,
@@ -1015,7 +1166,9 @@ def _enqueue(nc_path: str, node_id: int, engine: str | None = None,
         "reason": None,
     }
     _record_job(job)
-    # Mirror to durable SQLite history (best-effort, never raises).
+    # Mirror to durable SQLite history. ``record_enqueue`` writes the
+    # canonical id back into ``job`` and may raise on an explicit-id
+    # collision (the bug we just removed).
     jobstore.record_enqueue(job)
     # The row is already in SQLite (``record_enqueue`` above) — that IS
     # the queue. Mark the file in-flight so a repeat scan skips it,

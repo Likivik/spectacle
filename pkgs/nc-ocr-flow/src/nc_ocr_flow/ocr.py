@@ -194,9 +194,24 @@ def _finalize(engine_result: ProcessResult, engine: str, out_pdf: str) -> Proces
     # the text layer + save.
     doc = fitz.open(out_pdf)
     try:
+        # CRITICAL: scrub any pre-existing (possibly broken, e.g. a
+        # user-side Tesseract mojibake layer) text off EVERY page
+        # first. Doing this once up-front — instead of relying on
+        # ``_embed_ocr_text``'s embedded redaction step — guarantees
+        # the invariant
+        #
+        #     after process_pdf, the page text is either our OCR
+        #     output or empty — never the previous (potentially
+        #     garbage) layer.
+        #
+        # on every page, regardless of whether the engine returned
+        # blocks for it. ``PDF_REDACT_IMAGE_NONE`` keeps the visible
+        # raster untouched, so the file is still a faithful copy of
+        # the source image with only the text layer swapped out.
+        _strip_existing_text(doc)
         for page_idx, res in enumerate(page_results):
             if res.blocks:
-                _embed_ocr_text(doc, page_idx, res)
+                _embed_ocr_text(doc, page_idx, res, already_redacted=True)
         # saveIncr writes a new revision to the same file (PyMuPDF's
         # standard "save incrementally" path). If the file didn't exist
         # before, fall back to a full save.
@@ -381,7 +396,53 @@ def _get_font():
     return fitz.Font("helv")
 
 
-def _embed_ocr_text(doc, page_idx: int, ocr_result: OcrResult) -> None:
+def _strip_existing_text(doc) -> None:
+    """Remove the existing text layer from every page in ``doc``,
+    keeping the visible raster intact (PDF_REDACT_IMAGE_NONE).
+
+    This is the first step of every re-OCR run. The redaction-annot
+    + apply_redactions pair is PyMuPDF's supported way to remove all
+    page text while preserving images; Form XObjects or other indirect
+    text sources can occasionally escape it on malformed PDFs, but the
+    visible raster is preserved on every page either way.
+
+    Why this lives at the orchestrator level
+    ---------------------------------------
+    Previously the redaction step was inside :func:`_embed_ocr_text`,
+    which is only called when the engine returned non-empty blocks
+    for a page. When Vision (or any future engine) returns an empty
+    OcrResult for a page — timeout, transient API error, genuinely
+    blank page — ``_embed_ocr_text`` was never invoked, the prior
+    text layer survived verbatim, and the orchestrator's
+    ``saveIncr`` happily wrote a new file revision containing that
+    legacy layer. The practical consequence was that re-OCR'ing a PDF
+    that already carried a (possibly garbage, e.g. Tesseract
+    mojibake) text layer sometimes achieved nothing: the new
+    production only happened when the engine returned blocks for
+    every page, and silently regressed on every other page.
+
+    Stripping the text layer unconditionally at the orchestrator
+    guarantees the invariant
+
+        after process_pdf, the page text is either our OCR output
+        or empty — never the previous layer.
+
+    on every page, regardless of what the engine returned.
+    """
+    import fitz  # local import keeps module-level import side-effect free
+    for page in doc:
+        page.add_redact_annot(page.rect)
+    for page in doc:
+        page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
+
+
+def _embed_ocr_text(
+    doc,
+    page_idx: int,
+    ocr_result: OcrResult,
+    *,
+    already_redacted: bool = False,
+) -> None:
     """Replace existing text layer on a page with engine OCR text.
 
     1. Remove existing text (tesseract's, or stale) via redaction, keep
@@ -392,6 +453,12 @@ def _embed_ocr_text(doc, page_idx: int, ocr_result: OcrResult) -> None:
     The ``OcrResult.blocks`` carry bboxes in PNG-image pixels (the
     resolution the engine ran on); we map them to PDF-point coords
     using ``page.rect / ocr_result.page_(width|height)``.
+
+    ``already_redacted``
+        When True, skip the redact-and-apply step (the orchestrator
+        already did it page-wide in :func:`_strip_existing_text`).
+        Defaults to False so direct callers and the existing test
+        surface keep working unchanged.
     """
     import fitz
 
@@ -399,8 +466,9 @@ def _embed_ocr_text(doc, page_idx: int, ocr_result: OcrResult) -> None:
     font = _get_font()
 
     # Step 1: Remove existing text from page, keep images.
-    page.add_redact_annot(page.rect)
-    page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
+    if not already_redacted:
+        page.add_redact_annot(page.rect)
+        page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
 
     # Step 2: Insert font into page (after redactions rebuild content).
     if font.buffer:
@@ -473,5 +541,5 @@ __all__ = [
     "FONT_PATH",
     "_render_page_png", "_run_ocrmypdf", "_generate_tsv", "_parse_tsv",
     "_needs_vlm", "_get_font",
-    "_embed_ocr_text",
+    "_strip_existing_text", "_embed_ocr_text",
 ]

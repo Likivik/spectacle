@@ -9,6 +9,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -396,12 +397,35 @@ def test_process_file_force_bypasses_skip(monkeypatch, tmp_path):
     pdf = tmp_path / "x.pdf"
     _build_pdf(pdf, with_text=True)
 
+    def fake_proc_with_blocks(pdf_path, engine=None):
+        """Helper: stub process_pdf that returns a non-empty page_results,
+        so it clears the ``_assert_ocr_produced_blocks`` zero-block gate
+        introduced in this PR. Without this stub the old test kept
+        returning ``ProcessResult(page_results=[])`` and now (correctly)
+        trips the gate."""
+        from nc_ocr_flow.ocr import ProcessResult
+        from nc_ocr_flow.ocr_models import OcrBlock, OcrResult
+        return ProcessResult(
+            output_pdf=str(pdf_path),
+            engine_used="google",
+            page_results=[
+                OcrResult(
+                    blocks=[OcrBlock(
+                        bbox=(10.0, 10.0, 100.0, 30.0),
+                        text="stub-ocr-text",
+                        confidence=0.95,
+                        label="google-word",
+                    )],
+                    page_width=595.0, page_height=842.0,
+                ),
+            ],
+        )
+
     calls = {"proc": []}
 
     def fake_proc(pdf_path, engine=None):
         calls["proc"].append((str(pdf_path), engine))
-        from nc_ocr_flow.ocr import ProcessResult
-        return ProcessResult(output_pdf=str(pdf_path), engine_used="google")
+        return fake_proc_with_blocks(pdf_path, engine)
 
     # classify returns needs_ocr=False → would normally skip.
     def fake_classify(_path):
@@ -614,7 +638,23 @@ def test_process_file_bad_layer_reocr(monkeypatch, tmp_path):
     def fake_proc(pdf_path, engine=None):
         calls["proc"].append((str(pdf_path), engine))
         from nc_ocr_flow.ocr import ProcessResult
-        return ProcessResult(output_pdf=str(pdf_path), engine_used="google")
+        from nc_ocr_flow.ocr_models import OcrBlock, OcrResult
+        # Non-empty page_results — see _assert_ocr_produced_blocks gate.
+        return ProcessResult(
+            output_pdf=str(pdf_path),
+            engine_used="google",
+            page_results=[
+                OcrResult(
+                    blocks=[OcrBlock(
+                        bbox=(10.0, 10.0, 100.0, 30.0),
+                        text="stub-ocr-text",
+                        confidence=0.95,
+                        label="google-word",
+                    )],
+                    page_width=595.0, page_height=842.0,
+                ),
+            ],
+        )
 
     def fake_classify(_path):
         return {
@@ -636,3 +676,214 @@ def test_process_file_bad_layer_reocr(monkeypatch, tmp_path):
     assert calls["proc"], "classifier said needs_ocr=True → process_pdf must run"
     assert res.get("skipped") is not True
     assert res.get("path") == "/likivik/files/z.pdf"
+
+
+# --- zero-block OCR gate (regression: Google bbox-parser bug) ---------------
+#
+# Background: pre-PR the Google engine returned ProcessResult with
+# page_results=[] on every successful-looking run (silent bbox-parser
+# bug). The webhook then unconditionally stamped + uploaded, marking
+# the file ``done`` forever. This test pins the second half of the fix:
+# _process_file MUST raise before stamping / uploading on a zero-block
+# google result, so the worker's existing except path records
+# ``status=error`` and the file stays eligible for retry.
+
+
+def test_process_file_zero_block_does_not_stamp_or_upload(monkeypatch, tmp_path):
+    """google engine returns 0 blocks → gate raises, no upload, no stamp.
+
+    Asserts all three behaviours in one go:
+      1. ``_process_file`` raises ``RuntimeError`` (gate fires).
+      2. ``_webdav_upload`` is never called.
+      3. ``_stamp_metadata`` is never called.
+      4. The error message names the file, the engine, and the block count
+         so an operator triaging the panel can act on it.
+    """
+    pdf = tmp_path / "empty.pdf"
+    _build_pdf(pdf, with_text=False)
+
+    calls = {"upload": [], "stamp": []}
+
+    monkeypatch.setattr(
+        ws, "_webdav_download",
+        lambda nc, dest: __import__("shutil").copy2(pdf, dest),
+    )
+    monkeypatch.setattr(
+        ws, "_webdav_upload",
+        lambda nc, dest, *a, **k: calls["upload"].append((nc, str(dest))),
+    )
+    monkeypatch.setattr(
+        ws, "_stamp_metadata",
+        lambda *a, **k: calls["stamp"].append(a),
+    )
+
+    def fake_proc_empty(pdf_path, engine=None):
+        # The bug shape: a "successful" run whose page_results is empty.
+        from nc_ocr_flow.ocr import ProcessResult
+        return ProcessResult(
+            output_pdf=str(pdf_path),
+            engine_used="google",
+            page_results=[],   # would have been empty pre-fix
+        )
+
+    def fake_classify(_path):
+        return {
+            "needs_ocr": True,
+            "pdf_type": "scanned",
+            "confidence": 0.95,
+            "has_encoding_issues": False,
+        }
+
+    with patch.object(ws, "process_pdf", side_effect=fake_proc_empty), \
+         patch.object(ws, "classify_pdf", side_effect=fake_classify):
+        with pytest.raises(RuntimeError) as ei:
+            ws._process_file(
+                "/likivik/files/empty.pdf", node_id=42,
+                engine="google", force=False,
+            )
+
+    # Gate fired with a message that an operator can actually triage on.
+    msg = str(ei.value)
+    assert "google" in msg, f"engine name missing from error: {msg!r}"
+    assert "/likivik/files/empty.pdf" in msg, f"file path missing: {msg!r}"
+    assert "0 blocks" in msg, f"block count missing: {msg!r}"
+
+    # Stamp and upload must NOT have run — the file stays in-flight,
+    # eligible for the next webhook or /rescan to retry it.
+    assert calls["upload"] == [], (
+        f"zero-block OCR must NOT trigger upload, got {calls['upload']!r}"
+    )
+    assert calls["stamp"] == [], (
+        f"zero-block OCR must NOT trigger stamp, got {calls['stamp']!r}"
+    )
+
+
+def test_process_file_zero_block_image_branch_also_gates(monkeypatch, tmp_path):
+    """Same gate, image branch (image → img2pdf → process_pdf → gates).
+
+    The image branch builds a PDF from the image and then runs the same
+    orchestrator; we stub the orchestrator to return an empty
+    page_results and assert the same raise/upload/stamp invariants.
+    """
+    # Use any small image: a 100x100 white PNG via PIL.
+    from PIL import Image
+    img_path = tmp_path / "page.png"
+    Image.new("RGB", (100, 100), "white").save(img_path)
+
+    calls = {"upload": [], "stamp": [], "delete": []}
+
+    monkeypatch.setattr(
+        ws, "_webdav_download",
+        lambda nc, dest: __import__("shutil").copy2(img_path, dest),
+    )
+    monkeypatch.setattr(
+        ws, "_webdav_upload",
+        lambda nc, dest, *a, **k: calls["upload"].append((nc, str(dest))),
+    )
+    monkeypatch.setattr(
+        ws, "_webdav_delete",
+        lambda nc: calls["delete"].append(nc),
+    )
+    monkeypatch.setattr(
+        ws, "_stamp_metadata",
+        lambda *a, **k: calls["stamp"].append(a),
+    )
+
+    def fake_proc_empty(pdf_path, engine=None):
+        from nc_ocr_flow.ocr import ProcessResult
+        return ProcessResult(
+            output_pdf=str(pdf_path),
+            engine_used="google",
+            page_results=[],
+        )
+
+    # Pretend the classifier says this image IS a document so we
+    # reach the OCR branch. ``ws.classify`` is a module-level binding
+    # imported from .classifier, so monkeypatch.setattr (not
+    # patch.object) is the right tool here.
+    monkeypatch.setattr(
+        ws, "classify",
+        lambda _path: SimpleNamespace(is_document=True, reason="ok"),
+    )
+
+    with patch.object(ws, "process_pdf", side_effect=fake_proc_empty):
+        with pytest.raises(RuntimeError) as ei:
+            ws._process_file(
+                "/likivik/files/orig.png", node_id=7,
+                engine="google", force=False,
+            )
+
+    assert "google" in str(ei.value)
+    assert "/likivik/files/orig.png" in str(ei.value)
+
+    assert calls["upload"] == [], (
+        f"image-branch zero-block must NOT upload, got {calls['upload']!r}"
+    )
+    assert calls["stamp"] == [], (
+        f"image-branch zero-block must NOT stamp, got {calls['stamp']!r}"
+    )
+    assert calls["delete"] == [], (
+        f"image-branch zero-block must NOT delete the original, got "
+        f"{calls['delete']!r}"
+    )
+
+
+def test_process_file_tesseract_engine_bypasses_gate(monkeypatch, tmp_path):
+    """Tesseract writes the layer via ocrmypdf, leaving page_results=[].
+
+    Counting blocks across page_results=[] would always raise; the
+    gate explicitly exempts tesseract so existing flows keep working.
+    This test pins the exemption.
+    """
+    pdf = tmp_path / "tess.pdf"
+    _build_pdf(pdf, with_text=False)
+
+    calls = {"upload": [], "stamp": []}
+
+    monkeypatch.setattr(
+        ws, "_webdav_download",
+        lambda nc, dest: __import__("shutil").copy2(pdf, dest),
+    )
+    monkeypatch.setattr(
+        ws, "_webdav_upload",
+        lambda nc, dest, *a, **k: calls["upload"].append((nc, str(dest))),
+    )
+    monkeypatch.setattr(
+        ws, "_stamp_metadata",
+        lambda *a, **k: calls["stamp"].append(a),
+    )
+
+    def fake_proc_tess(pdf_path, engine=None):
+        # Tesseract's actual ProcessResult shape: page_results=[],
+        # tess_pages=[...]. The gate MUST NOT raise for this.
+        from nc_ocr_flow.ocr import ProcessResult
+        return ProcessResult(
+            output_pdf=str(pdf_path),
+            engine_used="tesseract",
+            page_results=[],
+            tess_pages=[0],
+        )
+
+    def fake_classify(_path):
+        return {
+            "needs_ocr": True,
+            "pdf_type": "scanned",
+            "confidence": 0.95,
+            "has_encoding_issues": False,
+        }
+
+    with patch.object(ws, "process_pdf", side_effect=fake_proc_tess), \
+         patch.object(ws, "classify_pdf", side_effect=fake_classify):
+        # No raise expected — the tesseract exemption must hold.
+        res = ws._process_file(
+            "/likivik/files/tess.pdf", node_id=8,
+            engine="tesseract", force=False,
+        )
+
+    assert res.get("skipped") is not True
+    # Upload happens from the tempdir inside _process_file, not tmp_path;
+    # verify the nc-side path matches and exactly one upload + one stamp ran.
+    assert len(calls["upload"]) == 1
+    nc_uploaded, _dest = calls["upload"][0]
+    assert nc_uploaded == "/likivik/files/tess.pdf"
+    assert len(calls["stamp"]) == 1, "tesseract success must stamp"

@@ -47,12 +47,13 @@ work you had; resolve by keeping main's side. Full detail: skill
 
 ## VM smoke — run it locally, it is not a CI check
 
-`.github/workflows/ci.yml` runs two required checks: the nc-ocr-flow pytest
-suite, and `nix build --dry-run` over every `nixosConfiguration`. The VM smoke
-is deliberately absent: a hosted runner cannot cold-build the serenity closure
-within a job timeout (the build job was killed at 90 minutes with `nix` still
-running), while serenity itself builds the same VM in 5-10 minutes because it
-already has the store.
+`.github/workflows/ci.yml` runs three required checks: the nc-ocr-flow pytest
+suite, `nix build --dry-run` over every `nixosConfiguration`, and `nix checks` —
+one aggregate over the CI-safe flake checks (see "Adding a test" below). The VM
+smoke is deliberately absent: a hosted runner cannot cold-build the serenity
+closure within a job timeout (the build job was killed at 90 minutes with `nix`
+still running), while serenity itself builds the same VM in 5-10 minutes because
+it already has the store.
 
 So the smoke is a step you run, and running it before you push is the point:
 
@@ -84,26 +85,89 @@ jj describe -m "what changed and why"
 # 3. push a feature bookmark — never --all: it sweeps other sessions' bookmarks
 jj bookmark set feat/<topic> -r @
 jj git push --bookmark feat/<topic>
-# 4. open the PR
-gh pr create --repo Likivik/spectacle --base main --head feat/<topic> --fill
+# 4. open the PR. NOT --fill: it computes the title/body by running git, and a jj
+#    workspace is not a git repository. Pass both explicitly from the change.
+gh pr create --repo Likivik/spectacle --base main --head feat/<topic> \
+  --title "$(jj log -r @ --no-graph -T 'description.first_line()')" \
+  --body "$(jj log -r @ --no-graph -T description)"
 ```
 
 What the ruleset enforces before a PR can merge:
 
-- **Both required checks pass**: `python tests (nc-ocr-flow)` and
-  `nix eval (all hosts)`. The eval covers *every* host, not just deploy targets.
+- **All three required checks pass**: `python tests (nc-ocr-flow)`,
+  `nix eval (all hosts)` — which covers *every* host, not just deploy targets —
+  and `nix checks`.
 - **The branch is up to date with `main`** (`strict_required_status_checks_policy`).
   GitHub will not merge a PR whose base has moved on. Because a squash merge
   makes `main` a brand-new commit, every open PR goes `BEHIND` the moment
   something else lands — rebase and let the checks re-run:
   `jj git fetch && jj rebase -d main && jj git push --bookmark feat/<topic>`.
 - **No approvals required.** The checks are the gate; a human review is not.
-- **Squash merge only**, so `main` stays linear and one PR is one commit — one
-  `git revert` undoes one task.
-- No force-push, no branch deletion, no merge commits on `main`.
+- **Squash merge only** (`allowed_merge_methods: [squash]`), so `main` stays
+  linear and one PR is one commit — one `git revert` undoes one task.
+- No force-push, no deletion of `main`, no merge commits on `main`. Feature
+  branches are deleted automatically on merge (`delete_branch_on_merge`).
 
 If a required check cannot run at all (broken workflow, missing context), the PR
 becomes unmergeable. Fix the workflow, not the ruleset.
+
+### Dependent changes: stacked PRs
+
+Squash-only plus `strict` checks makes a hand-rebased chain of dependent PRs
+painful: a squash gives `main` a brand-new commit, so every PR above the one that
+just landed goes `BEHIND`. GitHub stacked pull requests (GA 2026-10-06) are the
+purpose-built answer — each PR in a stack is evaluated against the stack's base
+(`main`), so the ruleset, required checks and CODEOWNERS apply unchanged, and the
+stack merges bottom-up.
+
+`gh stack link` is the jj-friendly entry point: it needs no local stack tracking
+and takes branch names in stack order (bottom to top).
+
+```bash
+# one task = one commit = one PR; push each branch first (never --all)
+jj bookmark set feat/<a> -r <rev-a> && jj git push --bookmark feat/<a>
+gh stack link feat/<a> feat/<b> feat/<c>
+gh stack merge <stack-number> --yes --squash
+```
+
+Two traps, both hit in practice:
+
+- **`gh stack link` needs a git repository**, and a jj *workspace* is not one
+  (only the shared checkout has `.git`, and you must not work there). Run it from
+  a throwaway clone: `git clone --no-checkout --filter=blob:none <url>`, then
+  `git fetch origin <branch>:<branch>` for each branch. The whole `gh stack`
+  extension is the same shape — `gh stack view` fails with the identical "not a
+  git repository" error — and so is `gh pr create --fill`. Any `gh` subcommand
+  that shells out to git fails here, which is why the flow above passes
+  `--title`/`--body` explicitly and why the gh-stack sequence runs from the clone.
+- **It titles PRs from branch names** (`fix/hermes sops templates`) and leaves the
+  body empty. Reset both from the commit message:
+  `gh pr edit <n> --title "$(head -1 msg)" --body-file msg`.
+
+Merging a stack needs the **asynchronous merge API** — the legacy PR merge
+endpoints cannot merge one, so `gh pr merge` does not work on a stacked PR. Use
+`gh stack merge`.
+
+## Adding a test
+
+A suite belongs in `modules/defaults/checks.nix` as a flake check. To make it run
+in CI, add it to `checks.ci` — the aggregate of checks a hosted runner can
+actually finish:
+
+```nix
+checks.ci = pkgs.linkFarm "ci-checks" [
+  { name = "hermes-tests"; path = config.checks.hermes-tests; }
+];
+```
+
+`nix checks` builds that one attr, so a new suite needs no workflow edit and no
+ruleset edit: the required check name never changes. Watch the naming trap — a
+file that is not `test_*.py` is not collected by pytest at all, so a guard can
+exist, be committed, and never once run.
+
+Do **not** point CI at `nix build .#checks`: that set includes `serenity-smoke-vm`
+and the `*-boot` VM tests, none of which can finish on a hosted runner. Membership
+is an explicit list for exactly that reason.
 
 A green PR is **not** permission to deploy — see the deploy flow below.
 

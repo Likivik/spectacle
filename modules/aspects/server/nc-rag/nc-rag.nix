@@ -70,17 +70,35 @@
         # default on poweredge) + 1 headroom. Without --parallel llama.cpp
         # defaults to a single slot, the 3 workers contend, requests queue,
         # ollama_proxy.py returns 502s, and indexing drops to ~8.5 chunks/min.
-        # ctx-size 8192 / 4 = 2048 tokens per slot, enough for the ~2048-char
-        # chunks the MCP emits (200-char overlap included).
         #
-        # --batch-size 8192 / -ub 8192 raises llama.cpp's logical and PHYSICAL
-        # batch from the default 512 to 8192 (matches --ctx-size 8192 and bge-m3's
-        # 8192-token max input). The upstream 502 body literally says
-        # "increase the physical batch size" (current: 512); -ub is what actually
-        # lifts the limit, --batch-size is set to the same value so they cannot
-        # disagree. Without this, any single Cyrillic chunk >512 tokens makes
-        # llama.cpp return 500 → ollama_proxy.py re-emits 502, and the MCP burns
-        # its 5-retry backoff (2+4+8+16s) on every dense chunk. Dominant failure.
+        # *** --ctx-size and --parallel are COUPLED: llama.cpp splits the
+        # *** ctx-size budget across the --parallel slots, so per-slot context
+        # *** is ctx-size / parallel. Touching one without the other silently
+        # *** reintroduces the failure modes below — never change one in
+        # *** isolation. With --ctx-size 16384 / --parallel 4 each slot gets
+        # *** 4096 tokens; at 2048 tokens/slot (the previous ctx 8192 / 4)
+        # *** dense Cyrillic technical chunks still tokenise above the slot
+        # *** ceiling and the MCP receives 502s on roughly 1 in 5 chunks.
+        #
+        # Measured live on the GTX 1660 in nc-rag (2026-10-15), 3-min window
+        # against the same Nextcloud corpus (overrides applied via /run
+        # systemd drop-in, no deploy):
+        #   ctx 8192  / parallel 4  → 2048/slot  → 30 HTTP 502s, 13 'input
+        #                                   (N tokens) is too large' errors.
+        #   ctx 16384 / parallel 4  → 4096/slot  → ZERO 502s, ZERO too-large
+        #                                   errors; tasks of 942 tokens
+        #                                   complete with truncated=0.
+        # Throughput holds at ~195 chunks/min in both configs; VRAM 2072/6144
+        # MiB at ctx 16384 + parallel 4 (≈4 GiB free).
+        #
+        # --batch-size 16384 / -ub 16384 raises llama.cpp's logical and PHYSICAL
+        # batch from the default 512 to 16384 (matches --ctx-size 16384). The
+        # upstream 502 body literally says "increase the physical batch size"
+        # (current: 512); -ub is what actually lifts the limit, --batch-size
+        # is set to the same value so they cannot disagree. Without this, any
+        # single Cyrillic chunk >512 tokens makes llama.cpp return 500 →
+        # ollama_proxy.py re-emits 502, and the MCP burns its 5-retry backoff
+        # (2+4+8+16s) on every dense chunk. Dominant failure.
         systemd.services.llama-embedder = {
           description = "llama.cpp bge-m3 embedder";
           after = [ "network.target" ]; wantedBy = [ "multi-user.target" ];
@@ -90,8 +108,8 @@
             ExecStart = ''
               ${llama-server} --host 0.0.0.0 --port 8081 \
                 -m ${bgeM3} \
-                --embedding --ctx-size 8192 -ngl 99 --threads 4 \
-                --parallel 4 --batch-size 8192 -ub 8192
+                --embedding --ctx-size 16384 -ngl 99 --threads 4 \
+                --parallel 4 --batch-size 16384 -ub 16384
             '';
             Restart = "on-failure"; RestartSec = 5;
             DynamicUser = true; StateDirectory = "llama-cpp-embedder";

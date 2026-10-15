@@ -26,3 +26,22 @@ __pycache__/
 
 # Venice AI API key
 .env
+
+# --- Secrets and local tooling state ---------------------------------------
+# The repository is public, so a secret that lands in a commit is public the
+# moment it is pushed, and stays public in history and in every fork even after
+# it is deleted. These patterns are cheap insurance against the next one.
+#
+# Note: .gitignore does NOT untrack anything already committed, and it does not
+# protect a file that was committed before the rule existed. A rule is only a
+# guard against the future; a leaked value needs rotation, not a rule.
+*.key
+*.age
+*.pem
+age-key*
+sops-age*
+
+# direnv / Nix dev-shell state
+.direnv/
+# pytest state
+.pytest_cache/

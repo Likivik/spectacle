@@ -22,9 +22,9 @@
 #
 # Neutralised, with the fidelity actually lost:
 #   - TPM-bound sops: no TPM in QEMU. The host's TPM identity is swapped for a
-#     throwaway age key (tests/smoke-age-key.txt) and every secret is pointed at
-#     a dummy encrypted file generated at BUILD TIME from the host's own
-#     sops.secrets declarations. Secret VALUES are dummy, but the rendering
+#     throwaway age identity generated at BUILD time and never committed, and every
+#     secret is pointed at a dummy encrypted file generated at BUILD TIME from the
+#     host's own sops.secrets declarations. Secret VALUES are dummy, but the rendering
 #     path is the real one — that is the difference between testing delivery
 #     and stubbing the file (a stub is non-empty by construction, so asserting
 #     on it proves nothing).
@@ -41,7 +41,6 @@ let
   # `base` is the UN-extended serenity config, so reading its sops.secrets here
   # is not self-referential.
   dummyValue = "vm-smoke-dummy-secret-value";
-  dummyRecipient = "age1q0k6paeuce23fcmnn9v89z9096h7m2yp46wfqlq5uzjgezj4scuqqcy0n9";
 
   # "a/b/c" -> { a = { b = { c = v; }; }; }
   nest = paths: v: lib.foldr (p: acc: { ${p} = acc; }) v paths;
@@ -52,17 +51,42 @@ let
     { }
     (lib.attrNames base.config.sops.secrets);
 
-  dummySopsFile = pkgs.runCommand "serenity-smoke-secrets.yaml" {
-    nativeBuildInputs = [ pkgs.sops ];
+  # The age identity is generated HERE, at build time, and never committed.
+  #
+  # It used to be a checked-in private key (tests/smoke-age-key.txt). That key
+  # protected nothing real — every value below is the literal dummy — but a real
+  # private key in a PUBLIC repository is a bad pattern to keep around: it
+  # normalises private keys in the tree, it leaks permanently through git history
+  # and forks, and a keypair reused for anything real would decrypt every secret
+  # encrypted to that recipient. Generating it per build removes the artefact.
+  #
+  # $out/identity.txt is a store path, so it is world-readable on the machine
+  # running the smoke. That is bounded and acceptable: the identity is fresh per
+  # build and decrypts only dummy values. sops-nix's own guard — sops.age.keyFile
+  # must not be a store path — still holds, because the path DECLARED to sops is
+  # /run/smoke-age-key.txt; this derivation's output is installed there at boot by
+  # the smoke-age-key unit below.
+  smokeSecrets = pkgs.runCommand "serenity-smoke-secrets" {
+    nativeBuildInputs = [ pkgs.sops pkgs.age ];
     # sops wants a HOME for its age plugin/config cache.
     HOME = "$TMPDIR";
   } ''
+    mkdir -p $out
+    age-keygen -o identity.txt 2> keygen.err
+    RECIPIENT=$(grep -oE 'age1[0-9a-z]+' keygen.err | head -1)
+    # Fail loudly rather than encrypting to an empty recipient.
+    test -n "$RECIPIENT"
+
     cat > plain.yaml <<'YAML'
 ${lib.generators.toYAML { } dummyPlain}
 YAML
-    sops --encrypt --age ${dummyRecipient} \
-      --input-type yaml --output-type yaml plain.yaml > $out
+    sops --encrypt --age "$RECIPIENT" \
+      --input-type yaml --output-type yaml plain.yaml > $out/secrets.yaml
+
+    install -m 0400 identity.txt $out/identity.txt
   '';
+
+  dummySopsFile = "${smokeSecrets}/secrets.yaml";
 
   # Every EnvironmentFile path any system or user unit in THIS host references.
   # Generated rather than hand-listed on purpose: a hand-list rots silently the
@@ -173,12 +197,21 @@ in
     # INACTIVE (not failed) — so no secrets are installed at all and the failure
     # looks nothing like a PATH problem.
     script = ''
-      ${pkgs.coreutils}/bin/install -m 0400 -o root -g root ${./smoke-age-key.txt} /run/smoke-age-key.txt
+      ${pkgs.coreutils}/bin/install -m 0400 -o root -g root ${smokeSecrets}/identity.txt /run/smoke-age-key.txt
     '';
   };
 
   # --- tailscale needs a tailnet + auth key ---
   services.tailscale.enable = lib.mkForce false;
+
+  # The store optimiser hard-links store paths, which CANNOT work on the guest's
+  # virtiofs mount: it dies with "renaming ...: Stale file handle" and lands in a
+  # failed state. It is timer-triggered and takes ~3 minutes, so whether it fires
+  # inside the smoke's boot window is pure timing — which is why this surfaced as
+  # an intermittent UNEXPECTED_FAILED_UNITS. Disabling it in the guest removes the
+  # noise at the source instead of widening the allowlist, which would have
+  # started hiding real failures alongside it.
+  nix.optimise.automatic = lib.mkForce false;
 
   users.users.root.initialPassword = "test";
 

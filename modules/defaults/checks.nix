@@ -40,6 +40,12 @@
         # this closure inside its timeout.
         serenity-smoke-vm =
           (inputs.self.nixosConfigurations.serenity.extendModules {
+            # `base` has to be supplied here too — see the note on
+            # apps.serenity-smoke below. Without it the smoke module's `base`
+            # argument is unbound and this CHECK fails to evaluate. That went
+            # unnoticed because the app path supplies it and is the one normally
+            # run, while this handle is only realised on demand.
+            specialArgs = { base = inputs.self.nixosConfigurations.serenity; };
             modules = [ (import ../../tests/serenity-smoke.nix) ];
           }).config.system.build.vm;
 

@@ -97,6 +97,20 @@
         commands = [{ command = "ALL"; options = [ "NOPASSWD" ]; }];
       }];
 
+      # Provision secrets through systemd rather than the activation script.
+      # The activation script runs before systemd exists, which is the ordering
+      # gap behind issue #2. With this set, sops-nix generates
+      # sops-install-secrets.service (wantedBy sysinit.target) and applies
+      # rotations with `systemctl try-restart` instead of writing an
+      # activation-restart list.
+      #
+      # erebus deliberately does NOT set this. It has seven activation scripts
+      # written as `stringAfter [ setupSecrets ]`, and setupSecrets is
+      # `mkIf (regularSecrets != {} && !useSystemdActivation)` — so flipping the
+      # flag there would silently unanchor them, and hermes-secrets-env would
+      # write an env file with empty values for every token.
+      sops.useSystemdActivation = true;
+
       sops.secrets."nextcloud/admin-password" = {
         sopsFile = ../../../secrets/poweredge/secrets.yaml;
         owner = "nextcloud";
@@ -235,8 +249,18 @@
 
       systemd.services.cloudflared-poweredge = {
         description = "Cloudflare Tunnel — poweredge";
-        after = [ "network-online.target" ];
+        # Every other consumer of a sops secret on this host reads it through
+        # LoadCredential, which carries an implicit Requires=/After= on the
+        # source path. This unit instead substitutes the token with `$(<path)`
+        # in ExecStart, so it has no implicit ordering — and under
+        # useSystemdActivation the secrets are placed by a systemd unit rather
+        # than by activation, so the edge has to be explicit or the first start
+        # reads an empty file. Conditional so it stays correct if the flag is
+        # ever turned back off: a Requires= on a nonexistent unit fails the unit.
+        after = [ "network-online.target" ]
+          ++ lib.optionals config.sops.useSystemdActivation [ "sops-install-secrets.service" ];
         wants = [ "network-online.target" ];
+        requires = lib.optionals config.sops.useSystemdActivation [ "sops-install-secrets.service" ];
         wantedBy = [ "multi-user.target" ];
         serviceConfig = {
           ExecStart = "${pkgs.bash}/bin/bash -c 'exec ${pkgs.cloudflared}/bin/cloudflared tunnel --no-autoupdate --protocol http2 run --token \"$(<${config.sops.secrets."cloudflare/poweredge-tunnel-token".path})\"'";

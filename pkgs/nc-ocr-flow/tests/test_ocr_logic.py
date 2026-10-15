@@ -4,6 +4,8 @@ No GPU, no ocrmypdf needed — pure unit tests with PyMuPDF.
 """
 from __future__ import annotations
 
+import shutil
+import tempfile
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
@@ -11,7 +13,8 @@ import pytest
 
 from nc_ocr_flow.ocr import (
     PageMeta, _parse_tsv, _needs_vlm,
-    _get_font, FONT_PATH,
+    _get_font, _strip_existing_text, _embed_ocr_text, process_pdf,
+    FONT_PATH,
     PER_PAGE_CONF_FLOOR, PER_PAGE_MIN_CHARS,
 )
 
@@ -176,6 +179,219 @@ def test_redaction_with_fill_hides_content():
     assert len(text) == 0
 
     doc.close()
+
+
+# --- Re-OCR replace-text-layer regression ----------------------------------
+
+def _make_reocr_fixture() -> Path:
+    """Build a 1-page PDF with a visible raster image plus a pre-existing
+    invisible (render-mode=3) text layer, simulating a user-side OCR
+    pass that produced something not-quite-right.
+
+    Using render-mode-3 invisible text is intentional: it is exactly how
+    Tesseract/ocrmypdf add the user-side text layer, and it is the case
+    that ``add_redact_annot(page.rect)`` + ``apply_redactions`` must
+    successfully scrub.
+    """
+    import fitz as _fitz
+    import io
+    from PIL import Image
+
+    doc = _fitz.open()
+    page = doc.new_page(width=595, height=842)
+
+    # Visible raster (a flat color image) — the source of truth that must
+    # survive the redaction step.
+    png_buf = io.BytesIO()
+    Image.new("RGB", (450, 700), (220, 220, 220)).save(png_buf, format="PNG")
+    page.insert_image(_fitz.Rect(70, 70, 525, 770), stream=png_buf.getvalue())
+
+    # Pre-existing text layer (Tesseract-style invisible).
+    page.insert_text((50, 100),
+                     "PRE-EXISTING TESSERACT GARBAGE BLOCK ONE",
+                     fontsize=8, fontname="helv", render_mode=3)
+    page.insert_text((50, 200),
+                     "PRE-EXISTING TESSERACT GARBAGE BLOCK TWO",
+                     fontsize=8, fontname="helv", render_mode=3)
+    page.insert_text((50, 300),
+                     "PRE-EXISTING TESSERACT GARBAGE BLOCK THREE",
+                     fontsize=8, fontname="helv", render_mode=3)
+
+    out_path = Path(tempfile.mkstemp(suffix=".pdf")[1])
+    doc.save(str(out_path))
+    doc.close()
+    return out_path
+
+
+def test_reocr_replaces_text_even_when_engine_returns_zero_blocks():
+    """Regression: re-OCR with engine that returns 0 blocks must still
+    remove the pre-existing text layer.
+
+    Before the fix, ``_embed_ocr_text`` was the sole place where the
+    redact-and-apply step ran; it was only invoked when the engine
+    returned non-empty ``blocks`` for the page. Engines occasionally
+    return an empty ``OcrResult`` for a page (Vision timeout,
+    structured-output parse failure, genuinely blank page); the
+    previous code skipped the embed entirely for such pages and
+    ``saveIncr`` happily wrote a new revision containing the legacy
+    text layer. The practical consequence was that re-OCR'ing a PDF
+    that already carried a (possibly broken) text layer silently
+    achieved nothing on every page the engine skipped — even though
+    the user got a brand-new file revision with our metadata stamp.
+    """
+    import fitz
+    from nc_ocr_flow.engines import google_engine as _ge2
+    from nc_ocr_flow.ocr_models import OcrResult
+
+    src = _make_reocr_fixture()
+    out = Path(tempfile.mkstemp(suffix=".pdf")[1])
+
+    # Mock engine: zero blocks (the failure mode the user hit).
+    _orig = _ge2._ocr_pdf
+    _ge2._ocr_pdf = lambda pdf_path: [
+        OcrResult(blocks=[], page_width=595, page_height=842),
+    ]
+    try:
+        result = process_pdf(src, out, engine="google")
+    finally:
+        _ge2._ocr_pdf = _orig
+
+    # The orchestrator must have run cleanly.
+    assert result.engine_used == "google"
+
+    # And the output must NOT contain the pre-existing text.
+    post = fitz.open(str(out))
+    text = post[0].get_text()
+    post.close()
+    assert "TESSERACT GARBAGE" not in text, (
+        f"re-OCR failed to replace the pre-existing text layer: {text!r}"
+    )
+
+
+def test_reocr_replaces_with_engine_blocks():
+    """Engine returns blocks → pre-existing text is gone AND new text
+    is embedded."""
+    import fitz
+    from nc_ocr_flow.engines import google_engine as _ge2
+    from nc_ocr_flow.ocr_models import OcrBlock, OcrResult
+
+    # A synthetic block: a Cyrillic-Russian declaration header.
+    block = OcrBlock(
+        bbox=(50, 50, 545, 200),
+        text="ЕВРАЗИЙСКИЙ ЭКОНОМИЧЕСКИЙ СОЮЗ\nДЕКЛАРАЦИЯ О СООТВЕТСТВИИ",
+        confidence=0.95,
+        label="google-block",
+    )
+
+    src = _make_reocr_fixture()
+    out = Path(tempfile.mkstemp(suffix=".pdf")[1])
+
+    _orig = _ge2._ocr_pdf
+    _ge2._ocr_pdf = lambda pdf_path: [
+        OcrResult(blocks=[block], page_width=595, page_height=842),
+    ]
+    try:
+        result = process_pdf(src, out, engine="google")
+    finally:
+        _ge2._ocr_pdf = _orig
+
+    assert result.engine_used == "google"
+
+    post = fitz.open(str(out))
+    text = post[0].get_text()
+    post.close()
+    assert "TESSERACT GARBAGE" not in text
+    assert "ЕВРАЗИЙСКИЙ" in text, f"new Cyrillic text not embedded: {text!r}"
+    assert "ДЕКЛАРАЦИЯ" in text
+
+
+def test_strip_existing_text_preserves_image_raster():
+    """``_strip_existing_text`` must keep the visible image untouched
+    (PDF_REDACT_IMAGE_NONE) — a re-OCR never destroys the raster."""
+    import fitz
+    src = _make_reocr_fixture()
+    out = Path(tempfile.mkstemp(suffix=".pdf")[1])
+    shutil.copy(str(src), str(out))
+
+    doc = fitz.open(str(out))
+    pre_bbl = doc[0].get_bboxlog()
+    pre_text = doc[0].get_text()
+    n_img_pre = sum(1 for b in pre_bbl if b[0] in ("fill-image",))
+    assert n_img_pre >= 1
+    assert "TESSERACT GARBAGE" in pre_text
+
+    _strip_existing_text(doc)
+    post_bbl = doc[0].get_bboxlog()
+    post_text = doc[0].get_text()
+    n_img_post = sum(1 for b in post_bbl if b[0] in ("fill-image",))
+    doc.close()
+
+    assert post_text == "", (
+        f"_strip_existing_text left text behind: {post_text!r}"
+    )
+    assert n_img_post >= 1, "raster was wiped — PDF_REDACT_IMAGE_NONE failed"
+
+
+def test_embed_ocr_text_default_still_redacts():
+    """The ``already_redacted`` parameter defaults to ``False`` so
+    direct callers of ``_embed_ocr_text`` (e.g. tests that exercise
+    the function in isolation) keep the previous behaviour: one call
+    redacts and embeds."""
+    import fitz
+    from nc_ocr_flow.ocr_models import OcrBlock, OcrResult
+
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+    page.insert_text((50, 50), "OLD TEXT", fontsize=12, render_mode=3)
+
+    block = OcrBlock(
+        bbox=(50, 50, 545, 200),
+        text="NEW",
+        confidence=0.95,
+        label="google-block",
+    )
+    result = OcrResult(blocks=[block], page_width=595, page_height=842)
+
+    _embed_ocr_text(doc, 0, result)   # default: already_redacted=False
+    text = doc[0].get_text()
+    doc.close()
+
+    assert "OLD TEXT" not in text
+    assert "NEW" in text
+
+
+def test_embed_ocr_text_already_redacted_skips_redaction():
+    """When called via the orchestrator (which already stripped the
+    page text), ``already_redacted=True`` skips the inner step.
+    Detectable: text survival from a layer that would have been
+    wiped by an embedded redact call stays intact."""
+    import fitz
+    from nc_ocr_flow.ocr_models import OcrBlock, OcrResult
+
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+    page.insert_text((50, 50), "EXISTING BLOCK A", fontsize=12, render_mode=3)
+    # A second block we expect to KEEP (the “legacy” was already
+    # stripped at the orchestrator level).
+    page.insert_text((50, 100), "EXISTING BLOCK B", fontsize=12, render_mode=1)
+
+    block = OcrBlock(
+        bbox=(50, 200, 545, 350),
+        text="FRESH",
+        confidence=0.95,
+        label="google-block",
+    )
+    result = OcrResult(blocks=[block], page_width=595, page_height=842)
+
+    _embed_ocr_text(doc, 0, result, already_redacted=True)
+    text = doc[0].get_text()
+    doc.close()
+
+    # Both pre-existing blocks survive (we said redacted-already)
+    assert "EXISTING BLOCK A" in text
+    assert "EXISTING BLOCK B" in text
+    assert "FRESH" in text
+
 
 
 # --- Font handling -----------------------------------------------------------

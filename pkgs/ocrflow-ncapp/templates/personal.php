@@ -89,6 +89,20 @@ $fmt = static function ($ts): string {
     </p>
     <?php endif; ?>
 
+    <p class="settings-hint">
+        <?php p($l->t('Failures:')); ?>
+        <span id="ocrflow-m-errors"><?php p((int)($metrics['errors'] ?? 0)); ?></span><?php p($l->t(' errors, ')); ?>
+        <span id="ocrflow-m-gone"><?php p((int)($metrics['gone'] ?? 0)); ?></span><?php p($l->t(' gone, ')); ?>
+        <span id="ocrflow-m-errors-attempts"><?php p((int)($metrics['errorsAttempts'] ?? 0)); ?></span><?php p($l->t(' attempts')); ?>
+    </p>
+    <?php if (!empty($metrics['retriesTotal']) || !empty($metrics['retriesQueued'])): ?>
+    <p class="settings-hint">
+        <?php p($l->t('Retries:')); ?>
+        <span id="ocrflow-m-retries-total"><?php p((int)($metrics['retriesTotal'] ?? 0)); ?></span><?php p($l->t(' total, ')); ?>
+        <span id="ocrflow-m-retries-queued"><?php p((int)($metrics['retriesQueued'] ?? 0)); ?></span><?php p($l->t(' queued')); ?>
+    </p>
+    <?php endif; ?>
+
     <h3><?php p($l->t('In progress')); ?></h3>
     <p class="settings-hint">
         <?php p($l->t('Queue depth:')); ?> <span id="ocrflow-queue-depth"><?php p($_['queue_depth'] ?? 0); ?></span>

@@ -215,7 +215,10 @@ class OcrController extends OCSController {
      *
      * Body: { "fileIds": [123, 456] }
      * Returns: { states: { "<fileId>": { state, engine?, reason?, finished? } } }
-     * where state ∈ never | queued | running | done | skipped | error | failed.
+     * where state ∈ never | queued | running | done | skipped | error | failed | gone.
+     * "gone" means the service saw the file but it was deleted from Nextcloud
+     * between the webhook and the worker — the Files app must not offer any
+     * action for it.
      */
     public function filestates(): DataResponse {
         $userId = $this->userSession->getUser()?->getUID();

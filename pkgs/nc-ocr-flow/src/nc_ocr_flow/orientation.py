@@ -983,8 +983,18 @@ def preorient_pdf(in_pdf: str | Path,
     orientations: list[Orientation] = []
     out_doc = fitz.open()
 
+    # Work on a private copy of the input: the rotation branch below
+    # calls ``page.remove_rotation()`` on a page of the source handle,
+    # which mutates the in-memory view of the caller's file. With
+    # incremental-save semantics, PyMuPDF can flush that back to disk.
+    # A throwaway copy keeps the original PDF byte-identical to what
+    # the caller passed in. The copy lives next to the output and is
+    # cleaned up regardless of how the loop terminates.
+    work_pdf = out_pdf.parent / (out_pdf.stem + ".src.pdf")
+    shutil.copyfile(str(in_pdf), str(work_pdf))
+
     try:
-        with fitz.open(str(in_pdf)) as src:
+        with fitz.open(str(work_pdf)) as src:
             for page_idx, page in enumerate(src):
                 if page_idx in skip_pages:
                     # Carry the original page over unchanged.
@@ -1082,6 +1092,12 @@ def preorient_pdf(in_pdf: str | Path,
         out_doc.save(str(out_pdf), garbage=4, deflate=True)
     finally:
         out_doc.close()
+        # Always clean up the working copy of the source — the
+        # rotation loop only mutates that, never the caller's file.
+        try:
+            work_pdf.unlink(missing_ok=True)
+        except OSError:
+            pass
 
     log.info(
         "preorient_pdf: %s → %s ; orientations=%s",
@@ -1115,12 +1131,33 @@ def preorient_pages_safe(in_pdf: str | Path) -> str:
     pre-orientation is a no-op (every page is already upright) so
     the caller doesn't need to clean up an unnecessary temp file.
 
+    The no-op case is the hot path for born-digital files: most of
+    them would later be skipped by the OCR engine anyway, so paying
+    a full PDF rewrite here just to throw the result away is wasted
+    work. We do a read-only per-page orientation pass first and
+    return the input unchanged when nothing needs rotating.
+
     Raises on hard failure (PyMuPDF missing, etc.) — the caller
     is expected to catch and fall back to the original input.
     """
     import os as _os
     import tempfile
     in_pdf = Path(in_pdf)
+
+    # Fast precheck: run the existing detector over every page
+    # *without* writing anything. If every page is already upright
+    # we hand the input back unchanged and skip the full PDF
+    # rebuild (insert_pdf + save + outline copy) below. If the
+    # precheck itself errors, fall through to the safe path —
+    # ``preorient_pdf`` will report the failure the same way it
+    # always has.
+    precheck = _detect_all_pages_orientations(in_pdf)
+    if precheck is not None and all(o.is_upright for o in precheck):
+        log.debug(
+            "preorient_pages_safe: %s already upright on precheck, "
+            "skipping rebuild", in_pdf)
+        return str(in_pdf)
+
     fd, tmp_path = tempfile.mkstemp(suffix=".upright.pdf", prefix="nc-ocr-")
     _os.close(fd)
     orientations = preorient_pdf(in_pdf, tmp_path)
@@ -1133,6 +1170,47 @@ def preorient_pages_safe(in_pdf: str | Path) -> str:
             pass
         return str(in_pdf)
     return tmp_path
+
+
+def _detect_all_pages_orientations(
+    in_pdf: str | Path,
+) -> Optional[list[Orientation]]:
+    """Render every page of ``in_pdf`` and run :func:`detect_orientation`
+    on it, returning a per-page :class:`Orientation` list.
+
+    Read-only: never mutates the file and never writes an output.
+    Used by :func:`preorient_pages_safe` as a cheap precheck so a
+    fully-upright document can short-circuit before paying the full
+    PDF rewrite.
+
+    Returns ``None`` on any failure (file unreadable, PyMuPDF
+    exception, …) so the caller can fall through to the full
+    ``preorient_pdf`` path rather than wrongly handing back a
+    precheck result that wasn't actually produced.
+    """
+    import fitz
+
+    in_pdf = Path(in_pdf)
+    cap_dpi = _resolve_max_dpi(_DEFAULT_MAX_DPI)
+
+    try:
+        with fitz.open(str(in_pdf)) as src:
+            n_pages = src.page_count
+            if n_pages == 0:
+                return [Orientation(angle=0, confidence=None, source="default")]
+
+            out: list[Orientation] = []
+            for page_idx, page in enumerate(src):
+                source_dpi = _compute_source_dpi(page, cap_dpi)
+                page_dpi = min(source_dpi, cap_dpi)
+                pix = page.get_pixmap(dpi=page_dpi)
+                png_bytes = pix.tobytes("png")
+                out.append(detect_orientation(png_bytes))
+            return out
+    except Exception as exc:  # noqa: BLE001
+        log.debug(
+            "preorient precheck failed on %s: %s", in_pdf, exc)
+        return None
 
 
 def compute_source_dpi(page, cap_dpi: int) -> int:

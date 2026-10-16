@@ -54,6 +54,16 @@ class StatsService {
             'remaining' => max(0, $total - $scanned - $skipped),
             'byEngine' => is_array($body['by_engine'] ?? null) ? $body['by_engine'] : [],
             'skipReasons' => is_array($body['skip_reasons'] ?? null) ? $body['skip_reasons'] : [],
+            // Pass-through of the service's failure / retry surface so the
+            // panel can answer "is anything failing right now?" and
+            // "which files are stuck?" without the admin having to
+            // query the service directly. New keys, all optional —
+            // older services simply omit them.
+            'errors' => (int)($body['errors'] ?? 0),
+            'gone' => (int)($body['gone'] ?? 0),
+            'errorsAttempts' => (int)($body['errors_attempts'] ?? 0),
+            'retriesTotal' => (int)($body['retries_total'] ?? 0),
+            'retriesQueued' => (int)($body['retries_queued'] ?? 0),
         ];
     }
 

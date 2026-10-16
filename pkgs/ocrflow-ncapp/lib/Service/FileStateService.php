@@ -149,6 +149,16 @@ final class FileStateService
             return ['state' => 'never', 'stale' => true] + $base;
         }
 
+        // The OCR service observed a terminal state for a file that no
+        // longer exists in Nextcloud (e.g. the user deleted it between
+        // the webhook event and the worker). Surface it as 'gone'
+        // rather than falling through to the generic branch — the
+        // Files app must NOT offer "Send to OCR" on a file that is
+        // not there.
+        if ($status === 'gone') {
+            return ['state' => 'gone'] + $base;
+        }
+
         return ['state' => $status !== '' ? $status : 'never'] + $base;
     }
 

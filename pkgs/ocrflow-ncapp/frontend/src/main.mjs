@@ -189,6 +189,11 @@ const rememberState = (fileId, state, finished = null) => {
 // States that mean "this file was already handled by us".
 const STATE_DONE = ['done', 'skipped']
 // States where "Send to OCR" is still the right (or only) entry.
+// Deliberately EXCLUDES 'gone': a file the service has already
+// observed but that no longer exists in Nextcloud (deleted between
+// webhook and worker) must not get a "Send to OCR" action — there
+// is nothing to send. It is also not a "Re-OCR anyway" candidate,
+// which is why it sits outside STATE_DONE.
 const STATE_FRESH = ['never', 'failed', 'unknown', 'error']
 
 // One call fetches every file the OCR service knows about (a bounded set —
@@ -345,6 +350,13 @@ function renderMetrics(m) {
 		const parts = Object.entries(m.byEngine || {}).map(([k, n]) => `${k} (${n})`)
 		eng.textContent = parts.length ? parts.join(', ') : '—'
 	}
+	// Failure / retry surface (all optional — older services just omit
+	// the keys and the panel falls back to "—" via String(v ?? '—')).
+	set('ocrflow-m-errors', m.errors)
+	set('ocrflow-m-gone', m.gone)
+	set('ocrflow-m-errors-attempts', m.errorsAttempts)
+	set('ocrflow-m-retries-total', m.retriesTotal)
+	set('ocrflow-m-retries-queued', m.retriesQueued)
 }
 async function pollPanel() {
 	try {

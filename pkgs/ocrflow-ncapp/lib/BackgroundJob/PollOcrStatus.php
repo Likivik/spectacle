@@ -80,8 +80,14 @@ class PollOcrStatus extends TimedJob {
                     ->setSubject(
                         $status === 'done' ? 'ocr_done' : 'ocr_failed',
                         [
+                            // The notification template only renders the
+                            // basename. The full NC-internal path
+                            // (/$uid/files/$rel) used to be passed here
+                            // too, but it leaks the user id into the
+                            // subject parameters — a template change to
+                            // show the path would expose it. Keep only
+                            // the fields the template actually uses.
                             'file' => basename($path),
-                            'path' => $path,
                             'reason' => (string)($job['reason'] ?? $job['error'] ?? ''),
                         ]
                     );

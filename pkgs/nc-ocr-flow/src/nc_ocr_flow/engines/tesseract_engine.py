@@ -10,14 +10,6 @@ character-level re-extraction, broken OCR layers are replaced). This
 aligns tesseract with the google and minimax engines, which always
 write a fresh text layer regardless of whether the input has one.
 
-The pre-scan of pages with extractable text is retained for the
-``tess_pages`` accounting (pages where a text layer was replaced or
-added) — pages without any text are the ones tesseract actively
-OCR'd from scratch; pages with existing text had that text re-extracted
-or replaced. Use the original pages-needing-OCR distinction at the
-service layer (pdf_classify / ``_needs_ocr_decision``) to decide
-whether to run this engine at all.
-
 This engine is the historical "fast lane"; it does no handwriting
 escalation (that is minimax's job).
 """
@@ -35,7 +27,7 @@ log = logging.getLogger(__name__)
 
 ENGINE_NAME = "tesseract"
 
-_BORN_DIGITAL_MIN_CHARS = 20  # copied from ocr's constant
+_OCR_TIMEOUT_S = 600
 
 
 # --- Public entry point ----------------------------------------------------
@@ -84,15 +76,8 @@ def _run_ocrmypdf_tesseract(input_pdf: str, output_pdf: str) -> list[int]:
 
     Uses ``--redo-ocr`` so the text layer is replaced on every page
     (genuine born-digital text is re-extracted, broken OCR layers are
-    replaced — same end-state as the google and minimax engines). The
-    ocrmypdf CLI does not report per-page re-OCR stats, so we infer
-    ``tess_pages`` from the pre-scan: pages that already had >20 chars
-    of text had their layer replaced or re-extracted; pages with no
-    text were OCR'd from scratch — every page counts as a tesseract
-    page for provenance.
+    replaced — same end-state as the google and minimax engines).
     """
-    pre_born = _born_digital_pages(input_pdf)
-
     cmd = [
         "ocrmypdf",
         "--language", "rus+eng",
@@ -104,37 +89,30 @@ def _run_ocrmypdf_tesseract(input_pdf: str, output_pdf: str) -> list[int]:
     ]
     log.info("ocrmypdf (tesseract-only): %s", " ".join(cmd))
     try:
-        subprocess.run(cmd, check=True, capture_output=True, timeout=600)
+        subprocess.run(cmd, check=True, capture_output=True, timeout=_OCR_TIMEOUT_S)
     except FileNotFoundError:
         raise RuntimeError("ocrmypdf not installed (apt: ocrmypdf)")
     except subprocess.CalledProcessError as exc:
         stderr = exc.stderr.decode(errors="replace") if exc.stderr else ""
         raise RuntimeError(f"ocrmypdf failed: {stderr.strip()}") from exc
+    except subprocess.TimeoutExpired as exc:
+        stderr = (exc.stderr or b"").decode(errors="replace") if exc.stderr else ""
+        raise RuntimeError(
+            f"ocrmypdf failed/timed out after {_OCR_TIMEOUT_S}s: {stderr.strip()}"
+        ) from exc
 
     # With --redo-ocr every page has its text layer replaced or added —
-    # record all of them as tesseract pages for provenance. The
-    # ``pre_born`` set is retained for visibility: pages with
-    # pre-existing text had that text layer replaced (possibly bad OCR
-    # replaced with a cleaner layer); the rest were OCR'd from scratch.
+    # record all of them as tesseract pages for provenance. We do
+    # NOT pre-scan the input for born-digital pages just to feed a
+    # log line anymore: the old ``_born_digital_pages`` walked the
+    # whole document only to log "(replaced) vs (from scratch)" and
+    # its result was otherwise discarded (tess_pages is range(total)
+    # either way). The full-document scan was a real cost on big
+    # multi-hundred-page inputs.
     total = _page_count(input_pdf)
     tess_pages = list(range(total))
-    log.info(
-        "ocrmypdf (tesseract): %d total pages, %d had pre-existing text "
-        "(replaced), %d OCR'd from scratch",
-        total, len(pre_born), total - len(pre_born),
-    )
+    log.info("ocrmypdf (tesseract): %d total pages", total)
     return tess_pages
-
-
-def _born_digital_pages(pdf_path: str) -> set[int]:
-    """Return the set of 0-indexed pages with >20 chars of text already."""
-    import fitz  # PyMuPDF
-    out: set[int] = set()
-    with fitz.open(pdf_path) as doc:
-        for i, page in enumerate(doc):
-            if len(page.get_text().strip()) > _BORN_DIGITAL_MIN_CHARS:
-                out.add(i)
-    return out
 
 
 def _page_count(pdf_path: str) -> int:

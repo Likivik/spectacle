@@ -26,6 +26,8 @@ import json
 import logging
 import os
 import re
+import shutil
+import tempfile
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -101,12 +103,31 @@ class MiniMaxError(RuntimeError):
 def process_pdf(pdf_path: str | os.PathLike,
                 output_pdf: str | os.PathLike | None = None,
                 **_unused) -> "_orch.ProcessResult":
-    """OCR each page of the PDF via MiniMax-M3 and embed text layer."""
+    """OCR each page of the PDF via MiniMax-M3 and return per-page OcrResults.
+
+    Seeds ``output_pdf`` with a copy of the source PDF so the
+    orchestrator's ``_finalize`` can open it and embed the text
+    layer. The engine itself does NOT embed or save — that is the
+    orchestrator's job, shared with the google engine. Pages where
+    MiniMax-M3 fails get an empty OcrResult so the orchestrator
+    still strips any pre-existing text and embeds whatever we did
+    get on the rest of the document.
+    """
     from nc_ocr_flow import ocr as _orch
 
     pdf_path = str(pdf_path)
     out_path = Path(output_pdf) if output_pdf else Path(tempfile.mkdtemp()) / "mm.pdf"
     out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # The orchestrator's _finalize embeds the text layer by opening
+    # ``out_pdf`` and calling _embed_ocr_text over its pages. So we must
+    # first seed out_pdf with a real base document (the source PDF keeps
+    # the original page images, which the invisible text sits on top of).
+    # The orchestrator also runs _strip_existing_text before embedding,
+    # so we do NOT embed or save here — _finalize owns the save.
+    if out_path.exists():
+        out_path.unlink()
+    shutil.copy2(pdf_path, out_path)
 
     import fitz
 
@@ -114,8 +135,7 @@ def process_pdf(pdf_path: str | os.PathLike,
     vlm_pages: list[int] = []
     vlm_failed: list[int] = []
 
-    src = fitz.open(pdf_path)
-    try:
+    with fitz.open(pdf_path) as src:
         for page_idx in range(len(src)):
             png_bytes = _render_page_png_bytes(src, page_idx, dpi=200)
             try:
@@ -127,14 +147,6 @@ def process_pdf(pdf_path: str | os.PathLike,
 
             page_results.append(res)
             vlm_pages.append(page_idx)
-
-        # Embed text layer + save.
-        for page_idx, res in enumerate(page_results):
-            if res.blocks:
-                _orch._embed_ocr_text(src, page_idx, res)
-        src.saveIncr()  # no-op for our temp output — orchestrator will save
-    finally:
-        src.close()
 
     return _orch.ProcessResult(
         output_pdf=str(out_path),

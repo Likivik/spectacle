@@ -128,7 +128,7 @@ def process_pdf(
     # (useful for benchmarking / tests that compare orientation-on
     # vs off on the same input).
     import os as _os
-    if _os.environ.get("NC_OCR_DISABLE_ORIENTATION", "").strip() in ("1", "true", "yes"):
+    if orientation_disabled_by_env(_os.environ):
         engine_input = str(input_pdf)
         log.info("process_pdf: orientation correction disabled by env")
     else:
@@ -143,25 +143,62 @@ def process_pdf(
     # Hand off to the engine. Engines that produce OcrResults
     # (google, minimax) need the orchestrator to embed the text layer
     # and save the PDF; tesseract writes a layer directly via ocrmypdf.
-    engine_result = engine_process(
-        engine_input,
-        str(out_pdf),
-    )
+    #
+    # Wrap in try/finally so the temp upright PDF (engine_input) is
+    # cleaned up on every path — including engine exceptions. Without
+    # this, any engine failure would leak the temp file under /tmp.
+    try:
+        engine_result = engine_process(
+            engine_input,
+            str(out_pdf),
+        )
+    finally:
+        # If we used a temp upright PDF, clean it up.
+        if engine_input != str(input_pdf):
+            try:
+                Path(engine_input).unlink(missing_ok=True)
+            except OSError:
+                pass
 
-    # If we used a temp upright PDF, clean it up.
-    if engine_input != str(input_pdf):
-        try:
-            Path(engine_input).unlink(missing_ok=True)
-        except OSError:
-            pass
-
-    # Normalize engine output into our ProcessResult.
-    return _finalize(engine_result, chosen, str(out_pdf))
+    # Normalize engine output into our ProcessResult. Pass
+    # engine_input so _finalize can seed out_pdf if the engine did
+    # not (the next engine, this is a contract that historically only
+    # google and ocrmypdf honoured — _finalize no longer assumes it).
+    return _finalize(engine_result, chosen, str(out_pdf), str(input_pdf))
 
 
-def _finalize(engine_result: ProcessResult, engine: str, out_pdf: str) -> ProcessResult:
+def orientation_disabled_by_env(env: "os._Environ[str] | dict[str, str]") -> bool:
+    """True iff the process should skip the orientation pre-pass.
+
+    Recognises the documented keys (``1`` / ``true`` / ``yes``)
+    case-insensitively after whitespace stripping. The historical
+    gate was case-sensitive on the value, so ``NC_OCR_DISABLE_ORIENTATION=TRUE``
+    was silently ignored — the only test covering the env key
+    re-implemented the check inline (so it tested its own copy and
+    could not catch the drift). Both the production gate and the
+    regression test now call this helper, so future changes to the
+    gate cannot silently diverge from the test.
+    """
+    raw = (env.get("NC_OCR_DISABLE_ORIENTATION", "") or "").strip().lower()
+    return raw in ("1", "true", "yes")
+
+
+def _finalize(engine_result: ProcessResult, engine: str, out_pdf: str,
+              input_pdf: str | None = None) -> ProcessResult:
     """Embed per-page OcrResults into the PDF (if the engine produced
     any) and finalize the ``ProcessResult``.
+
+    If ``page_results`` is non-empty but the engine did not seed
+    ``out_pdf`` on disk (this is the contract every engine SHOULD
+    honour, but only google and ocrmypdf historically did — the
+    minimax engine silently wrote to its input instead and broke
+    here), copy the input PDF into place so ``fitz.open`` has a real
+    base document to embed onto. The input is the orchestrator's
+    authoritative source for the page rasters; passing it in keeps
+    ``_finalize`` from coupling to engine internals.
+
+    The tesseract path (empty ``page_results``) is unchanged: ocrmypdf
+    already wrote the file, we trust it and pass through.
     """
     import fitz
 
@@ -192,7 +229,18 @@ def _finalize(engine_result: ProcessResult, engine: str, out_pdf: str) -> Proces
         )
 
     # Engines that produce OcrResults need the orchestrator to embed
-    # the text layer + save.
+    # the text layer + save. If the engine did not seed out_pdf
+    # (contract only google historically honoured; minimax used to
+    # write back to the input — see D1), copy the input so fitz.open
+    # has a real base document.
+    out_path = Path(out_pdf)
+    if not out_path.exists() and input_pdf is not None:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        import shutil as _shutil
+        if out_path.exists():
+            out_path.unlink()
+        _shutil.copy2(input_pdf, out_path)
+
     doc = fitz.open(out_pdf)
     try:
         # CRITICAL: scrub any pre-existing (possibly broken, e.g. a

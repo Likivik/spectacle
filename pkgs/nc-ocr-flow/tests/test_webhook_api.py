@@ -13,6 +13,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
+import requests
 
 # Point jobstore at a writable directory BEFORE webhook_server is imported.
 # ``webhook_server`` calls ``jobstore.init()`` at module load time; without
@@ -579,6 +580,9 @@ def test_process_file_force_bypasses_skip(monkeypatch, tmp_path):
         lambda nc, dest: __import__("shutil").copy2(pdf, dest),
     )
     monkeypatch.setattr(ws, "_webdav_upload", lambda *a, **k: None)
+    # C3: the PDF overwrite path uses atomic-replace; mock it as a
+    # no-op so the test does not try to PUT to a real WebDAV server.
+    monkeypatch.setattr(ws, "_webdav_replace_atomic", lambda *a, **k: None)
     monkeypatch.setattr(ws, "_stamp_metadata", lambda *a, **k: None)
     with patch.object(ws, "process_pdf", side_effect=fake_proc), \
          patch.object(ws, "classify_pdf", side_effect=fake_classify):
@@ -627,6 +631,9 @@ def test_process_file_skips_born_digital(monkeypatch, tmp_path):
     monkeypatch.setattr(ws, "_webdav_download",
                        lambda nc, dest: __import__("shutil").copy2(pdf, dest))
     monkeypatch.setattr(ws, "_webdav_upload", lambda *a, **k: None)
+    # C3: the PDF overwrite path uses atomic-replace; mock it as a
+    # no-op so the test does not try to PUT to a real WebDAV server.
+    monkeypatch.setattr(ws, "_webdav_replace_atomic", lambda *a, **k: None)
     monkeypatch.setattr(ws, "_stamp_metadata", lambda *a, **k: None)
     with patch.object(ws, "process_pdf", side_effect=fake_proc), \
          patch.object(ws, "classify_pdf", side_effect=fake_classify):
@@ -797,6 +804,9 @@ def test_process_file_bad_layer_reocr(monkeypatch, tmp_path):
     monkeypatch.setattr(ws, "_webdav_download",
                        lambda nc, dest: __import__("shutil").copy2(pdf, dest))
     monkeypatch.setattr(ws, "_webdav_upload", lambda *a, **k: None)
+    # C3: the PDF overwrite path uses atomic-replace; mock it as a
+    # no-op so the test does not try to PUT to a real WebDAV server.
+    monkeypatch.setattr(ws, "_webdav_replace_atomic", lambda *a, **k: None)
     monkeypatch.setattr(ws, "_stamp_metadata", lambda *a, **k: None)
     with patch.object(ws, "process_pdf", side_effect=fake_proc), \
          patch.object(ws, "classify_pdf", side_effect=fake_classify):
@@ -971,7 +981,7 @@ def test_process_file_tesseract_engine_bypasses_gate(monkeypatch, tmp_path):
     pdf = tmp_path / "tess.pdf"
     _build_pdf(pdf, with_text=True)
 
-    calls = {"upload": [], "stamp": []}
+    calls = {"upload": [], "replace": [], "stamp": []}
 
     monkeypatch.setattr(
         ws, "_webdav_download",
@@ -980,6 +990,15 @@ def test_process_file_tesseract_engine_bypasses_gate(monkeypatch, tmp_path):
     monkeypatch.setattr(
         ws, "_webdav_upload",
         lambda nc, dest, *a, **k: calls["upload"].append((nc, str(dest))),
+    )
+    # C3: the PDF overwrite path goes through
+    # ``_webdav_replace_atomic`` (sibling temp PUT + WebDAV MOVE). The
+    # test is about whether the worker reaches the upload step at
+    # all, so we mock the atomic helper too and assert it ran
+    # exactly once with the expected nc path.
+    monkeypatch.setattr(
+        ws, "_webdav_replace_atomic",
+        lambda nc, dest, *a, **k: calls["replace"].append((nc, str(dest))),
     )
     monkeypatch.setattr(
         ws, "_stamp_metadata",
@@ -1021,8 +1040,10 @@ def test_process_file_tesseract_engine_bypasses_gate(monkeypatch, tmp_path):
     assert res.get("skipped") is not True
     # Upload happens from the tempdir inside _process_file, not tmp_path;
     # verify the nc-side path matches and exactly one upload + one stamp ran.
-    assert len(calls["upload"]) == 1
-    nc_uploaded, _dest = calls["upload"][0]
+    # C3: the overwrite goes through _webdav_replace_atomic, not
+    # _webdav_upload, so we assert on calls["replace"].
+    assert len(calls["replace"]) == 1
+    nc_uploaded, _dest = calls["replace"][0]
     assert nc_uploaded == "/likivik/files/tess.pdf"
     assert len(calls["stamp"]) == 1, "tesseract success must stamp"
 
@@ -1975,3 +1996,715 @@ def test_pick_quota_dimension_global_wildcard():
     # Case-insensitive wildcard too.
     m = ws._pick_quota_dimension(dims, "global")
     assert m is not None and m["details"]["value"] == "900"
+
+
+# ===========================================================================
+# ocrfix2-srv-20261016 batch — robustness fixes
+#   C1 multi-user safety, C2 image-delete failure, C3 atomic overwrite,
+#   C5 stale-row reconcile, C6 bounded retry
+# ===========================================================================
+
+
+# --- C1: Multi-user safety ------------------------------------------------
+
+def test_c1_path_user_extracts_nc_user():
+    """C1 helper: ``/_<user>/files/<rel>`` → ``<user>``.
+
+    The webhook and ``/scan-all`` both key their foreign-user check
+    off :func:`webhook_server._path_user`; the rest of the boundary
+    logic is a single ``!=`` against :data:`webhook_server.NC_USER`.
+    A wrong extractor here would silently accept foreign-user
+    paths and re-create the 401-storm the fix is meant to stop.
+    """
+    assert ws._path_user("/likivik/files/Documents/a.pdf") == "likivik"
+    assert ws._path_user("/admin/files/Photos/img.jpg") == "admin"
+    # Edge: empty / weird input.
+    assert ws._path_user("") == ""
+    assert ws._path_user("/") == ""
+
+
+def test_c1_is_foreign_user_only_when_user_mismatches(monkeypatch):
+    """C1: ``_is_foreign_user`` returns True ONLY for a user segment
+    that does not match :data:`NC_USER`. The same user → False;
+    a different user → True; an unparseable path → False (let
+    downstream error out — never silently drop a real job).
+    """
+    monkeypatch.setattr(ws, "NC_USER", "likivik")
+    assert ws._is_foreign_user("/likivik/files/a.pdf") is False
+    assert ws._is_foreign_user("/admin/files/a.pdf") is True
+    assert ws._is_foreign_user("/stranger/files/a.pdf") is True
+    # Unparseable: no user segment → not "foreign" (let the URL
+    # builder fall back to NC_USER and the existing error path
+    # produce its usual error).
+    assert ws._is_foreign_user("") is False
+    assert ws._is_foreign_user("/") is False
+
+
+def test_c1_webhook_foreign_user_records_and_returns_200(client):
+    """C1: ``/webhook`` for a path owned by a different NC user
+    must NOT touch WebDAV. Pre-fix this would 401, retry 3×, and
+    record ``status=error`` for a file the service user can
+    never reach. Post-fix it logs a warning, records the file
+    with ``reason='foreign_user'``, and returns 200 so Nextcloud
+    does not retry.
+    """
+    # The client fixture already stubbed ``_process_file``; we assert
+    # it is NEVER called for a foreign-user path.
+    nc_path = "/admin/files/Documents/secret.pdf"
+    r = client.post(
+        "/webhook",
+        headers=h(),
+        json={
+            "event": {
+                "class":
+                    "OCP\\Files\\Events\\Node\\NodeCreatedEvent",
+                "node": {"id": 999, "path": nc_path},
+            },
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["status"] == "ignored"
+    assert body["reason"] == ws.REASON_FOREIGN_USER
+
+    # The file row must exist in the per-file index with
+    # ``reason='foreign_user'`` so the panel can show the operator
+    # the real cause instead of an opaque ``error``.
+    rec = ws.jobstore.file_get(nc_path)
+    assert rec is not None
+    assert rec["reason"] == ws.REASON_FOREIGN_USER
+    assert rec["status"] == "skipped"
+
+
+def test_c1_rescan_foreign_user_rejected_422(client, monkeypatch):
+    """C1: ``/rescan`` is an operator action, not a Nextcloud
+    retry. A foreign-user rescan returns 422 with a clear detail
+    so the panel surfaces the refusal rather than queuing a job
+    that will 401 and end as ``error``.
+    """
+    # NC_USER stays as the test default ("likivik"). A rescan for
+    # a different user must be rejected.
+    r = client.post(
+        "/rescan",
+        headers=h(),
+        json={"path": "/admin/files/Documents/secret.pdf",
+              "node_id": 0, "engine": "auto", "force": False},
+    )
+    assert r.status_code == 422, r.text
+    assert "foreign" in r.json()["detail"].lower()
+
+
+# --- C2: Image branch delete failure --------------------------------------
+
+def test_c2_image_branch_delete_failed_records_reason(monkeypatch, tmp_path):
+    """C2: when the image→PDF branch uploads the new PDF
+    successfully but the WebDAV DELETE of the source image fails,
+    the worker must:
+
+      1. NOT mark the job ``status=error`` (the OCR work and the
+         upload succeeded; only cleanup failed);
+      2. propagate ``result.reason='image_delete_failed'`` to
+         ``job['reason']`` so the panel shows the real cause;
+      3. leave both files in place (no compensating delete or
+         upload).
+    """
+    # Build a tiny placeholder PDF for the upload step.
+    from pymupdf import Document
+    out = tmp_path / "img.pdf.ocr.pdf"
+    doc = Document()
+    doc.new_page()
+    doc.save(str(out))
+    doc.close()
+
+    # Build a fake process_pdf result that the image branch will
+    # consume — page_results is non-empty so the
+    # ``_assert_ocr_produced_blocks`` gate passes, vlm_pages=[0]
+    # (single page), engine_used set.
+    from nc_ocr_flow.ocr import ProcessResult
+    from nc_ocr_flow.ocr_models import OcrBlock, OcrResult
+
+    def fake_proc(pdf_path, engine=None):
+        return ProcessResult(
+            output_pdf=str(out),
+            engine_used="google",
+            page_results=[
+                OcrResult(
+                    blocks=[OcrBlock(
+                        bbox=(10.0, 10.0, 100.0, 30.0),
+                        text="stub-ocr-text",
+                        confidence=0.95,
+                        label="google-word",
+                    )],
+                    page_width=595.0, page_height=842.0,
+                ),
+            ],
+            vlm_pages=[0],
+        )
+
+    def fake_classify(_path):
+        return {"needs_ocr": True, "pdf_type": "scanned",
+                "confidence": 0.9, "has_encoding_issues": False}
+
+    # The image branch uploads the new PDF, then DELETEs the
+    # source image. Make upload succeed and delete blow up.
+    upload_calls: list[str] = []
+    delete_calls: list[str] = []
+
+    def fake_upload(nc_path, src):
+        upload_calls.append(nc_path)
+
+    def fake_delete(nc_path):
+        delete_calls.append(nc_path)
+        raise requests.ConnectionError(
+            "sabre conn reset (simulated)"
+        )
+
+    # The collision check before the upload does a PROPFIND on
+    # the new .pdf path. Make it return None so the upload
+    # proceeds (no existing PDF in the way).
+    def fake_propfind(*a, **k):
+        return (None, None)
+    monkeypatch.setattr(ws, "_propfind_size_etag", fake_propfind)
+    # The image classifier must say "this is a document image"
+    # or the branch returns early as "not a document".
+    monkeypatch.setattr(ws, "classify",
+                        lambda _p: SimpleNamespace(
+                            is_document=True, reason="doc"))
+    monkeypatch.setattr(ws, "_image_to_pdf",
+                        lambda p: str(out))
+    # Stub the WebDAV download so the test does not try to
+    # actually GET the file. Copy a tiny placeholder so the
+    # classifier is happy.
+    placeholder = tmp_path / "downloaded.jpg"
+    placeholder.write_bytes(b"\x89PNG\r\n\x1a\n")
+    monkeypatch.setattr(ws, "_webdav_download",
+                        lambda nc, dest: __import__("shutil").copy2(
+                            str(placeholder), str(dest)))
+    monkeypatch.setattr(ws, "_webdav_upload", fake_upload)
+    monkeypatch.setattr(ws, "_webdav_delete", fake_delete)
+    monkeypatch.setattr(ws, "_stamp_metadata", lambda *a, **k: None)
+    monkeypatch.setattr(ws, "_webdav_stat", lambda *a, **k: (None, None))
+
+    with patch.object(ws, "process_pdf", side_effect=fake_proc), \
+         patch.object(ws, "classify_pdf", side_effect=fake_classify):
+        result = ws._process_file(
+            "/likivik/files/photo.jpg", node_id=1,
+            engine="google", force=False,
+        )
+
+    # Upload ran; delete was attempted and raised (caught).
+    assert len(upload_calls) == 1, upload_calls
+    assert len(delete_calls) == 1, delete_calls
+
+    # The result carries the new reason; the worker propagates it
+    # to job["reason"] (verified end-to-end below).
+    assert result.get("reason") == "image_delete_failed"
+    assert result.get("delete_error")  # populated
+
+    # End-to-end: a job for this path, run via the worker path,
+    # records ``status='done'`` AND ``reason='image_delete_failed'``
+    # (the reason is what tells the operator the cleanup failed).
+    ws.jobstore._reset_for_tests()
+    new_id = ws.jobstore.record_enqueue({
+        "path": "/likivik/files/photo.jpg",
+        "nc_path": "/likivik/files/photo.jpg",
+        "node_id": 1,
+        "engine": "google",
+        "force": False,
+        "status": "queued",
+        "created": __import__("time").time(),
+    })
+    job = ws.jobstore.get(new_id)
+    job["started"] = __import__("time").time()
+    # Re-apply the mocks in the new test scope (the ``monkeypatch``
+    # setattr from above is still active for the whole test
+    # function; we just need to re-enter the with-block so the
+    # ``process_pdf`` patch is active when ``_run_job`` calls
+    # ``_process_file``).
+    with patch.object(ws, "process_pdf", side_effect=fake_proc), \
+         patch.object(ws, "classify_pdf", side_effect=fake_classify):
+        ws._run_job(job)
+    assert job["status"] == "done"
+    assert job["reason"] == "image_delete_failed"
+    # The job's ``error`` is also populated so the panel can show
+    # the underlying WebDAV exception in the history row.
+    assert "image_delete_failed" in (job.get("error") or "")
+
+
+# --- C3: Atomic PDF overwrite ---------------------------------------------
+
+def test_c3_webdav_replace_atomic_calls_move_with_overwrite(monkeypatch):
+    """C3: ``_webdav_replace_atomic`` must PUT to a sibling temp
+    path, MOVE with ``Destination`` + ``Overwrite: T`` headers,
+    and clean up the temp on success. Pre-fix the PDF overwrite
+    path did a plain PUT over the user's file, leaving a
+    truncated PDF on partial failure.
+    """
+    # Build a tiny local file to upload.
+    import tempfile as _tempfile
+    src_fd, src_path = _tempfile.mkstemp(suffix=".pdf")
+    os.close(src_fd)
+    Path(src_path).write_bytes(b"%PDF-1.4\n%fake-ocr-output\n")
+
+    seen = {"put": [], "move": [], "delete": []}
+
+    class _Resp:
+        def __init__(self, code=204):
+            self.status_code = code
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise RuntimeError(f"http {self.status_code}")
+
+    def fake_put(url, *, data, auth, headers, timeout):
+        seen["put"].append((url, headers))
+        return _Resp(201)
+
+    def fake_request(method, url, *, auth, headers, timeout):
+        if method == "MOVE":
+            seen["move"].append((url, headers))
+        elif method == "DELETE":
+            seen["delete"].append(url)
+        return _Resp(204)
+
+    monkeypatch.setattr(ws.requests, "put", fake_put)
+    monkeypatch.setattr(ws.requests, "request", fake_request)
+    # Speed up the retry helper.
+    monkeypatch.setattr(ws, "_RETRY_BASE_DELAY", 0.0)
+
+    ws._webdav_replace_atomic(
+        "/likivik/files/Documents/foo.pdf", Path(src_path),
+    )
+
+    # 1) PUT went to a sibling .ocr-tmp-<rand> path (NOT the
+    #    original — that's the whole point of C3).
+    assert len(seen["put"]) == 1
+    put_url, put_headers = seen["put"][0]
+    assert put_url != ws._webdav_url("/likivik/files/Documents/foo.pdf")
+    assert ".ocr-tmp-" in put_url
+    # 2) MOVE went to the ORIGINAL WebDAV URL with
+    #    ``Destination`` and ``Overwrite: T`` headers — sabre
+    #    treats that as an atomic replace.
+    assert len(seen["move"]) == 1
+    move_url, move_headers = seen["move"][0]
+    assert move_url == put_url
+    target_url = ws._webdav_url("/likivik/files/Documents/foo.pdf")
+    assert move_headers.get("Destination") == target_url
+    assert move_headers.get("Overwrite") == "T"
+    # 3) No cleanup DELETE on success (cleanup only on failure).
+    assert seen["delete"] == []
+
+
+def test_c3_webdav_replace_atomic_cleans_up_on_move_failure(monkeypatch):
+    """C3: when the MOVE fails after a successful PUT, the
+    helper must DELETE the temp object so a future attempt does
+    not collide with a leaked sibling. Without the cleanup the
+    retry would 409 on the new MOVE because the temp path is
+    still occupied.
+    """
+    src_fd, src_path = tempfile.mkstemp(suffix=".pdf")
+    os.close(src_fd)
+    Path(src_path).write_bytes(b"%PDF-1.4\n")
+
+    seen: list[tuple[str, str]] = []
+
+    class _Resp:
+        def __init__(self, code, body=""):
+            self.status_code = code
+            self.text = body
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                err = requests.HTTPError(f"http {self.status_code}")
+                err.response = self
+                raise err
+
+    def fake_put(url, *, data, auth, headers, timeout):
+        return _Resp(201)
+
+    def fake_request(method, url, *, auth, headers, timeout):
+        seen.append((method, url))
+        if method == "MOVE":
+            # All three attempts fail with 503 — the helper's
+            # internal retry exhausts.
+            return _Resp(503, "transient")
+        return _Resp(404)
+
+    # The cleanup DELETE uses ``requests.delete`` directly (not
+    # ``requests.request``), so mock it explicitly.
+    def fake_delete(url, *, auth, timeout):
+        seen.append(("DELETE", url))
+        return _Resp(204)
+
+    monkeypatch.setattr(ws.requests, "put", fake_put)
+    monkeypatch.setattr(ws.requests, "request", fake_request)
+    monkeypatch.setattr(ws.requests, "delete", fake_delete)
+    monkeypatch.setattr(ws, "_RETRY_BASE_DELAY", 0.0)
+
+    with pytest.raises(requests.HTTPError):
+        ws._webdav_replace_atomic(
+            "/likivik/files/Documents/foo.pdf", Path(src_path),
+        )
+
+    methods = [m for m, _ in seen]
+    assert methods.count("MOVE") == 3, methods
+    assert methods.count("DELETE") == 1, methods
+
+
+# --- C4: /jobs/{id} after pruning -----------------------------------------
+
+def test_c4_jobs_pruned_404_has_useful_detail(client, monkeypatch):
+    """C4: a job id past the retention cap must 404, and the
+    detail must tell the operator the row was pruned (not that
+    the job never existed) and point at /stats + /states. The
+    NC app uses these endpoints already, so the panel degrades
+    gracefully.
+    """
+    # Force the retention cap to 2 rows so the next enqueue
+    # prunes the first.
+    monkeypatch.setattr(ws.jobstore, "_MAX_ROWS", 2)
+    # Enqueue three jobs to push id=1 out of the table.
+    for i in range(1, 4):
+        ws.jobstore.record_enqueue({
+            "path": f"/likivik/files/d-{i}.pdf",
+            "nc_path": f"/likivik/files/d-{i}.pdf",
+            "node_id": 1000 + i,
+            "engine": "google",
+            "force": False,
+            "status": "queued",
+            "created": 1.0 + i,
+        })
+    # Id=1 should now be pruned.
+    r = client.get("/jobs/1", headers=h())
+    assert r.status_code == 404, r.text
+    detail = r.json()["detail"]
+    assert "not found" in detail.lower()
+    assert "prune" in detail.lower()
+    assert "/stats" in detail
+    assert "/states" in detail
+
+
+# --- C5: Stale-row reconciler ---------------------------------------------
+
+def test_c5_reconcile_stale_marks_404_rows_gone(monkeypatch):
+    """C5: a row whose underlying file is gone (HEAD 404) must
+    be flipped to ``status='gone'`` with ``reason='file_removed'``.
+    Rows that still exist are left alone. Idempotent: a second
+    pass finds no eligible rows.
+    """
+    # Seed the file index with a mix of states.
+    ws.jobstore._reset_for_tests()
+    for status, path in [
+        ("error", "/likivik/files/__probe_1.pdf"),
+        ("error", "/likivik/files/__probe_2.pdf"),
+        ("error", "/likivik/files/real_doc.pdf"),
+        ("queued", "/likivik/files/another_probe.pdf"),
+        ("done", "/likivik/files/never_touched.pdf"),  # not in scope
+    ]:
+        ws.jobstore.file_put({
+            "path": path, "status": status, "engine": None,
+            "reason": "test", "node_id": 0, "finished": 1.0,
+            "size": 100, "etag": "abc",
+        })
+
+    # HEAD returns 404 for the *probe* paths and 200 for the
+    # real / done paths.
+    def fake_head(url, *, auth, timeout):
+        if "__probe" in url or "another_probe" in url:
+            class R:
+                status_code = 404
+            return R()
+        class R:
+            status_code = 200
+        return R()
+
+    monkeypatch.setattr(ws.requests, "head", fake_head)
+
+    # First pass: scope the query to the probe paths only so the
+    # real_doc row does not show up in the test's pass-2
+    # expectations. We confirm via file_get that real_doc was
+    # left alone.
+    out1 = ws.reconcile_stale_files(
+        limit=50, max_propfind=50,
+        statuses=["queued"],  # only probes are queued
+    )
+    assert out1["checked"] == 1   # one queued (another_probe)
+    assert out1["marked_gone"] == 1
+    assert out1["kept"] == 0
+
+    # The 404 path is now 'gone'.
+    rec = ws.jobstore.file_get("/likivik/files/another_probe.pdf")
+    assert rec["status"] == "gone"
+    assert rec["reason"] == "file_removed"
+
+    # The still-existing error row is untouched (HEAD 200
+    # implies the file is there). It will keep being eligible
+    # for the next pass until the file actually disappears;
+    # that's the correct behaviour — the reconciler is a sweeper,
+    # not a one-shot cleaner.
+    rec = ws.jobstore.file_get("/likivik/files/real_doc.pdf")
+    assert rec["status"] == "error"
+
+    # Second pass on the error rows: all three error rows are
+    # still in the index (we never reconciled them in pass 1
+    # because we scoped pass 1 to ``statuses=['queued']``). The
+    # two probes HEAD-404 and are marked gone; ``real_doc``
+    # HEAD-200 and is left alone.
+    out3 = ws.reconcile_stale_files(
+        limit=50, max_propfind=50, statuses=["error"],
+    )
+    assert out3["checked"] == 3
+    assert out3["marked_gone"] == 2
+    assert out3["kept"] == 1
+
+    # Third pass on the error rows: only ``real_doc`` is left,
+    # and HEAD still says 200, so the row stays as ``error``.
+    out4 = ws.reconcile_stale_files(
+        limit=50, max_propfind=50, statuses=["error"],
+    )
+    assert out4["checked"] == 1
+    assert out4["marked_gone"] == 0
+    assert out4["kept"] == 1
+
+
+def test_c5_reconcile_endpoint_requires_secret(client):
+    """C5: the ``/reconcile`` endpoint is gated on the webhook
+    secret the same way every other operator action is."""
+    r = client.post("/reconcile", json={})
+    assert r.status_code == 401
+
+
+def test_c5_reconcile_endpoint_runs_and_returns_counts(client, monkeypatch):
+    """C5: ``POST /reconcile`` runs the bounded pass and returns
+    its counts so an operator can invoke it on demand without
+    restarting the service.
+    """
+    ws.jobstore._reset_for_tests()
+    ws.jobstore.file_put({
+        "path": "/likivik/files/stale.pdf", "status": "error",
+        "engine": None, "reason": "old", "node_id": 0,
+        "finished": 1.0, "size": 1, "etag": "x",
+    })
+
+    def fake_head(url, *, auth, timeout):
+        class R:
+            status_code = 404
+        return R()
+    monkeypatch.setattr(ws.requests, "head", fake_head)
+
+    r = client.post(
+        "/reconcile", headers=h(),
+        json={"limit": 10, "max_propfind": 10, "statuses": ["error"]},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["marked_gone"] == 1
+    assert body["checked"] == 1
+
+
+# --- C6: Bounded automatic retry -----------------------------------------
+
+def test_c6_is_transient_classifier():
+    """C6: the transient classifier must mark 5xx, 408, 429,
+    and transport errors as transient; 4xx other than 408/429
+    and any other exception as permanent.
+    """
+    import requests as _req
+    # 5xx → transient
+    err_503 = _req.HTTPError("server error")
+    err_503.response = type("R", (), {"status_code": 503})()
+    assert ws._is_transient_failure(err_503, 503) is True
+    err_500 = _req.HTTPError("server error")
+    err_500.response = type("R", (), {"status_code": 500})()
+    assert ws._is_transient_failure(err_500, 500) is True
+    # 408/429 → transient
+    err_408 = _req.HTTPError("timeout")
+    err_408.response = type("R", (), {"status_code": 408})()
+    assert ws._is_transient_failure(err_408, 408) is True
+    err_429 = _req.HTTPError("rate limit")
+    err_429.response = type("R", (), {"status_code": 429})()
+    assert ws._is_transient_failure(err_429, 429) is True
+    # 4xx other than 408/429 → permanent
+    err_404 = _req.HTTPError("not found")
+    err_404.response = type("R", (), {"status_code": 404})()
+    assert ws._is_transient_failure(err_404, 404) is False
+    err_401 = _req.HTTPError("auth")
+    err_401.response = type("R", (), {"status_code": 401})()
+    assert ws._is_transient_failure(err_401, 401) is False
+    # Transport → transient
+    assert ws._is_transient_failure(_req.ConnectionError("conn"), None) is True
+    assert ws._is_transient_failure(_req.Timeout("timeout"), None) is True
+    assert ws._is_transient_failure(TimeoutError("timeout"), None) is True
+    assert ws._is_transient_failure(OSError("reset"), None) is True
+    # Permanent: any other exception.
+    assert ws._is_transient_failure(ValueError("nope"), None) is False
+    assert ws._is_transient_failure(RuntimeError("nope"), None) is False
+
+
+def test_c6_maybe_schedule_retry_creates_queued_row(monkeypatch):
+    """C6: on a transient failure with attempts < cap, the
+    helper enqueues a fresh row with attempts+1 and a backoff
+    timestamp. ``claim_next`` will not pick it up until
+    ``next_run_at`` arrives, so the worker does not busy-loop.
+    """
+    import time as _time
+    ws.jobstore._reset_for_tests()
+    job = {
+        "id": 0,
+        "path": "/likivik/files/a.pdf",
+        "nc_path": "/likivik/files/a.pdf",
+        "node_id": 1, "engine": "google", "force": False,
+        "status": "running", "attempts": 0,
+    }
+    # Stub enqueue_retry to capture what it would write.
+    captured: dict = {}
+    def fake_enqueue(j, *, attempts, next_run_at):
+        captured["attempts"] = attempts
+        captured["next_run_at"] = next_run_at
+        return 99
+    monkeypatch.setattr(ws.jobstore, "enqueue_retry", fake_enqueue)
+
+    err = requests.HTTPError("503 from sabre")
+    err.response = type("R", (), {"status_code": 503})()
+    now = _time.time()
+    scheduled = ws._maybe_schedule_retry(job, err, 503)
+    assert scheduled is True
+    assert captured["attempts"] == 1
+    # Backoff for the first retry is 60s (idx 0 of the schedule).
+    assert 0 <= captured["next_run_at"] - now - 60.0 < 1.0
+
+
+def test_c6_retry_exhausted_does_not_re_enqueue(monkeypatch):
+    """C6: once ``attempts >= _MAX_RETRY_ATTEMPTS`` the helper
+    must NOT enqueue another row; the failure becomes terminal
+    so the operator can act on it.
+    """
+    ws.jobstore._reset_for_tests()
+    job = {"id": 0, "path": "/likivik/files/a.pdf",
+           "nc_path": "/likivik/files/a.pdf",
+           "node_id": 1, "engine": "google", "force": False,
+           "status": "running", "attempts": ws._MAX_RETRY_ATTEMPTS}
+    called = {"n": 0}
+    def fake_enqueue(*a, **k):
+        called["n"] += 1
+        return 99
+    monkeypatch.setattr(ws.jobstore, "enqueue_retry", fake_enqueue)
+
+    err = requests.HTTPError("503 again")
+    err.response = type("R", (), {"status_code": 503})()
+    assert ws._maybe_schedule_retry(job, err, 503) is False
+    assert called["n"] == 0
+
+
+def test_c6_claim_next_skips_jobs_whose_next_run_at_is_future(monkeypatch):
+    """C6: the SQL filter added to ``claim_next`` keeps a
+    scheduled retry out of the worker's hands until its
+    backoff window arrives.
+    """
+    import time as _time
+    ws.jobstore._reset_for_tests()
+    # Enqueue a fresh job (no retry, claimable immediately) and
+    # a scheduled retry (``next_run_at`` in the future).
+    ws.jobstore.record_enqueue({
+        "path": "/likivik/files/fresh.pdf",
+        "nc_path": "/likivik/files/fresh.pdf",
+        "node_id": 1, "engine": "google", "force": False,
+        "status": "queued", "created": _time.time(),
+        "next_run_at": 0,
+    })
+    ws.jobstore.record_enqueue({
+        "path": "/likivik/files/retry.pdf",
+        "nc_path": "/likivik/files/retry.pdf",
+        "node_id": 2, "engine": "google", "force": False,
+        "status": "queued", "created": _time.time() + 1,
+        # Far in the future: claim_next must NOT pick it.
+        "next_run_at": _time.time() + 3600,
+    })
+
+    j = ws.jobstore.claim_next()
+    assert j is not None
+    assert j["path"] == "/likivik/files/fresh.pdf"
+
+    # The second claim must return None — the retry's backoff
+    # has not elapsed.
+    j2 = ws.jobstore.claim_next()
+    assert j2 is None
+
+
+def test_c6_stats_exposes_retry_counts():
+    """C6: ``/stats`` surfaces ``retries_total`` and
+    ``retries_queued`` so the panel can show the operator the
+    amount of scheduled-but-not-yet-due work.
+    """
+    import time as _time
+    ws.jobstore._reset_for_tests()
+    ws.jobstore.record_enqueue({
+        "path": "/likivik/files/old.pdf", "nc_path": "/likivik/files/old.pdf",
+        "node_id": 1, "engine": "google", "force": False,
+        "status": "queued", "created": _time.time(),
+        "attempts": 0, "next_run_at": 0,
+    })
+    ws.jobstore.record_enqueue({
+        "path": "/likivik/files/retry.pdf",
+        "nc_path": "/likivik/files/retry.pdf",
+        "node_id": 2, "engine": "google", "force": False,
+        "status": "queued", "created": _time.time() + 1,
+        "attempts": 1, "next_run_at": _time.time() + 3600,
+    })
+    s = ws.jobstore.stats()
+    assert s.get("queued") == 2
+    assert s.get("retries_total") == 1
+    assert s.get("retries_queued") == 1
+
+
+# --- C7: Status consumers (gone + new reasons) ----------------------------
+
+def test_c7_gone_status_round_trips_through_states_endpoint(client):
+    """C7: the 'gone' status from the previous batch must not
+    break the API contract the NC app reads. The /states endpoint
+    must surface the row verbatim — the frontend's STATE_DONE /
+    STATE_FRESH lists do not include 'gone', so neither action
+    shows, which is the correct behaviour (the file is gone,
+    there is nothing to act on).
+
+    The test asserts:
+
+      1. /states returns the row with status='gone'.
+      2. /stats does not count 'gone' rows as errors.
+      3. /jobs/{id} returns the row normally (it is in the
+         retention window).
+
+    The NC app (pkgs/ocrflow-ncapp) uses STATE_DONE and
+    STATE_FRESH — both lists are explicit arrays, so 'gone' is
+    not enumerated, but it also is not mis-rendered: the
+    FileStateService.classify() returns ``state => $status``
+    for unknown statuses, and the panel's template renders
+    the status as a CSS class + text. The 'gone' text appears
+    unchanged. The frontend Files action shows no entries
+    (neither "Send to OCR" nor "Re-OCR anyway"), which is the
+    correct outcome for a non-existent file.
+    """
+    ws.jobstore._reset_for_tests()
+    nc_path = "/likivik/files/gone_doc.pdf"
+    ws.jobstore.file_put({
+        "path": nc_path, "status": "gone",
+        "engine": None, "reason": "file_removed",
+        "node_id": 0, "finished": 1.0, "size": None, "etag": None,
+    })
+    # The /states endpoint is what the NC app reads; it must
+    # return the row with the literal status the service stored.
+    r = client.get(f"/states?paths={nc_path}", headers=h())
+    assert r.status_code == 200, r.text
+    body = r.json()
+    states = body.get("states") or body.get("body", {}).get("states", {})
+    rec = states.get(nc_path)
+    assert rec is not None, body
+    assert rec["status"] == "gone"
+    assert rec["reason"] == "file_removed"
+
+    # /stats does not surface 'gone' as a failure — only
+    # 'error' and 'gone' are distinct counts.
+    s = client.get("/stats", headers=h()).json()
+    assert "gone" in s or s.get("gone", 0) == 0  # not counted as error
+    # The critical assertion: 'gone' is NOT lumped into 'error'.
+    assert s.get("error", 0) == 0

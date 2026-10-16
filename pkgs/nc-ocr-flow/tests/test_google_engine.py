@@ -129,6 +129,57 @@ def test_line_grouping_skips_empty():
     assert lines[0][0] == "keep words"
 
 
+# --- Unicode normalisation (regression: decomposed Cyrillic -> mojibake) ----
+#
+# Background: Vision can report a word as a base letter followed by a
+# separate COMBINING MARK symbol. Joining those symbol texts verbatim
+# and writing the result into the sandwich text layer produced text that
+# every reader extracted as mojibake: 0 Cyrillic characters and a pile
+# of U+0300-U+036F combining marks. The parser must emit NFC.
+
+
+def test_decomposed_symbols_are_normalised_to_nfc():
+    """A word built from base+combining symbols comes out precomposed."""
+    # "и" + U+0306 (combining breve) == "й" once composed.
+    para = _Para([
+        _Word([_Sym("\u0438"), _Sym("\u0306")], 10, 10, 40, 20),
+    ])
+    block = _Block([para])
+    lines = list(google_engine._line_blocks(block, 200, 200))
+    assert len(lines) == 1
+    text, _bbox = lines[0]
+    assert text == "\u0439"  # precomposed, not "и" + U+0306
+    assert "\u0306" not in text
+
+
+def test_decomposed_line_has_no_combining_marks():
+    """Whole-line NFC: decomposed Cyrillic comes back with zero marks.
+
+    "Таймыр" decomposes under NFD (й -> и + U+0306), so this test is
+    NOT vacuous — unlike plain-letter words such as "СГР", whose NFD
+    form is identical to NFC and would pass with or without the fix.
+    """
+    import unicodedata
+
+    nfd = unicodedata.normalize("NFD", "Таймыр")
+    assert nfd != "Таймыр", "test input does not actually decompose"
+    assert any(0x0300 <= ord(c) <= 0x036F for c in nfd)
+
+    words = [
+        _w("СГР", 10, 10, 40, 20),
+        _w(nfd, 50, 10, 90, 20),
+    ]
+    block = _Block([_Para(words)])
+    lines = list(google_engine._line_blocks(block, 200, 200))
+    assert len(lines) == 1
+    text, _bbox = lines[0]
+    assert text == "СГР Таймыр"
+    marks = [c for c in text if 0x0300 <= ord(c) <= 0x036F]
+    assert marks == []
+    cyrillic = [c for c in text if "А" <= c <= "я" or c in "Ёё"]
+    assert len(cyrillic) == len("СГРТаймыр")
+
+
 # --- normalized_vertices handling (regression: Google bbox-parser bug) -----
 #
 # Background: the live Google Vision whole-document PDF batch path

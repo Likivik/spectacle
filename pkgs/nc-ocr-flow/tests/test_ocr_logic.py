@@ -394,6 +394,48 @@ def test_embed_ocr_text_already_redacted_skips_redaction():
 
 
 
+def test_embed_ocr_text_normalises_decomposed_text():
+    """Regression: decomposed text must never reach the text layer.
+
+    Vision can return a word as a base letter plus a separate COMBINING
+    MARK. Writing that verbatim made the embedded layer extract as
+    mojibake (0 base-script characters, a pile of U+0300-U+036F marks),
+    which is exactly what a broken OCR run looks like. The embedder is
+    the single choke point for every engine, so it must normalise.
+
+    Latin is used deliberately: the fallback font in a bare environment
+    is Helvetica (no Cyrillic), but the normalisation mechanism is
+    script-independent, and the Cyrillic side is covered by
+    ``test_google_engine.test_decomposed_line_has_no_combining_marks``.
+    """
+    import fitz
+    import unicodedata
+
+    from nc_ocr_flow.ocr_models import OcrBlock, OcrResult
+
+    doc = fitz.open()
+    doc.new_page(width=595, height=842)
+
+    decomposed = "Cafe\u0301"  # "Café" in NFD
+    assert unicodedata.normalize("NFC", decomposed) == "Caf\u00e9"
+
+    block = OcrBlock(
+        bbox=(50, 50, 545, 200),
+        text=decomposed,
+        confidence=0.95,
+        label="google-block",
+    )
+    result = OcrResult(blocks=[block], page_width=595, page_height=842)
+
+    _embed_ocr_text(doc, 0, result, already_redacted=True)
+    text = doc[0].get_text()
+    doc.close()
+
+    marks = [c for c in text if 0x0300 <= ord(c) <= 0x036F]
+    assert marks == [], f"combining marks survived into the layer: {text!r}"
+    assert "Caf\u00e9" in text, f"precomposed text missing from layer: {text!r}"
+
+
 # --- Font handling -----------------------------------------------------------
 
 def test_get_font_returns_font_object():

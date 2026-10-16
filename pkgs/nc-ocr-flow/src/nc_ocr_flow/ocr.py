@@ -29,6 +29,7 @@ import logging
 import os
 import subprocess
 import tempfile
+import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -512,6 +513,12 @@ def _embed_ocr_text(
         for text, lb in line_bboxes:
             if not text:
                 continue
+            # Single choke point for every engine: never write a
+            # decomposed (base + combining mark) string into the text
+            # layer. Decomposed Cyrillic reads back as mojibake — 0
+            # Cyrillic characters plus a pile of combining marks — which
+            # is indistinguishable from a broken OCR run.
+            text = unicodedata.normalize("NFC", text)
             tl = font.text_length(text, fontsize=1)
             fontsize = lb.width / tl if tl > 0 else 10
             fontsize = max(4, min(fontsize, 72))

@@ -51,6 +51,7 @@ import logging
 import os
 import tempfile
 import time
+import unicodedata
 from pathlib import Path
 from uuid import uuid4
 
@@ -361,7 +362,17 @@ def _line_blocks(block, page_w: float, page_h: float):
     for para in block.paragraphs:
         words = []  # (x0, y0, x1, y1, text)
         for word in para.words:
-            sym = "".join(s.text for s in word.symbols).strip()
+            # Vision may report Cyrillic (and other scripts) DECOMPOSED —
+            # a base letter followed by combining marks (U+0300-U+036F).
+            # Joining symbol texts verbatim then writes that decomposed
+            # form into the sandwich text layer, and every consumer that
+            # reads it back sees mojibake: 0 Cyrillic characters and a
+            # pile of combining marks. Normalising to NFC here makes the
+            # text we store and embed precomposed, which is what readers,
+            # search and the Nextcloud fulltext path all expect.
+            sym = unicodedata.normalize(
+                "NFC", "".join(s.text for s in word.symbols)
+            ).strip()
             if not sym:
                 continue
             xs, ys = _word_absolute_coords(word.bounding_box, page_w, page_h)
@@ -394,7 +405,7 @@ def _line_blocks(block, page_w: float, page_h: float):
                 lines.append([w])
 
         for L in lines:
-            text = " ".join(w[4] for w in L)
+            text = unicodedata.normalize("NFC", " ".join(w[4] for w in L))
             x0 = max(0.0, min(w[0] for w in L))
             y0 = max(0.0, min(w[1] for w in L))
             x1 = min(page_w, max(w[2] for w in L))

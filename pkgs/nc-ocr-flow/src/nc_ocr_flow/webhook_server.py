@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import secrets
 import tempfile
 import threading
 import time
@@ -217,6 +218,51 @@ def _mark_processed(node_id: int) -> None:
 
 # --- WebDAV client ---
 
+#: Distinct reason recorded in ``files.reason`` when a webhook fires
+#: for a path owned by a Nextcloud user other than the one this service
+#: is configured to authenticate as (NC_OCR_NC_USER, default ``likivik``).
+#: The service user has no access to other users' WebDAV roots, so the
+#: old behaviour — authenticate as NC_USER, hit a 401, retry 3×, mark
+#: ``error`` — produced a stream of opaque ``error`` rows for files
+#: the service could never have processed. We refuse the work at the
+#: boundary instead (C1).
+REASON_FOREIGN_USER = "foreign_user"
+
+
+def _path_user(nc_path: str) -> str:
+    """Return the Nextcloud user segment of an NC-internal path, or ``""``.
+
+    NC delivers paths as ``/<user>/files/<rel>``; the same form the
+    webhook hands us. The user segment is the first path component.
+    Returns the empty string when the path is unparseable so the
+    caller can fall back to :data:`NC_USER` and the WebDAV URL builder
+    does the right thing. Deliberately permissive: the strict path
+    check lives in :func:`_is_foreign_user` and the URL builder, not
+    here.
+    """
+    rel = (nc_path or "").lstrip("/")
+    if not rel:
+        return ""
+    return rel.split("/", 1)[0]
+
+
+def _is_foreign_user(nc_path: str) -> bool:
+    """True when ``nc_path`` belongs to a Nextcloud user other than NC_USER.
+
+    Used at the /webhook /scan-all /rescan boundaries to short-circuit
+    a job that the service user (NC_OCR_NC_USER) can never satisfy —
+    every WebDAV call would 401, be retried 3×, and end as a generic
+    ``error`` row. We record the file with :data:`REASON_FOREIGN_USER`
+    and respond 200 so Nextcloud does not retry.
+    """
+    u = _path_user(nc_path)
+    if not u:
+        # Unparseable path: the URL builder will fall back to NC_USER,
+        # so this is not "foreign" — let downstream handle the error.
+        return False
+    return u != NC_USER
+
+
 def _webdav_url(nc_path: str) -> str:
     """Build WebDAV URL from a NC-internal path.
 
@@ -379,6 +425,112 @@ def _webdav_delete(nc_path: str) -> None:
     _retry(_do_delete, what=f"WebDAV DELETE {nc_path}")
 
 
+def _webdav_replace_atomic(nc_path: str, src: Path) -> None:
+    """Atomically overwrite ``nc_path`` with ``src`` via WebDAV MOVE.
+
+    C3: the previous PDF-overwrite path did a plain PUT straight over
+    the user's original. A partial upload (server-side crash,
+    connection reset, upload timeout) left a truncated, corrupt PDF on
+    disk with no way to recover — the original was already gone.
+    Nextcloud/sabre's WebDAV server supports atomic MOVE, so we:
+
+      1. PUT the new content to a sibling temp path
+         (``<name>.ocr-tmp-<rand>`` in the same WebDAV directory);
+      2. MOVE the temp path onto ``nc_path`` with
+         ``Destination: <target>`` and ``Overwrite: T`` (sabre
+         implements MOVE atomically);
+      3. DELETE the temp path on any failure (best-effort).
+
+    The image→PDF branch keeps using ``_webdav_upload`` because the
+    target is a brand-new path; nothing to corrupt, and a plain PUT is
+    strictly cheaper than a temp-and-MOVE round trip.
+    """
+    from urllib.parse import quote
+
+    target_url = _webdav_url(nc_path)
+    # Build a sibling temp URL by splitting nc_path's user-relative
+    # component, appending ``.ocr-tmp-<rand>``, and URL-encoding each
+    # segment the same way ``_webdav_url`` does. We keep the temp in
+    # the same WebDAV directory so a MOVE between them is local and
+    # can be atomic (sabre won't cross storage backends).
+    rel = nc_path.lstrip("/")
+    parts = rel.split("/", 2)
+    if len(parts) >= 3 and parts[1] == "files":
+        user = parts[0]
+        rel_file = parts[2]
+    else:
+        user = NC_USER
+        rel_file = rel
+    suffix = "".join(
+        c if c.isalnum() else "" for c in (Path(rel_file).suffix or "")
+    ) or ".tmp"
+    parent = str(Path(rel_file).parent)
+    base = Path(rel_file).name
+    # Eight hex chars from a fresh os.urandom — collision chance is
+    # negligible at the volumes this service runs, and we DELETE on
+    # failure so a stray temp does not accumulate.
+    rand = secrets.token_hex(4)
+    tmp_name = f"{base}.ocr-tmp-{rand}{suffix}"
+    if parent and parent != ".":
+        tmp_rel = f"{parent}/{tmp_name}"
+    else:
+        tmp_rel = tmp_name
+    tmp_url = f"{NC_URL}/remote.php/dav/files/{user}/" + "/".join(
+        quote(p, safe="") for p in tmp_rel.split("/")
+    )
+    log.info("atomic-replace: PUT tmp %s", tmp_url)
+
+    def _do_put_tmp() -> None:
+        with src.open("rb") as f:
+            r = requests.put(
+                tmp_url,
+                data=f,
+                auth=(NC_USER, NC_PASSWORD),
+                headers={"Content-Type": "application/octet-stream"},
+                timeout=300,
+            )
+        r.raise_for_status()
+
+    def _do_move() -> requests.Response:
+        r = requests.request(
+            "MOVE", tmp_url,
+            auth=(NC_USER, NC_PASSWORD),
+            headers={
+                "Destination": target_url,
+                "Overwrite": "T",
+            },
+            timeout=120,
+        )
+        # 201/204 are success; 412 means destination existed and
+        # Overwrite: T was rejected (shouldn't happen on a known
+        # existing path, but we surface it as a real error rather
+        # than retrying forever).
+        r.raise_for_status()
+        return r
+
+    def _do_cleanup() -> None:
+        # Best-effort. If cleanup fails the temp object leaks; the
+        # startup orphan sweep (if it finds it) and the operator can
+        # remove it by hand. We do NOT want a cleanup failure to
+        # mask a successful MOVE.
+        try:
+            requests.delete(
+                tmp_url, auth=(NC_USER, NC_PASSWORD), timeout=30,
+            ).raise_for_status()
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "atomic-replace: cleanup DELETE %s failed (%s);"
+                " temp object may leak", tmp_url, exc,
+            )
+
+    try:
+        _retry(_do_put_tmp, what=f"atomic-replace PUT {tmp_url}")
+        _retry(_do_move, what=f"atomic-replace MOVE {tmp_url} -> {target_url}")
+    except Exception:
+        _do_cleanup()
+        raise
+
+
 def _propfind_size_etag(nc_path: str) -> tuple[int | None, str | None]:
     """One raw PROPFIND → (size, etag)."""
     import re as _re
@@ -427,6 +579,145 @@ def _webdav_stat(nc_path: str, attempts: int = 3) -> tuple[int | None, str | Non
         prev = cur
         time.sleep(1.5)
     return prev
+
+
+def _webdav_exists(nc_path: str, timeout: int = 10) -> bool:
+    """Cheap existence check: HEAD the WebDAV URL, return True on 2xx/3xx.
+
+    Used by the C5 stale-row reconciler. We pick HEAD over PROPFIND
+    because sabre answers HEAD without reading the body — important
+    when one reconcile pass may scan a few hundred rows. A
+    transport-level failure (timeout, 5xx, connection reset) is
+    treated as "unknown, do not mark" so the reconciler is safe to
+    re-run: the row is still in the index, just not flipped to
+    ``gone`` this pass.
+    """
+    url = _webdav_url(nc_path)
+    try:
+        r = requests.head(
+            url, auth=(NC_USER, NC_PASSWORD), timeout=timeout,
+        )
+    except (requests.RequestException, TimeoutError, OSError) as exc:
+        log.debug("HEAD %s failed: %s", url, exc)
+        return True  # unknown — keep the row
+    # 404 = gone. Any 2xx/3xx = present. 5xx and 401/403 = we
+    # cannot tell, keep the row (transient or auth issue).
+    return r.status_code != 404
+
+
+# --- Stale-row reconciler (C5) ---------------------------------------------
+# Cap on how many rows one reconcile pass will examine. The query
+# itself is bounded by ``jobstore.file_paths_by_status``; this is the
+# *post-query* ceiling on PROPFINDs to keep the worst-case wall-clock
+# bounded if the index is large. Empirically one PROPFIND takes
+# ~50–200ms over a tailnet, so 500 rows ≈ 1.5 minutes.
+_RECONCILE_MAX_PROPFINDS = int(os.environ.get(
+    "NC_OCR_RECONCILE_MAX_PROPFINDS", "500"
+))
+# How many rows one reconcile pass queries from the index. The
+# ordering is ``finished ASC`` (oldest first) so the first pass
+# cleans the worst offenders.
+_RECONCILE_QUERY_LIMIT = int(os.environ.get(
+    "NC_OCR_RECONCILE_QUERY_LIMIT", "500"
+))
+
+
+def reconcile_stale_files(
+    limit: int | None = None,
+    max_propfind: int | None = None,
+    statuses: list[str] | None = None,
+) -> dict:
+    """Mark ``error``/``queued`` file rows ``gone`` when the file no longer exists.
+
+    C5: production has 36 file rows stuck at ``status='error'`` for
+    files that were deleted long ago (``__probe_*.pdf``, ``x.pdf``,
+    and similar test artefacts). Nothing ever re-checks them, so
+    ``/stats`` reports them as errors forever and the operator sees
+    a panel that does not match reality. The reconciler:
+
+      1. Selects up to ``limit`` file-index rows in ``statuses``
+         (default ``['error', 'queued']``), ordered by ``finished``
+         ASC so the oldest rows come first.
+      2. HEAD-requests each path on WebDAV. 404 → mark ``gone`` with
+         ``reason='file_removed'`` (same shape ``_run_job`` uses when
+         it discovers a 404 mid-job, so the panel renders the state
+         consistently).
+      3. Bounded: ``max_propfind`` caps the PROPFINDs per call, so a
+         large index never spawns an unbounded run.
+
+    Rows that look transient (HEAD 5xx / connection error) are
+    left alone — the next pass picks them up. Idempotent: rows
+    already at ``status='gone'`` are filtered out at the query
+    level, so calling this twice is a no-op the second time.
+    """
+    if limit is None:
+        limit = _RECONCILE_QUERY_LIMIT
+    if max_propfind is None:
+        max_propfind = _RECONCILE_MAX_PROPFINDS
+    if statuses is None:
+        statuses = ["error", "queued"]
+    effective = max(0, min(int(limit), int(max_propfind)))
+    if effective == 0:
+        return {
+            "checked": 0, "marked_gone": 0, "kept": 0,
+            "errors": [], "limit": int(limit),
+            "max_propfind": int(max_propfind),
+        }
+    try:
+        paths = jobstore.file_paths_by_status(statuses, limit=effective)
+    except Exception as exc:  # noqa: BLE001
+        log.error("reconcile_stale_files: query failed (%s)", exc)
+        return {
+            "checked": 0, "marked_gone": 0, "kept": 0,
+            "errors": [{"path": None, "error": str(exc)}],
+            "limit": int(limit), "max_propfind": int(max_propfind),
+        }
+    if not paths:
+        return {
+            "checked": 0, "marked_gone": 0, "kept": 0,
+            "errors": [], "limit": int(limit),
+            "max_propfind": int(max_propfind),
+        }
+    marked_gone = 0
+    kept = 0
+    errors: list[dict] = []
+    for nc_path in paths:
+        try:
+            exists = _webdav_exists(nc_path)
+        except Exception as exc:  # noqa: BLE001
+            errors.append({"path": nc_path, "error": str(exc)})
+            log.warning(
+                "reconcile_stale_files: HEAD %s raised (%s); skipping",
+                nc_path, exc,
+            )
+            continue
+        if not exists:
+            # Mirror the shape the worker produces when it discovers
+            # a 404 mid-job — operators see one reason for "gone",
+            # not one per reconciler invocation.
+            _index_record(
+                nc_path, "gone", engine=None,
+                reason="file_removed", node_id=0,
+            )
+            marked_gone += 1
+            log.info(
+                "reconcile_stale_files: %s → gone (HEAD 404)", nc_path,
+            )
+        else:
+            kept += 1
+    if marked_gone or errors:
+        log.warning(
+            "reconcile_stale_files: checked=%d marked_gone=%d kept=%d errors=%d",
+            len(paths), marked_gone, kept, len(errors),
+        )
+    return {
+        "checked": len(paths),
+        "marked_gone": marked_gone,
+        "kept": kept,
+        "errors": errors,
+        "limit": int(limit),
+        "max_propfind": int(max_propfind),
+    }
 
 
 # --- OCR processing ---
@@ -1003,9 +1294,52 @@ def _process_file(nc_path: str, node_id: int, engine: str | None = None,
                 l2_pages=result.l2_pages,
             )
 
-            # Upload OCR'd PDF (new .pdf path), delete original image
+            # Upload OCR'd PDF (new .pdf path), delete original image.
+            # C2: the upload can succeed while the delete of the
+            # source image fails (intermittent WebDAV 5xx, brief
+            # network blip, locked file). Old behaviour left the
+            # source image in place and recorded the file row against
+            # the image path with no signal — /stats showed
+            # ``status=done`` and the operator had no way to know the
+            # user sees both the image AND the new PDF. We retry the
+            # delete (with the same _webdav_delete backoff loop that
+            # already exists) and, if it still fails after all
+            # retries, keep both files and record a distinct reason.
+            # The status stays ``done`` because the OCR work itself
+            # succeeded and the new PDF is live — but the reason makes
+            # the leftover image visible to the panel and to
+            # /stats. We deliberately do NOT mark the file
+            # ``status=error``: the user now has a usable PDF, and
+            # the leftover image is a cleanup problem, not a failed
+            # job.
             _webdav_upload(pdf_nc_path, Path(result.output_pdf))
-            _webdav_delete(nc_path)
+            try:
+                _webdav_delete(nc_path)
+                delete_failed = False
+                delete_error = None
+            except Exception as exc:  # noqa: BLE001
+                delete_failed = True
+                delete_error = exc
+                log.warning(
+                    "image branch: OCR + upload of %s succeeded, but"
+                    " delete of source image %s failed after retries (%s);"
+                    " keeping both files",
+                    pdf_nc_path, nc_path, exc,
+                )
+
+            if delete_failed:
+                return {
+                    "path": nc_path, "output": pdf_nc_path,
+                    "engine": result.engine_used,
+                    "vlm_pages": result.vlm_pages,
+                    # Distinct reason so the panel and /stats show
+                    # the real cause. Operator's job: clean up the
+                    # leftover image manually (it cannot be safely
+                    # re-deleted by the worker because the user may
+                    # already be looking at both files).
+                    "reason": "image_delete_failed",
+                    "delete_error": str(delete_error),
+                }
 
             return {
                 "path": nc_path, "output": pdf_nc_path,
@@ -1050,8 +1384,13 @@ def _process_file(nc_path: str, node_id: int, engine: str | None = None,
                 l2_pages=result.l2_pages,
             )
 
-            # Upload OCR'd PDF (replaces original → NC version)
-            _webdav_upload(nc_path, Path(result.output_pdf))
+            # Upload OCR'd PDF (replaces original → NC version).
+            # C3: the previous code did a plain PUT straight over
+            # the user's original. A partial upload (server crash,
+            # reset, timeout) left a truncated, corrupt PDF on disk
+            # with no way to recover. We PUT to a sibling temp path
+            # and then MOVE it atomically onto the target.
+            _webdav_replace_atomic(nc_path, Path(result.output_pdf))
 
             return {
                 "path": nc_path, "output": nc_path,
@@ -1080,6 +1419,111 @@ _work_available = threading.Event()
 #: Idle workers wake up this often even without a signal, so a lost
 #: notification can never wedge the queue.
 _IDLE_POLL_SECONDS = 5.0
+
+
+# --- C6: Bounded automatic retry ------------------------------------------
+#: How many retries a transient failure gets before we mark the
+#: job ``error`` and stop. ``2`` is the spec-recommended cap; raising
+#: it without thinking about it would re-amplify an outage (the
+#: backoff would still be running, the queue would still be
+#: blocked). 0 disables the feature.
+_MAX_RETRY_ATTEMPTS = int(os.environ.get("NC_OCR_MAX_RETRY_ATTEMPTS", "2"))
+#: Backoff schedule, indexed by ``attempts`` (the count BEFORE the
+#: new attempt). The first retry waits 60s, the second 300s. Keep
+#: this conservative: the worker is blocked on a queued retry, not
+#: on a sleep, so a tight schedule just means we are doing the
+#: same failed work over and over.
+_RETRY_BACKOFF_SECONDS = (60.0, 300.0)
+#: Mark a job as a transient retry when this classifier says so.
+#: Anything else (404, "unsupported mime", "too large", "zero
+#: blocks", foreign user, ValueError) is permanent and never
+#: retried.
+_PERMANENT_RETRY_REASONS = frozenset({
+    "unsupported_mime", "too_large", "zero_blocks", "image_decode_failed",
+    "stamped", "born_digital", "no_text_layer", "force_skip",
+    REASON_FOREIGN_USER, "file_removed",
+})
+
+
+def _is_transient_failure(exc: BaseException, status_code: int | None) -> bool:
+    """C6: decide whether a failed job deserves a retry.
+
+    Transient (retry-eligible):
+      * HTTP 5xx (NC restarting, DAV lock contention, gateway blip).
+      * HTTP 408 / 429 (request timeout, rate-limited) — same root cause.
+      * Transport-level failures: ``ConnectionError``,
+        ``Timeout``, ``OSError`` (incl. ``ConnectionResetError``).
+
+    Permanent (no retry): any other 4xx (404, 401, 403, 410, 422,
+    ...). Those are NOT going to clear up by waiting.
+
+    Implementation note: ``requests.HTTPError`` and
+    ``requests.ConnectionError`` are themselves ``OSError``
+    subclasses, so the order matters — we test the more specific
+    requests types first, then fall back to the bare ``OSError``
+    only for non-requests I/O errors.
+    """
+    if isinstance(exc, requests.ConnectionError):
+        return True
+    if isinstance(exc, (requests.Timeout, TimeoutError)):
+        return True
+    if isinstance(exc, requests.HTTPError):
+        if status_code is None:
+            return False
+        if 500 <= status_code < 600:
+            return True
+        if status_code in (408, 429):
+            return True
+        # Any other status code (incl. 404, 401, 403, 410, 422)
+        # is permanent: nothing about waiting will fix it.
+        return False
+    if isinstance(exc, OSError):
+        return True
+    return False
+
+
+def _maybe_schedule_retry(job: dict, exc: BaseException,
+                          status_code: int | None) -> bool:
+    """C6: enqueue a scheduled retry if the failure is transient.
+
+    Returns True iff a retry was scheduled (so the caller knows it
+    must not also mark the job ``error``). The ``error`` field on
+    ``job`` is preserved for the panel even after the retry is
+    enqueued — operators want to see the failure that triggered
+    the retry, not just the eventual success.
+    """
+    attempts = int(job.get("attempts", 0) or 0)
+    if attempts >= _MAX_RETRY_ATTEMPTS:
+        log.info(
+            "worker: job %d exhausted %d retry attempts; giving up",
+            job["id"], attempts,
+        )
+        return False
+    if not _is_transient_failure(exc, status_code):
+        return False
+    # Compute backoff from the schedule. Cap to the schedule length
+    # so an attacker who has somehow inflated ``attempts`` cannot
+    # pick a backoff out of thin air.
+    idx = min(attempts, len(_RETRY_BACKOFF_SECONDS) - 1)
+    backoff = _RETRY_BACKOFF_SECONDS[idx]
+    next_run_at = time.time() + backoff
+    new_id = jobstore.enqueue_retry(
+        job, attempts=attempts + 1, next_run_at=next_run_at,
+    )
+    if new_id is None:
+        # DB down: treat as no-retry (the job will record ``error``
+        # the normal way). A future webhook or /rescan re-enqueues
+        # the file.
+        return False
+    log.warning(
+        "worker: job %d: transient %s — scheduled retry as job %d in %.0fs"
+        " (attempts %d → %d)",
+        job["id"], exc, new_id, backoff, attempts, attempts + 1,
+    )
+    # Mirror the attempt count on the *current* (failing) row so the
+    # /stats retries_total counter and the panel both see it.
+    job["attempts"] = attempts + 1
+    return True
 
 
 #: Settings the panel may change: short key -> (env var, default).
@@ -1219,6 +1663,18 @@ def _run_job(job: dict) -> None:
         job["result"] = result
         if result.get("skipped"):
             job["reason"] = result.get("reason", "")
+        # C2: the image→PDF branch can succeed (PDF uploaded) but
+        # leave the source image behind if the WebDAV DELETE failed.
+        # The worker previously only stored ``reason`` on skipped
+        # jobs, which silently dropped the image_delete_failed signal.
+        # Propagate ``reason`` whenever the result carries one — the
+        # index/panel/stats need to see it regardless of status.
+        elif result.get("reason"):
+            job["reason"] = result.get("reason", "")
+        # Surface the WebDAV delete error in the job log even when
+        # the rest of the OCR was a success.
+        if result.get("delete_error") and not job.get("error"):
+            job["error"] = f"image_delete_failed: {result['delete_error']}"
         log.info("worker: job %d %s: %s", job["id"], job["status"], job["path"])
     except requests.HTTPError as exc:
         # 404 means the file is gone from Nextcloud (deleted between
@@ -1226,7 +1682,7 @@ def _run_job(job: dict) -> None:
         # than ``error`` so /stats doesn't show it as a failure:
         # retrying will 404 again, and a permanent ``error`` row is
         # what produced the 36 phantom-errors on production. Any
-        # other 4xx/5xx is still a real error.
+        # other 4xx is still a permanent error.
         status_code = (
             exc.response.status_code if exc.response is not None else None
         )
@@ -1239,13 +1695,57 @@ def _run_job(job: dict) -> None:
                 job["id"], job["path"],
             )
         else:
+            # C6: 5xx / 408 / 429 may clear up; other 4xx will not.
+            # ``_maybe_schedule_retry`` returns True iff a retry was
+            # enqueued, in which case we keep the *current* row as a
+            # record of the failure (status stays "error" so the
+            # panel still shows it) but do not re-record it as the
+            # terminal state — the retry will overwrite.
+            if _maybe_schedule_retry(job, exc, status_code):
+                # Mark this row as the failed attempt that triggered
+                # the retry. The panel reads the latest row, so the
+                # next claim will surface in /jobs/{new_id} on the
+                # next refresh.
+                job["status"] = "error"
+                job["error"] = (
+                    f"transient {status_code} (retry scheduled): {exc}"
+                )
+                log.warning(
+                    "worker: job %d: HTTP %s — transient, retry scheduled",
+                    job["id"], status_code,
+                )
+            else:
+                job["status"] = "error"
+                job["error"] = str(exc)
+                log.error(
+                    "worker: job %d failed (%s): %s — %s",
+                    job["id"], status_code, job["path"], exc,
+                )
+    except (requests.ConnectionError, requests.Timeout, TimeoutError,
+            OSError) as exc:
+        # C6: transport-level failures are the textbook transient
+        # case — a packet drop or a daemon hiccup should not stick
+        # the file in the error column forever. Schedule a retry
+        # the same way HTTP 5xx does.
+        if _maybe_schedule_retry(job, exc, None):
+            job["status"] = "error"
+            job["error"] = f"transient transport error: {exc}"
+            log.warning(
+                "worker: job %d: %s — transient, retry scheduled",
+                job["id"], exc,
+            )
+        else:
             job["status"] = "error"
             job["error"] = str(exc)
             log.error(
-                "worker: job %d failed (%s): %s — %s",
-                job["id"], status_code, job["path"], exc,
+                "worker: job %d failed: %s — %s", job["id"], job["path"], exc,
             )
     except Exception as exc:
+        # Permanent failure: anything that is not a known transient
+        # signal. Includes our own ``_assert_ocr_produced_blocks``
+        # RuntimeError, ``ValueError`` from engine internals, etc.
+        # C6: do NOT retry these — the next attempt would fail
+        # identically.
         job["status"] = "error"
         job["error"] = str(exc)
         log.error("worker: job %d failed: %s — %s", job["id"], job["path"], exc)
@@ -1416,6 +1916,17 @@ if _reconcile_startup.get("orphans_found"):
         "startup: reconciler recovered %d / %d orphaned queued files",
         _reconcile_startup["recovered"],
         _reconcile_startup["orphans_found"],
+    )
+# C5: also run the stale-row reconciler once at startup so the 36
+# phantom-errors on production are not stuck for another deploy
+# cycle. The function is bounded, idempotent, and never raises —
+# it will simply return 0/0/0 on a healthy index.
+_reconcile_stale_startup = reconcile_stale_files()
+if _reconcile_stale_startup.get("marked_gone"):
+    log.warning(
+        "startup: stale-row reconciler marked %d / %d rows gone",
+        _reconcile_stale_startup["marked_gone"],
+        _reconcile_stale_startup["checked"],
     )
 for _worker_idx in range(_WORKERS):
     threading.Thread(target=_ocr_worker, daemon=True,
@@ -1822,6 +2333,25 @@ async def handle_webhook(
     if "files_versions" in nc_path:
         return {"status": "ignored", "reason": "versions"}
 
+    # C1: refuse paths owned by a Nextcloud user other than the one
+    # this service authenticates as. The service user has no access
+    # to a foreign user's WebDAV root, so the job would 401, retry 3×,
+    # and end as a generic ``error`` row. Logged at WARNING so the
+    # operator can see why the panel shows the file as
+    # ``foreign_user`` (a state Nextcloud won't try to redeliver).
+    if _is_foreign_user(nc_path):
+        log.warning(
+            "webhook: foreign user %r (path=%s, NC_USER=%s); recording"
+            " foreign_user reason and responding 200",
+            _path_user(nc_path), nc_path, NC_USER,
+        )
+        _index_record(
+            nc_path, "skipped", engine=None,
+            reason=REASON_FOREIGN_USER, node_id=node_id or 0,
+        )
+        return {"status": "ignored", "reason": REASON_FOREIGN_USER,
+                "path": nc_path}
+
     # Loop prevention: skip if we just processed this file.
     # ``force`` (set by the NC app's "Re-OCR anyway" action) bypasses
     # this guard — the user is asking for a deliberate re-OCR.
@@ -1989,11 +2519,40 @@ async def get_job(
     job_id: int,
     x_webhook_secret: str | None = Header(None, alias="X-Webhook-Secret"),
 ):
-    """Fetch one historical job by id, or 404 if not in the SQLite history."""
+    """Fetch one historical job by id, or 404 if not in the SQLite history.
+
+    C4: ``jobstore.record_enqueue`` prunes the ``jobs`` table to
+    :data:`jobstore._MAX_ROWS` rows by ``id``, so a job id older than
+    the retention window returns 404 even though the corresponding
+    ``files`` index row may still be present (and the NC app would
+    then render the file as "never OCR'd"). The fallback here is the
+    honest one: we cannot reliably map a job id back to a path (the
+    jobs table is the only key we had, and it is gone), so the
+    response explains the situation and points the caller at
+    ``/stats`` and ``/states`` (both of which the NC app already
+    uses) for the durable view. The least surprising 404 is one
+    that tells the operator what the system actually did, not one
+    that silently looks like a bug.
+    """
     _check_secret(x_webhook_secret)
     job = jobstore.get(int(job_id))
     if job is None:
-        raise HTTPException(status_code=404, detail=f"job {job_id} not found")
+        # C4: distinguish "never existed" from "pruned by retention".
+        # The current shape of the jobs table does not let us recover
+        # the path for a pruned row — that is the only data we would
+        # need to look the file up in the files index. Surface a
+        # 404 with a detail that names the cause and points the
+        # caller at the endpoints that DO still know about the
+        # work, so the NC app can fall back gracefully.
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"job {job_id} not found in history "
+                f"(likely pruned beyond the {getattr(jobstore, '_MAX_ROWS', 5000)}-row"
+                f" retention cap; see /stats and /states for the"
+                f" per-file state index)"
+            ),
+        )
     return job
 
 
@@ -2142,6 +2701,24 @@ async def rescan(
     _check_secret(x_webhook_secret)
 
     nc_path = body.path
+    # C1: refuse paths belonging to a different Nextcloud user. The
+    # service user (NC_USER) cannot authenticate to a foreign user's
+    # WebDAV root, so every rescan attempt would 401 and end as
+    # ``error``. We 422 the request (it's an operator panel action, not
+    # a Nextcloud retry, so 200 is the wrong code here).
+    if _is_foreign_user(nc_path):
+        log.warning(
+            "rescan: refused foreign-user path user=%r nc_path=%s NC_USER=%s",
+            _path_user(nc_path), nc_path, NC_USER,
+        )
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"refusing rescan of foreign user"
+                f" {_path_user(nc_path)!r}: this service only handles"
+                f" user {NC_USER!r}"
+            ),
+        )
     ext = Path(nc_path).suffix.lower()
     if ext not in PROCESSABLE_EXTS:
         raise HTTPException(status_code=422, detail=f"unsupported ext: {ext}")
@@ -2245,6 +2822,17 @@ async def scan_all(
         if Path(rel).suffix.lower() not in PROCESSABLE_EXTS:
             continue
         nc_path = f"/{NC_USER}/files/{rel}"
+        # C1: defence in depth. /scan-all PROPFINDs only NC_USER's
+        # root, but a future change to that path (or a misconfigured
+        # WebDAV proxy) could surface a foreign-user path. Refuse to
+        # enqueue rather than producing a 401-storm that ends as a
+        # generic ``error`` row.
+        if _is_foreign_user(nc_path):
+            log.warning(
+                "scan-all: skipped foreign-user path user=%r nc_path=%s",
+                _path_user(nc_path), nc_path,
+            )
+            continue
         if not body.force:
             if body.skip_ocrd:
                 _rec = jobstore.file_get(nc_path)
@@ -2340,6 +2928,44 @@ async def admin_reconcile_orphans(
     """
     _check_secret(x_webhook_secret)
     return reconcile_orphans()
+
+
+class ReconcileRequest(BaseModel):
+    """C5: bounds for one on-demand reconcile pass.
+
+    All fields optional — defaults to the configured global caps so
+    a plain ``POST /reconcile`` is enough to run a normal pass.
+    """
+    limit: int | None = None
+    max_propfind: int | None = None
+    statuses: list[str] | None = None
+
+
+@app.post("/reconcile")
+async def reconcile_endpoint(
+    body: ReconcileRequest | None = None,
+    x_webhook_secret: str | None = Header(None, alias="X-Webhook-Secret"),
+):
+    """One-off C5 stale-row reconcile pass.
+
+    Operator-triggered sweep that marks ``error``/``queued`` file
+    rows as ``gone`` when the underlying Nextcloud file no longer
+    exists. Bounded: each call is capped at
+    :data:`_RECONCILE_MAX_PROPFINDS` (overridable per-request via
+    ``body.max_propfind``). Idempotent: rows already at ``gone`` are
+    excluded at the query level.
+
+    The startup path also runs this once; this endpoint exists so an
+    operator can invoke it on demand, e.g. right after noticing a
+    list of ``__probe_*.pdf`` rows stuck at ``error``.
+    """
+    _check_secret(x_webhook_secret)
+    body = body or ReconcileRequest()
+    return reconcile_stale_files(
+        limit=body.limit,
+        max_propfind=body.max_propfind,
+        statuses=body.statuses,
+    )
 
 
 def main():

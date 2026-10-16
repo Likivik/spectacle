@@ -105,22 +105,28 @@ def _connect() -> sqlite3.Connection:
 
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS jobs (
-    id       INTEGER PRIMARY KEY,
-    path     TEXT,
-    nc_path  TEXT,
-    node_id  INTEGER,
-    engine   TEXT,
-    force    INTEGER,
-    status   TEXT,
-    created  REAL,
-    started  REAL,
-    finished REAL,
-    error    TEXT,
-    reason   TEXT,
-    result   TEXT
+    id         INTEGER PRIMARY KEY,
+    path       TEXT,
+    nc_path    TEXT,
+    node_id    INTEGER,
+    engine     TEXT,
+    force      INTEGER,
+    status     TEXT,
+    created    REAL,
+    started    REAL,
+    finished   REAL,
+    error      TEXT,
+    reason     TEXT,
+    result     TEXT,
+    -- C6: retry counter and "do not claim before" timestamp. Present
+    -- on every freshly-created database; older databases gain them
+    -- via ``_migrate_add_retry_columns`` at ``init()`` time.
+    attempts   INTEGER DEFAULT 0,
+    next_run_at REAL   DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs(created);
 CREATE INDEX IF NOT EXISTS idx_jobs_status  ON jobs(status);
+CREATE INDEX IF NOT EXISTS idx_jobs_next_run ON jobs(next_run_at);
 
 -- Per-file OCR state. Replaces the in-memory _ocr_index dict and the
 -- _ocrd_paths set, which grew with the number of files in the account.
@@ -173,6 +179,14 @@ def init() -> None:
     try:
         with _connect() as conn:
             conn.executescript(_SCHEMA_SQL)
+            # C6: additive migration for the retry-related columns.
+            # Idempotent: the function checks ``PRAGMA table_info``
+            # before altering, so calling it on a fresh DB (where
+            # the columns do not exist yet but the schema created
+            # them) and on an upgraded production DB (where they
+            # already exist) are both no-ops beyond the second
+            # ``SELECT`` from ``PRAGMA table_info``.
+            _migrate_add_retry_columns(conn)
         _INITIALISED = True
         log.info("jobstore: schema ready at %s", db_path())
     except Exception as exc:  # noqa: BLE001 — spec: never raise
@@ -190,10 +204,58 @@ def _ready() -> bool:
 
 # --- Field normalisation ---------------------------------------------------
 
+#: Columns we expose to callers. ``attempts`` and ``next_run_at`` are
+#: the C6 additive migration: existing rows have NULL/default, new
+#: rows record a retry counter and a "do not claim before" timestamp.
+#: See ``_migrate_add_retry_columns`` for the additive ALTER.
 _COLUMNS = (
     "id", "path", "nc_path", "node_id", "engine", "force", "status",
     "created", "started", "finished", "error", "reason", "result",
+    "attempts", "next_run_at",
 )
+
+
+def _migrate_add_retry_columns(conn: "sqlite3.Connection") -> None:
+    """C6: idempotent additive migration for retry-related columns.
+
+    A new field on the ``jobs`` table MUST be safe to add to an
+    existing production database, not just to fresh test DBs. SQLite
+    supports ``ALTER TABLE ADD COLUMN`` but does NOT support a
+    default for ``NOT NULL`` columns, and we want the column to
+    exist on every existing row (a fresh ``SELECT *`` on a database
+    without the column would raise). We:
+
+      1. Read ``PRAGMA table_info(jobs)`` to discover what is
+         already there.
+      2. ``ALTER TABLE ADD COLUMN ... DEFAULT 0`` for each missing
+         column. The default is required so existing rows get a
+         value (``DEFAULT 0`` for both ``attempts`` and
+         ``next_run_at`` is correct: 0 attempts and 0 = "claim
+         immediately" is the safe pre-C6 behaviour).
+
+    Safe to call on every ``init()``: the PRAGMA check + the
+    ``DEFAULT 0`` make it a no-op on databases that already have
+    the columns.
+    """
+    try:
+        cols = {row[1] for row in
+                conn.execute("PRAGMA table_info(jobs)").fetchall()}
+    except Exception:  # noqa: BLE001
+        return
+    if "attempts" not in cols:
+        try:
+            conn.execute(
+                "ALTER TABLE jobs ADD COLUMN attempts INTEGER DEFAULT 0",
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning("jobstore: ADD COLUMN attempts failed (%s)", exc)
+    if "next_run_at" not in cols:
+        try:
+            conn.execute(
+                "ALTER TABLE jobs ADD COLUMN next_run_at REAL DEFAULT 0",
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning("jobstore: ADD COLUMN next_run_at failed (%s)", exc)
 
 
 def _row_from_dict(job: dict[str, Any]) -> tuple:
@@ -225,6 +287,20 @@ def _row_from_dict(job: dict[str, Any]) -> tuple:
         except (TypeError, ValueError):
             result = None
 
+    # C6: attempts/next_run_at. ``_migrate_add_retry_columns`` adds
+    # these to existing rows with DEFAULT 0, so ``.get(..., 0)`` is
+    # safe for callers that pre-date the migration.
+    attempts = job.get("attempts")
+    try:
+        attempts_i = int(attempts) if attempts is not None else 0
+    except (TypeError, ValueError):
+        attempts_i = 0
+    next_run_at = job.get("next_run_at")
+    try:
+        next_run_at_f = float(next_run_at) if next_run_at is not None else 0.0
+    except (TypeError, ValueError):
+        next_run_at_f = 0.0
+
     return (
         job.get("id"),
         job.get("path"),
@@ -239,6 +315,8 @@ def _row_from_dict(job: dict[str, Any]) -> tuple:
         job.get("error"),
         job.get("reason"),
         result,
+        attempts_i,
+        next_run_at_f,
     )
 
 
@@ -399,6 +477,14 @@ def claim_next() -> dict | None:
     pull one row at a time. ``BEGIN IMMEDIATE`` takes the write lock
     *before* the SELECT, so two workers can never claim the same row.
     Returns ``None`` when there is nothing to do (or the DB is down).
+
+    C6: skips jobs whose ``next_run_at`` is in the future (these are
+    scheduled retries waiting for their backoff window). Without
+    that filter the worker would re-run a transient-failure job
+    immediately, defeating the exponential backoff. Ordering is
+    ``next_run_at ASC, id ASC`` so the soonest-due retry jumps the
+    queue, but a fresh first-time job is still claimed before any
+    retry that is also already due.
     """
     import time as _time
 
@@ -409,7 +495,10 @@ def claim_next() -> dict | None:
             conn.execute("BEGIN IMMEDIATE")
             row = conn.execute(
                 "SELECT * FROM jobs WHERE status = 'queued'"
-                " ORDER BY id LIMIT 1",
+                " AND COALESCE(next_run_at, 0) <= ?"
+                " ORDER BY COALESCE(next_run_at, 0) ASC, id ASC"
+                " LIMIT 1",
+                (_time.time(),),
             ).fetchone()
             if row is None:
                 conn.execute("COMMIT")
@@ -448,6 +537,36 @@ def requeue_stale() -> int:
     except Exception as exc:  # noqa: BLE001
         log.warning("jobstore: requeue_stale failed (%s)", exc)
         return 0
+
+
+def enqueue_retry(
+    job: dict[str, Any], *, attempts: int, next_run_at: float
+) -> int | None:
+    """C6: schedule a retry of ``job`` for ``next_run_at`` (unix epoch).
+
+    Creates a fresh ``jobs`` row carrying the bumped ``attempts``
+    counter and the backoff timestamp. ``claim_next`` will skip the
+    row until ``next_run_at`` arrives. Returns the new id (or
+    ``None`` on DB fault — same soft-fail shape as
+    :func:`record_enqueue`).
+
+    Why a new row instead of mutating the failed one? Keeping the
+    failed row makes the failure visible in the history (the panel
+    shows it once, then sees the eventual retry succeed), and
+    pruning by ``created`` then expires the older history naturally
+    instead of relying on a bookkeeping flip.
+    """
+    if not _ready():
+        return None
+    payload = dict(job)
+    payload.pop("id", None)        # fresh id
+    payload["status"] = "queued"
+    payload["started"] = None
+    payload["finished"] = None
+    payload["error"] = None
+    payload["attempts"] = int(attempts)
+    payload["next_run_at"] = float(next_run_at)
+    return record_enqueue(payload)
 
 
 def get(job_id: int) -> dict[str, Any] | None:
@@ -547,7 +666,13 @@ def _coerce_since(value: Any) -> float | None:
 
 def stats() -> dict[str, Any]:
     """Return ``{status: count, ..., total: N}`` over the full table.
-    Never raises — returns ``{"total": 0, ...}`` on error.
+
+    C6: also surface retry visibility — ``retries_total`` (jobs that
+    had ``attempts > 0``) and ``retries_queued`` (queued jobs that
+    are waiting for their backoff window). The existing ``total`` and
+    per-status counts are unchanged, so the NC app does not need to
+    be aware of retries to keep rendering. Never raises — returns
+    ``{"total": 0, ...}`` on error.
     """
     out: dict[str, Any] = {"total": 0}
     if not _ready():
@@ -557,9 +682,26 @@ def stats() -> dict[str, Any]:
             rows = conn.execute(
                 "SELECT status, COUNT(*) AS n FROM jobs GROUP BY status"
             ).fetchall()
+            # C6: retries counts. ``retries_queued`` is the
+            # "scheduled but not yet due" set — the work the operator
+            # is most likely to be triaging when a transient
+            # outage has just ended.
+            r_retry_total = conn.execute(
+                "SELECT COUNT(*) AS n FROM jobs"
+                " WHERE COALESCE(attempts, 0) > 0"
+            ).fetchone()
+            r_retry_queued = conn.execute(
+                "SELECT COUNT(*) AS n FROM jobs"
+                " WHERE status = 'queued'"
+                " AND COALESCE(attempts, 0) > 0"
+            ).fetchone()
         for r in rows:
             out[r["status"] or "unknown"] = r["n"]
             out["total"] += r["n"]
+        out["retries_total"] = (r_retry_total["n"]
+                               if r_retry_total is not None else 0)
+        out["retries_queued"] = (r_retry_queued["n"]
+                                if r_retry_queued is not None else 0)
         return out
     except Exception as exc:  # noqa: BLE001
         log.warning("jobstore: stats failed (%s)", exc)
@@ -630,6 +772,33 @@ def file_all() -> dict[str, dict[str, Any]]:
     except Exception as exc:  # noqa: BLE001
         log.warning("jobstore: file_all failed (%s)", exc)
         return {}
+
+
+def file_paths_by_status(statuses: list[str], limit: int = 500) -> list[str]:
+    """Paths in the file index whose ``status`` is in ``statuses``.
+
+    Bounded (``limit`` rows) and ordered by ``finished`` ASC so the
+    reconciler sees the oldest rows first — those are the rows most
+    likely to be stale (the 36 phantom-errors on production were
+    rows from the very first run of the service). Used by the
+    stale-row reconciler (C5); the NC app reads through ``file_all``
+    and does not need this.
+    """
+    if not _ready() or not statuses:
+        return []
+    placeholders = ",".join("?" * len(statuses))
+    try:
+        with _connect() as conn:
+            rows = conn.execute(
+                f"SELECT path FROM files"
+                f" WHERE status IN ({placeholders})"
+                f" ORDER BY COALESCE(finished, 0) ASC LIMIT ?",
+                (*statuses, int(limit)),
+            ).fetchall()
+        return [r["path"] for r in rows if r["path"]]
+    except Exception as exc:  # noqa: BLE001
+        log.warning("jobstore: file_paths_by_status failed (%s)", exc)
+        return []
 
 
 def file_count() -> int:

@@ -959,14 +959,17 @@ def test_process_file_zero_block_image_branch_also_gates(monkeypatch, tmp_path):
 
 
 def test_process_file_tesseract_engine_bypasses_gate(monkeypatch, tmp_path):
-    """Tesseract writes the layer via ocrmypdf, leaving page_results=[].
+    """Tesseract writes the layer via ocrmypdf; the gate (B4 fix) checks
+    the produced PDF for a non-empty text layer instead of counting
+    blocks across ``page_results=[]`` (which would always be zero for
+    tesseract).
 
-    Counting blocks across page_results=[] would always raise; the
-    gate explicitly exempts tesseract so existing flows keep working.
-    This test pins the exemption.
+    The PDF used here is what a *successful* ocrmypdf run would leave:
+    one page with extractable text. The gate must pass and the file
+    must reach upload+stamp exactly once.
     """
     pdf = tmp_path / "tess.pdf"
-    _build_pdf(pdf, with_text=False)
+    _build_pdf(pdf, with_text=True)
 
     calls = {"upload": [], "stamp": []}
 
@@ -985,7 +988,11 @@ def test_process_file_tesseract_engine_bypasses_gate(monkeypatch, tmp_path):
 
     def fake_proc_tess(pdf_path, engine=None):
         # Tesseract's actual ProcessResult shape: page_results=[],
-        # tess_pages=[...]. The gate MUST NOT raise for this.
+        # tess_pages=[...]. The text-layer gate (B4) opens
+        # ``result.output_pdf`` and reads non-whitespace chars instead
+        # of counting blocks across page_results=[]. The PDF at
+        # ``pdf_path`` here carries text (built with with_text=True),
+        # so the gate passes.
         from nc_ocr_flow.ocr import ProcessResult
         return ProcessResult(
             output_pdf=str(pdf_path),
@@ -1004,7 +1011,8 @@ def test_process_file_tesseract_engine_bypasses_gate(monkeypatch, tmp_path):
 
     with patch.object(ws, "process_pdf", side_effect=fake_proc_tess), \
          patch.object(ws, "classify_pdf", side_effect=fake_classify):
-        # No raise expected — the tesseract exemption must hold.
+        # No raise expected — the tesseract text-layer gate passes for
+        # a PDF with real text on it.
         res = ws._process_file(
             "/likivik/files/tess.pdf", node_id=8,
             engine="tesseract", force=False,
@@ -1017,6 +1025,66 @@ def test_process_file_tesseract_engine_bypasses_gate(monkeypatch, tmp_path):
     nc_uploaded, _dest = calls["upload"][0]
     assert nc_uploaded == "/likivik/files/tess.pdf"
     assert len(calls["stamp"]) == 1, "tesseract success must stamp"
+
+
+def test_process_file_tesseract_empty_text_layer_raises(monkeypatch, tmp_path):
+    """B4: a tesseract output PDF with NO text layer (or with one below
+    MIN_TEXT_CHARS_PER_PAGE/page) must raise so the worker records
+    ``status=error`` and the file is left UN-stamped and UN-uploaded.
+
+    Pre-fix, an empty ocrmypdf result was silently accepted as
+    ``done`` and overwritten the user's original — indistinguishable
+    from success. The new text-layer gate prevents that.
+    """
+    pdf = tmp_path / "tess_blank.pdf"
+    _build_pdf(pdf, with_text=False)  # blank page
+
+    calls = {"upload": [], "stamp": []}
+
+    monkeypatch.setattr(
+        ws, "_webdav_download",
+        lambda nc, dest: __import__("shutil").copy2(pdf, dest),
+    )
+    monkeypatch.setattr(
+        ws, "_webdav_upload",
+        lambda nc, dest, *a, **k: calls["upload"].append((nc, str(dest))),
+    )
+    monkeypatch.setattr(
+        ws, "_stamp_metadata",
+        lambda *a, **k: calls["stamp"].append(a),
+    )
+
+    def fake_proc_tess(pdf_path, engine=None):
+        from nc_ocr_flow.ocr import ProcessResult
+        return ProcessResult(
+            output_pdf=str(pdf_path),
+            engine_used="tesseract",
+            page_results=[],
+            tess_pages=[0],
+        )
+
+    def fake_classify(_path):
+        return {
+            "needs_ocr": True,
+            "pdf_type": "scanned",
+            "confidence": 0.95,
+            "has_encoding_issues": False,
+        }
+
+    with patch.object(ws, "process_pdf", side_effect=fake_proc_tess), \
+         patch.object(ws, "classify_pdf", side_effect=fake_classify):
+        with pytest.raises(RuntimeError, match="empty/garbled text layer"):
+            ws._process_file(
+                "/likivik/files/tess_blank.pdf", node_id=9,
+                engine="tesseract", force=False,
+            )
+
+    assert calls["upload"] == [], (
+        "blank tesseract output must NOT be uploaded over the original"
+    )
+    assert calls["stamp"] == [], (
+        "blank tesseract output must NOT be stamped as done"
+    )
 
 
 # --- folder-wide force on /scan-all -----------------------------------------
@@ -1425,3 +1493,485 @@ def test_image_branch_proceeds_when_no_collision(monkeypatch, tmp_path):
     assert res.get("skipped") is not True, res
     assert calls["upload"] == [pdf_nc_path]
     assert calls["delete"] == [nc_path]
+
+
+# --- B1: cost calc honours free tier ----------------------------------------
+
+def test_vision_summary_cost_subtracts_free_units(monkeypatch):
+    """B1: a 500-page run is below the 1000-page free tier → $0.00.
+
+    Pre-fix the cost was ``pages * VISION_USD_PER_1000 / 1000`` which
+    ignores the free tier entirely (500 pages → $0.75). Post-fix it's
+    ``max(0, pages - VISION_FREE_UNITS) * VISION_USD_PER_1000 / 1000``
+    so 500 pages round to $0.00 and 1500 pages round to $0.75 (one
+    paid batch of 500).
+    """
+    # Avoid any real settings round-trips; provide only the keys the
+    # summary actually consults.
+    monkeypatch.setattr(ws.jobstore, "usage_month",
+                        lambda *a, **k: {"jobs": 1, "pages": 500})
+    monkeypatch.setattr(ws.jobstore, "settings_all", lambda: {})
+    s = ws._vision_summary()
+    assert s["cost_usd"] == 0.0
+    assert s["pages_month"] == 500
+    assert s["free_left"] == ws.VISION_FREE_UNITS - 500
+
+    # 1500 pages: 500 paid pages, still under one Vision-paid dollar.
+    monkeypatch.setattr(ws.jobstore, "usage_month",
+                        lambda *a, **k: {"jobs": 1, "pages": 1500})
+    s = ws._vision_summary()
+    assert s["cost_usd"] == round(
+        500 * ws.VISION_USD_PER_1000 / 1000, 4
+    ), s
+
+
+# --- B5: /webhook malformed body returns 400 --------------------------------
+
+def test_webhook_malformed_json_returns_400(client):
+    """B5: a non-JSON body must be 400, not 500. A 500 used to make
+    Nextcloud's dispatcher retry-storm a healthy backend.
+
+    Sending ``text/plain`` via TestClient: the handler must catch the
+    JSON-decode error and return 400 with a clear detail.
+    """
+    r = client.post(
+        "/webhook",
+        headers={**h(), "Content-Type": "text/plain"},
+        content=b"this is not json",
+    )
+    assert r.status_code == 400, r.text
+    assert "invalid JSON body" in r.json().get("detail", "")
+
+
+def test_webhook_empty_json_returns_400(client):
+    """Empty body is also a 400 (still not parseable)."""
+    r = client.post("/webhook", headers=h(), content=b"")
+    assert r.status_code == 400
+
+
+# --- B6: image-branch collision check runs BEFORE the OCR call --------------
+
+def test_image_branch_collision_skips_before_process_pdf(monkeypatch, tmp_path):
+    """B6: when a target PDF already exists, the image branch must
+    refuse the work BEFORE calling process_pdf — saving a paid Vision
+    round-trip and the GCS upload.
+
+    Pre-fix the collision check happened AFTER process_pdf, so a
+    refused conversion had already billed the user for one Vision
+    call. This test asserts ``process_pdf`` is NOT called when the
+    PROPFIND finds an existing PDF at the target path.
+    """
+    from PIL import Image
+
+    img_path = tmp_path / "photo.jpg"
+    Image.new("RGB", (64, 64), color=(255, 0, 0)).save(img_path)
+    nc_path = f"/{ws.NC_USER}/files/photo.jpg"
+
+    # PROPFIND says the target PDF exists (size > 0).
+    monkeypatch.setattr(ws, "_propfind_size_etag",
+                        lambda _p: (1024, '"abc"'))
+    # Spy on process_pdf; it must NOT be called.
+    calls = {"process_pdf": 0}
+
+    def _spy_process_pdf(*a, **k):
+        calls["process_pdf"] += 1
+        raise AssertionError(
+            "process_pdf must not run when the target PDF already exists"
+        )
+
+    def _fake_download(_nc_path, dest):
+        import shutil
+        shutil.copyfile(str(img_path), str(dest))
+
+    monkeypatch.setattr(ws, "_webdav_download", _fake_download)
+    monkeypatch.setattr(ws, "_webdav_upload",
+                        lambda *a, **k: (_ for _ in ()).throw(
+                            AssertionError("upload must not run")))
+    monkeypatch.setattr(ws, "_webdav_delete",
+                        lambda *a, **k: (_ for _ in ()).throw(
+                            AssertionError("delete must not run")))
+    monkeypatch.setattr(ws, "process_pdf", _spy_process_pdf)
+
+    class _Cls:
+        is_document = True
+        reason = "doc"
+    monkeypatch.setattr(ws, "classify", lambda _p: _Cls())
+
+    res = ws._process_file(nc_path, node_id=42, engine="google", force=False)
+    assert res.get("skipped") is True, res
+    assert res["reason"] == ws.SKIP_REASON_PDF_EXISTS, res
+    assert calls["process_pdf"] == 0, (
+        "collision check must run BEFORE process_pdf to avoid a "
+        "paid Vision call"
+    )
+
+
+# --- B7: counter reconciliation --------------------------------------------
+
+def test_stats_includes_gone_and_errors_attempts(client, monkeypatch):
+    """B7: /stats payload states its contract explicitly — ``errors``
+    counts unique failed *paths*, ``gone`` counts unique paths whose
+    file vanished from NC, and ``errors_attempts`` mirrors /jobs/stats
+    so the two endpoints can never be read as contradictory.
+    """
+    # Seed the files table directly (one of each kind) — the production
+    # bug was that ``errors`` counted paths whose files no longer
+    # exist; we model exactly that.
+    ws.jobstore.file_put({"path": "/likivik/files/gone.pdf",
+                          "status": "gone", "reason": "file_removed",
+                          "engine": None, "node_id": 0,
+                          "size": None, "etag": None,
+                          "mtime": None, "last_seen": None})
+    ws.jobstore.file_put({"path": "/likivik/files/real_err.pdf",
+                          "status": "error", "reason": None,
+                          "engine": "google", "node_id": 0,
+                          "size": None, "etag": None,
+                          "mtime": None, "last_seen": None})
+
+    r = client.get("/stats", headers=h())
+    assert r.status_code == 200
+    d = r.json()
+    # The keys the bug report calls out must be present.
+    for key in ("errors", "gone", "errors_attempts"):
+        assert key in d, f"{key} missing from /stats payload"
+    # gone.pdf is counted in ``gone``, NOT in ``errors``.
+    assert d["gone"] == 1, d
+    assert d["errors"] == 1, d
+    assert d["errors_attempts"] >= 0  # jobs-table mirror; may be 0 here
+
+
+def test_run_job_marks_404_as_gone(monkeypatch):
+    """B7 (cont): when the WebDAV GET returns 404 (file deleted from
+    Nextcloud between webhook and processing) the worker must record
+    status='gone' with reason='file_removed', NOT status='error'.
+
+    Pre-fix the file was permanently marked error, polluting the
+    ``errors`` counter with paths that no longer exist on NC.
+    """
+    import requests as _req
+
+    # Build a fake HTTPError with response.status_code == 404.
+    fake_resp = type("R", (), {"status_code": 404})()
+    err = _req.HTTPError("404 Not Found", response=fake_resp)
+
+    job = {
+        "id": 1, "path": "/likivik/files/missing.pdf",
+        "nc_path": "/likivik/files/missing.pdf", "node_id": 42,
+        "engine": "google", "force": False, "status": "running",
+        "started": None, "created": None, "finished": None,
+        "result": None, "error": None, "reason": None,
+    }
+
+    def _boom(*a, **k):
+        raise err
+
+    monkeypatch.setattr(ws, "_process_file", _boom)
+    ws._run_job(job)
+    assert job["status"] == "gone", job
+    assert job["reason"] == "file_removed", job
+
+
+def test_run_job_other_http_error_remains_error(monkeypatch):
+    """B7 (counter-test): a 5xx or other HTTPError stays ``error`` —
+    the gone-state is only for 404."""
+    import requests as _req
+
+    fake_resp = type("R", (), {"status_code": 503})()
+    err = _req.HTTPError("503 Service Unavailable", response=fake_resp)
+    job = {
+        "id": 2, "path": "/likivik/files/x.pdf",
+        "nc_path": "/likivik/files/x.pdf", "node_id": 0,
+        "engine": "google", "force": False, "status": "running",
+        "started": None, "created": None, "finished": None,
+        "result": None, "error": None, "reason": None,
+    }
+    monkeypatch.setattr(ws, "_process_file", lambda *a, **k: (_ for _ in ()).throw(err))
+    ws._run_job(job)
+    assert job["status"] == "error", job
+
+
+# --- B8: _enqueue is atomic for the same path -------------------------------
+
+def test_enqueue_same_path_no_duplicate_when_inflight(monkeypatch):
+    """B8: when a path is already in flight, a second _enqueue for the
+    same path must NOT create a duplicate jobs row.
+
+    This test stubs ``_run_job`` to a no-op so the worker can claim
+    the job (which moves the row from ``queued`` to ``running``) but
+    does not actually process it. That preserves the in-flight state
+    long enough to make the assertion deterministic. The DB is
+    reset at the start so leftover jobs from earlier tests don't
+    race the new enqueue.
+    """
+    monkeypatch.setattr(ws, "_run_job", lambda _job: None)
+    ws.jobstore._reset_for_tests()
+
+    nc_path = "/likivik/files/a.pdf"
+    job1 = ws._enqueue(nc_path, node_id=42)
+    assert job1.get("id") is not None
+
+    # Wait briefly for the worker to claim the first job (queued →
+    # running).
+    deadline = __import__("time").time() + 5.0
+    while __import__("time").time() < deadline:
+        if ws.jobstore.stats().get("running", 0) >= 1:
+            break
+        __import__("time").sleep(0.05)
+    assert ws.jobstore.stats().get("running", 0) >= 1, (
+        "worker should have claimed job1 by now"
+    )
+
+    inflight_before = (
+        ws.jobstore.stats().get("queued", 0)
+        + ws.jobstore.stats().get("running", 0)
+    )
+    total_before = ws.jobstore.stats().get("total", 0)
+
+    # Second enqueue for the SAME path. With the B8 fix, the
+    # per-path lock + _path_in_flight check sees files.status='queued'
+    # and short-circuits before record_enqueue.
+    ws._enqueue(nc_path, node_id=42)
+    inflight_after = (
+        ws.jobstore.stats().get("queued", 0)
+        + ws.jobstore.stats().get("running", 0)
+    )
+    total_after = ws.jobstore.stats().get("total", 0)
+
+    assert inflight_after == inflight_before, (
+        f"second _enqueue must NOT insert a duplicate jobs row: "
+        f"in-flight went from {inflight_before} to {inflight_after}"
+    )
+    assert total_after == total_before, (
+        f"second _enqueue must NOT add a row: total went from "
+        f"{total_before} to {total_after}"
+    )
+
+
+def test_enqueue_force_ignores_inflight_check(monkeypatch):
+    """B8 (counter-test): force=True bypasses the in-flight re-check
+    so /rescan?force=true can still re-OCR an in-flight path (this
+    matches the existing scan-all force semantics)."""
+    monkeypatch.setattr(ws, "_run_job", lambda _job: None)
+    ws.jobstore._reset_for_tests()
+    nc_path = "/likivik/files/force.pdf"
+    ws._enqueue(nc_path, node_id=10)
+    # Wait for the worker to claim the first job (running).
+    deadline = __import__("time").time() + 5.0
+    while __import__("time").time() < deadline:
+        if ws.jobstore.stats().get("running", 0) >= 1:
+            break
+        __import__("time").sleep(0.05)
+
+    jobs_before = ws.jobstore.stats().get("total", 0)
+    ws._enqueue(nc_path, node_id=10, force=True)
+    jobs_after = ws.jobstore.stats().get("total", 0)
+    # force=True inserts a fresh jobs row.
+    assert jobs_after == jobs_before + 1, jobs_after
+
+
+# --- B9: PROPFIND parser accepts any namespace prefix -----------------------
+
+def test_scan_all_accepts_non_d_prefix(monkeypatch, client):
+    """B9: a PROPFIND body that uses ``D:`` (capital D) instead of
+    ``d:`` must still produce enqueues — pre-fix the regex hard-coded
+    ``<d:href>`` and silently dropped every entry."""
+    fake_xml = (
+        '<?xml version="1.0"?><D:multistatus xmlns:D="DAV:">'
+        f"<D:response><D:href>/remote.php/dav/files/likivik/Documents/x.pdf</D:href>"
+        "<D:propstat><D:prop><D:resourcetype/></D:prop></D:propstat>"
+        "</D:response>"
+        "<D:response><D:href>/remote.php/dav/files/likivik/Documents/y.png</D:href>"
+        "<D:propstat><D:prop><D:resourcetype/></D:prop></D:propstat>"
+        "</D:response>"
+        "</D:multistatus>"
+    )
+
+    class _Resp:
+        status_code = 207
+        text = fake_xml
+        def raise_for_status(self): pass
+
+    monkeypatch.setattr(
+        ws.requests, "request", lambda *a, **k: _Resp(),
+    )
+    monkeypatch.setattr(ws, "_path_in_flight", lambda _p: False)
+
+    r = client.post("/scan-all", json={"folder": "Documents"}, headers=h())
+    assert r.status_code == 200
+    d = r.json()
+    # Both x.pdf and y.png must be enqueued; pre-fix the regex matched
+    # zero entries because the prefix was ``D:`` not ``d:``.
+    assert d["enqueued"] == 2, d
+
+
+def test_scan_all_accepts_no_prefix(monkeypatch, client):
+    """B9 (edge): a response with no namespace prefix at all must
+    still be parsed. Some Sabre/DAV setups emit unprefixed XML."""
+    fake_xml = (
+        '<?xml version="1.0"?><multistatus>'
+        f"<response><href>/remote.php/dav/files/likivik/Documents/z.pdf</href>"
+        "<propstat><prop><resourcetype/></prop></propstat>"
+        "</response>"
+        "</multistatus>"
+    )
+
+    class _Resp:
+        status_code = 207
+        text = fake_xml
+        def raise_for_status(self): pass
+
+    monkeypatch.setattr(
+        ws.requests, "request", lambda *a, **k: _Resp(),
+    )
+    monkeypatch.setattr(ws, "_path_in_flight", lambda _p: False)
+
+    r = client.post("/scan-all", json={"folder": "Documents"}, headers=h())
+    assert r.status_code == 200
+    d = r.json()
+    assert d["enqueued"] == 1, d
+
+
+# --- B10: _PROCESSED_TTL is configurable ------------------------------------
+
+def test_processed_ttl_honours_settings_db(monkeypatch):
+    """B10: an operator can change ``processed_ttl`` via the settings
+    store and the next claim_job call uses the new value, with no
+    restart required.
+    """
+    # Default value (no env, no DB override).
+    monkeypatch.delenv("NC_OCR_PROCESSED_TTL", raising=False)
+    ws.jobstore.setting_delete("NC_OCR_PROCESSED_TTL")
+    assert ws._processed_ttl_seconds() == float(ws._DEFAULT_PROCESSED_TTL)
+
+    # Setting via the DB row.
+    ws.jobstore.setting_put("NC_OCR_PROCESSED_TTL", "12")
+    assert ws._processed_ttl_seconds() == 12.0
+
+    # Bad value falls back to default.
+    ws.jobstore.setting_put("NC_OCR_PROCESSED_TTL", "not-a-number")
+    assert ws._processed_ttl_seconds() == float(ws._DEFAULT_PROCESSED_TTL)
+
+    # Cleanup so other tests aren't affected.
+    ws.jobstore.setting_delete("NC_OCR_PROCESSED_TTL")
+
+
+def test_processed_ttl_honours_env(monkeypatch):
+    """B10 (env precedence): env wins over default but the DB row
+    wins over env (per the spec's precedence table).
+    """
+    ws.jobstore.setting_delete("NC_OCR_PROCESSED_TTL")
+    monkeypatch.setenv("NC_OCR_PROCESSED_TTL", "7")
+    assert ws._processed_ttl_seconds() == 7.0
+
+    ws.jobstore.setting_put("NC_OCR_PROCESSED_TTL", "42")
+    # DB overrides env.
+    assert ws._processed_ttl_seconds() == 42.0
+
+    ws.jobstore.setting_delete("NC_OCR_PROCESSED_TTL")
+    monkeypatch.delenv("NC_OCR_PROCESSED_TTL", raising=False)
+
+
+def test_processed_ttl_setting_panel_zero_accepted(client):
+    """B10: 0 is valid for the TTL setting (\"never dedup\") and must
+    pass the floor check in ``/settings``."""
+    r = client.post("/settings", json={"processed_ttl": 0}, headers=h())
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["settings"]["processed_ttl"] == 0
+
+
+def test_processed_ttl_setting_panel_floor_enforced(client):
+    """B10: a negative value is rejected with 422; positive values
+    round-trip cleanly."""
+    r = client.post("/settings", json={"processed_ttl": -1}, headers=h())
+    assert r.status_code == 422
+    r = client.post("/settings", json={"processed_ttl": 600}, headers=h())
+    assert r.status_code == 200
+    assert r.json()["settings"]["processed_ttl"] == 600
+
+
+# --- B3: _webdav_delete retries on 5xx --------------------------------------
+
+def test_webdav_delete_retries_on_5xx(monkeypatch):
+    """B3: when the WebDAV DELETE returns a 5xx, ``_webdav_delete``
+    must retry — pre-fix ``raise_for_status`` ran OUTSIDE the retried
+    closure so a 5xx on the final attempt escaped unretried and left
+    both the source image and the new PDF in Nextcloud with the job
+    marked ``error``.
+    """
+    import requests as _req
+
+    responses = iter([
+        _make_resp(503),
+        _make_resp(502),
+        _make_resp(204),
+    ])
+    sleeps: list[float] = []
+
+    monkeypatch.setattr(ws.requests, "delete",
+                        lambda *a, **k: next(responses))
+    monkeypatch.setattr(ws.time, "sleep", lambda s: sleeps.append(s))
+
+    # The retry helper backs off; we patch its base delay so the
+    # test stays fast.
+    ws._RETRY_BASE_DELAY = 0.0
+    ws._webdav_delete("/likivik/files/x.pdf")
+    # Two retries between three attempts → two sleeps recorded.
+    assert len(sleeps) == 2, sleeps
+
+
+def _make_resp(status_code):
+    """Build a minimal ``requests.Response`` for the B3 test."""
+    import requests as _req
+    r = _req.Response()
+    r.status_code = status_code
+    return r
+
+
+# --- B2: _vision_quota_once picks the dimension matching the engine region --
+
+def test_pick_quota_dimension_matches_engine_region():
+    """B2: the helper picks the dimension whose ``location`` matches
+    the engine's NC_OCR_GOOGLE_LOCATION. Pre-fix the production code
+    read ``dims[0]`` of the API response — whichever region came
+    back first — and reported the wrong quota in /stats.
+    """
+    dims = [
+        {"dimensions": {"location": "asia-east1"},
+         "details": {"value": "100"}},
+        {"dimensions": {"location": "us"},
+         "details": {"value": "1800"}},
+        {"dimensions": {"location": "eu"},
+         "details": {"value": "900"}},
+    ]
+    # US default: must skip asia-east1 and eu, pick us.
+    m = ws._pick_quota_dimension(dims, "US")
+    assert m is not None
+    assert m["details"]["value"] == "1800"
+
+    # Lower-case on either side still matches (case-insensitive).
+    m = ws._pick_quota_dimension(dims, "eu")
+    assert m["details"]["value"] == "900"
+
+    # Empty falls back to US.
+    m = ws._pick_quota_dimension(dims, "")
+    assert m["details"]["value"] == "1800"
+
+    # No match → None; caller falls back to a conservative 1800
+    # with a WARNING.
+    m = ws._pick_quota_dimension(dims, "moon")
+    assert m is None
+
+
+def test_pick_quota_dimension_global_wildcard():
+    """B2 (edge): NC_OCR_GOOGLE_LOCATION=GLOBAL accepts the first
+    non-empty dimension (the wildcard bucket)."""
+    dims = [
+        {"dimensions": {"location": "eu"}, "details": {"value": "900"}},
+    ]
+    m = ws._pick_quota_dimension(dims, "GLOBAL")
+    assert m is not None and m["details"]["value"] == "900"
+
+    # Case-insensitive wildcard too.
+    m = ws._pick_quota_dimension(dims, "global")
+    assert m is not None and m["details"]["value"] == "900"

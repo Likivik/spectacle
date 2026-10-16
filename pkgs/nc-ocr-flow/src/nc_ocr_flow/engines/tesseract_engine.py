@@ -59,12 +59,18 @@ def process_pdf(pdf_path: str | os.PathLike,
 
     tess_pages = _run_ocrmypdf_tesseract(pdf_path, str(out_path))
 
+    # tesseract OCRs every page (ocrmypdf --redo-ocr rewrites or adds
+    # the text layer on all of them), so its billable pages match
+    # tess_pages. webhook_server counts billable pages from
+    # result["vlm_pages"], so we set vlm_pages here too — keeping the
+    # cross-engine contract that every engine reports its billable
+    # page indices in vlm_pages.
     return _orch.ProcessResult(
         output_pdf=str(out_path),
         page_results=[],   # tesseract writes a text layer directly into the PDF
         engine_used=ENGINE_NAME,
         tess_pages=tess_pages,
-        vlm_pages=[],
+        vlm_pages=tess_pages,
         vlm_failed_pages=[],
         l2_pages={},
     )

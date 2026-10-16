@@ -107,7 +107,56 @@ STAMP_XMP_NS = "http://likivik.com/nc-ocr-flow/1.0/"
 
 # Loop prevention: which node IDs we processed recently. The claim lives
 # in SQLite (jobstore.claim_node) so it survives a restart.
+#: Default TTL — overridable via env ``NC_OCR_PROCESSED_TTL`` (seconds)
+#: or a stored setting named ``NC_OCR_PROCESSED_TTL``. Read at call
+#: time so an operator can tune the window without a redeploy when a
+#: slow Vision batch plus a Nextcloud retry would otherwise exceed the
+#: default 300 s.
 _PROCESSED_TTL = 300  # 5 minutes
+_DEFAULT_PROCESSED_TTL = 300
+
+
+def _processed_ttl_seconds() -> float:
+    """Resolve the recently-processed guard TTL honouring settings + env.
+
+    Precedence (highest first):
+      1. ``NC_OCR_PROCESSED_TTL`` stored in ``settings`` (operator panel)
+      2. ``NC_OCR_PROCESSED_TTL`` env var (nix service config)
+      3. :data:`_DEFAULT_PROCESSED_TTL` (compile-time default)
+
+    The value is read on every webhook call so a panel change takes
+    effect without a restart. Seconds (whole-number) — a float would
+    buy nothing because WebDAV round-trips already run on second-scale
+    timeouts, and integer seconds keep the panel simple.
+    """
+    return float(_int_env_nonneg(
+        "NC_OCR_PROCESSED_TTL", _DEFAULT_PROCESSED_TTL,
+    ))
+
+
+# --- _enqueue concurrency control ------------------------------------------
+#
+# A webhook and /scan-all for the same NC path can land in
+# :func:`_enqueue` at the same time. Without a lock, both readers can
+# see ``files.status = 'done'`` and both insert a fresh ``jobs`` row.
+# SQLite serialises writes inside a single transaction, but
+# ``file_put`` and ``record_enqueue`` are two separate transactions.
+# A per-path ``threading.Lock`` closes the in-process race cheaply.
+# Multi-process deployments (one uvicorn per host × N workers) need a
+# jobstore-level helper that wraps both writes in a single
+# BEGIN IMMEDIATE transaction — see the report.
+_ENQUEUE_LOCKS_GUARD = threading.Lock()
+_ENQUEUE_LOCKS: dict[str, threading.Lock] = {}
+
+
+def _enqueue_lock_for(path: str) -> threading.Lock:
+    """Return the per-path lock, creating it on first use."""
+    with _ENQUEUE_LOCKS_GUARD:
+        lock = _ENQUEUE_LOCKS.get(path)
+        if lock is None:
+            lock = threading.Lock()
+            _ENQUEUE_LOCKS[path] = lock
+        return lock
 
 
 # --- Per-file OCR state (survives restarts) --------------------------------
@@ -148,7 +197,7 @@ def _index_record(nc_path: str, status: str, engine: str | None,
 
 def _is_recently_processed(node_id: int) -> bool:
     """Kept for callers that only want to look, without claiming."""
-    return not jobstore.claim_node(node_id, _PROCESSED_TTL)
+    return not jobstore.claim_node(node_id, _processed_ttl_seconds())
 
 
 def _claim_node(node_id: int) -> bool:
@@ -158,7 +207,7 @@ def _claim_node(node_id: int) -> bool:
     longer makes us forget which files we just processed. On a DB error
     it fails open (process the file) rather than skipping it forever.
     """
-    return jobstore.claim_node(node_id, _PROCESSED_TTL)
+    return jobstore.claim_node(node_id, _processed_ttl_seconds())
 
 
 def _mark_processed(node_id: int) -> None:
@@ -309,14 +358,25 @@ def _retry(fn, *, what: str, attempts: int = _RETRY_ATTEMPTS):
 
 
 def _webdav_delete(nc_path: str) -> None:
-    """Delete file from NC via WebDAV DELETE (for image→PDF replacement)."""
+    """Delete file from NC via WebDAV DELETE (for image→PDF replacement).
+
+    Raises ``raise_for_status`` inside the retried closure — the same
+    shape as ``_webdav_download`` / ``_webdav_upload``. A 5xx on the
+    final attempt otherwise escapes unretried, and in the image→PDF
+    branch (lines around 910-918 in ``_process_file``) would leave both
+    the source image and the new PDF in Nextcloud while the job row
+    silently records ``error``.
+    """
     url = _webdav_url(nc_path)
     log.info("WebDAV DELETE %s", url)
-    resp = _retry(
-        lambda: requests.delete(url, auth=(NC_USER, NC_PASSWORD), timeout=30),
-        what=f"WebDAV DELETE {nc_path}",
-    )
-    resp.raise_for_status()
+    def _do_delete() -> requests.Response:
+        r = requests.delete(
+            url, auth=(NC_USER, NC_PASSWORD), timeout=30,
+        )
+        r.raise_for_status()
+        return r
+
+    _retry(_do_delete, what=f"WebDAV DELETE {nc_path}")
 
 
 def _propfind_size_etag(nc_path: str) -> tuple[int | None, str | None]:
@@ -768,11 +828,16 @@ def _needs_ocr_decision(
 
 
 def _assert_ocr_produced_blocks(result, nc_path: str) -> None:
-    """Raise if a structured-OCR engine returned zero blocks.
+    """Raise if a structured-OCR engine returned zero blocks (or tesseract
+    produced an empty text layer).
 
     Two engines populate ``result.page_results`` (google, minimax); the
     third (``tesseract``) writes the text layer directly via ocrmypdf and
-    deliberately leaves ``page_results=[]`` — that one is exempted.
+    deliberately leaves ``page_results=[]``. The tesseract branch is
+    guarded by a text-density check on the produced PDF (a re-OCR of a
+    blank page returns ``page_results=[]`` AND a PDF with no
+    extractable text — without this second guard the user's original
+    gets overwritten by a "successful" OCR that carried no text).
 
     Background: the Google engine's bbox parser used to silently drop
     every Word (Vision populates ``normalized_vertices`` on the
@@ -798,25 +863,58 @@ def _assert_ocr_produced_blocks(result, nc_path: str) -> None:
     ``except Exception`` already records ``status=error`` and writes
     ``error`` to the SQLite job row). The file is left UN-stamped and
     UN-uploaded, so the next webhook or ``/rescan`` retries it. The
-    error message names file, engine, and block count so an operator
-    triaging the panel can act on it.
+    error message names file, engine, and the failure shape so an
+    operator triaging the panel can act on it.
     """
-    # Inline the canonical names instead of importing the registry, to
-    # avoid loading engine modules just for a string compare and to
-    # keep this function stable across engine renames.
-    if result.engine_used not in ("google", "minimax"):
-        return
+    engine = result.engine_used
 
-    pages = result.page_results or []
-    total_blocks = sum(len(p.blocks) for p in pages)
-    if total_blocks > 0:
-        return
+    # Structured-output engines: google, minimax. The block count must
+    # be > 0; an empty result here is the documented bbox-parser bug.
+    if engine in ("google", "minimax"):
+        pages = result.page_results or []
+        total_blocks = sum(len(p.blocks) for p in pages)
+        if total_blocks > 0:
+            return
+        raise RuntimeError(
+            f"OCR engine={engine} produced 0 blocks across "
+            f"{len(pages)} page(s) for {nc_path!r}: empty result; file not "
+            f"stamped or uploaded, eligible for retry"
+        )
 
-    raise RuntimeError(
-        f"OCR engine={result.engine_used} produced 0 blocks across "
-        f"{len(pages)} page(s) for {nc_path!r}: empty result; file not "
-        f"stamped or uploaded, eligible for retry"
-    )
+    # Tesseract: the text layer is written by ocrmypdf directly into the
+    # output PDF, so page_results is empty by design. Verify the layer
+    # actually carries non-whitespace text using the same per-page floor
+    # the text-density guard uses for the born-digital branch
+    # (MIN_TEXT_CHARS_PER_PAGE). A blank ocrmypdf output — e.g. a blank
+    # image, or ocrmypdf crashing silently — would otherwise be
+    # stamped done and uploaded over the user's original.
+    if engine == "tesseract":
+        try:
+            import fitz
+            with fitz.open(str(result.output_pdf)) as doc:
+                pages = max(1, doc.page_count)
+                chars = sum(
+                    len(p.get_text().strip()) for p in doc
+                )
+            per_page = chars / pages
+        except Exception as exc:
+            raise RuntimeError(
+                f"OCR engine=tesseract output PDF unreadable for "
+                f"{nc_path!r} ({exc}); file not stamped or uploaded, "
+                f"eligible for retry"
+            ) from exc
+        if per_page >= MIN_TEXT_CHARS_PER_PAGE:
+            return
+        raise RuntimeError(
+            f"OCR engine=tesseract produced an empty/garbled text layer "
+            f"({chars} chars across {pages} page(s), "
+            f"{per_page:.1f}/page < {MIN_TEXT_CHARS_PER_PAGE}) for "
+            f"{nc_path!r}: file not stamped or uploaded, eligible for retry"
+        )
+
+    # Any other engine (auto/legacy): treat as structured — pass on
+    # page_results without raising. New structured engines can be
+    # added to the tuple above as they ship.
 
 
 def _process_file(nc_path: str, node_id: int, engine: str | None = None,
@@ -850,36 +948,12 @@ def _process_file(nc_path: str, node_id: int, engine: str | None = None,
                 log.info("skipping photo: %s", nc_path)
                 return {"path": nc_path, "skipped": True, "reason": cls.reason}
 
-            # Document image: convert to PDF, OCR
-            pdf_path = _image_to_pdf(local_file)
-            result = process_pdf(pdf_path, engine=engine)
-
-            # Gate the stamp + upload on a non-empty OCR result. An
-            # engine that returned zero blocks (the documented Google
-            # bbox-parser bug, or any future regression that drops text
-            # silently) must NOT mark the file ``done`` — the worker
-            # sees the raise as ``status=error`` and the next webhook
-            # /rescan retries it. See :func:`_assert_ocr_produced_blocks`.
-            _assert_ocr_produced_blocks(result, nc_path)
-
-            # Stamp PDF metadata: engine, timestamp, pages per engine
-            _stamp_metadata(
-                Path(result.output_pdf),
-                engine=result.engine_used,
-                vlm_pages=result.vlm_pages,
-                tess_pages=result.tess_pages,
-                vlm_failed=result.vlm_failed_pages,
-                l2_pages=result.l2_pages,
-            )
-
-            # Collision check: the image branch writes to
-            # ``nc_path.with_suffix('.pdf')`` and then deletes the
-            # source image. If the user already has a PDF at that
-            # target path, the upload would *silently* destroy that
-            # PDF — the user's original PDF is replaced with the
-            # freshly-OCR'd image-to-PDF. Detect that here and refuse
-            # to clobber; the operator can rename, delete, or reroute
-            # the source image manually.
+            # Collision check FIRST: if the target PDF path already has a
+            # file on it, refuse to overwrite — converting the image
+            # here would silently destroy the user's existing PDF (and
+            # would also bill a Vision round-trip for nothing). The
+            # skip reason, the file-row semantics, and the "source
+            # image left in place" invariant are preserved exactly.
             pdf_nc_path = str(Path(nc_path).with_suffix(".pdf"))
             try:
                 existing_size, _ = _propfind_size_etag(pdf_nc_path)
@@ -906,6 +980,28 @@ def _process_file(nc_path: str, node_id: int, engine: str | None = None,
                     "reason": SKIP_REASON_PDF_EXISTS,
                     "existing_pdf": pdf_nc_path,
                 }
+
+            # Document image: convert to PDF, OCR
+            pdf_path = _image_to_pdf(local_file)
+            result = process_pdf(pdf_path, engine=engine)
+
+            # Gate the stamp + upload on a non-empty OCR result. An
+            # engine that returned zero blocks (the documented Google
+            # bbox-parser bug, or any future regression that drops text
+            # silently) must NOT mark the file ``done`` — the worker
+            # sees the raise as ``status=error`` and the next webhook
+            # /rescan retries it. See :func:`_assert_ocr_produced_blocks`.
+            _assert_ocr_produced_blocks(result, nc_path)
+
+            # Stamp PDF metadata: engine, timestamp, pages per engine
+            _stamp_metadata(
+                Path(result.output_pdf),
+                engine=result.engine_used,
+                vlm_pages=result.vlm_pages,
+                tess_pages=result.tess_pages,
+                vlm_failed=result.vlm_failed_pages,
+                l2_pages=result.l2_pages,
+            )
 
             # Upload OCR'd PDF (new .pdf path), delete original image
             _webdav_upload(pdf_nc_path, Path(result.output_pdf))
@@ -988,11 +1084,13 @@ _IDLE_POLL_SECONDS = 5.0
 
 #: Settings the panel may change: short key -> (env var, default).
 #: Reading honours env (nix, authoritative) -> SQLite override -> default.
+#: TTL is exposed as int seconds (whole-number); see ``processed_ttl``.
 _SETTING_SPEC: dict[str, tuple[str, int]] = {
     "workers": ("NC_OCR_WORKERS", 2),
     "max_concurrent_google": ("NC_OCR_MAX_CONCURRENT_GOOGLE", 2),
     "max_concurrent_tesseract": ("NC_OCR_MAX_CONCURRENT_TESSERACT", 1),
     "max_concurrent_minimax": ("NC_OCR_MAX_CONCURRENT_MINIMAX", 1),
+    "processed_ttl": ("NC_OCR_PROCESSED_TTL", _DEFAULT_PROCESSED_TTL),
 }
 #: Settings that only take effect after a restart (the worker pool and
 #: the semaphores are built at import time).
@@ -1021,6 +1119,23 @@ def _int_env(name: str, default: int) -> int:
         return default
 
 
+def _int_env_nonneg(name: str, default: int) -> int:
+    """Non-negative int for a setting (e.g. processed-TTL).
+
+    Same precedence as :func:`_int_env` but allows 0 — a TTL of 0 means
+    "never dedup" (every webhook event triggers a fresh OCR), which
+    is a valid operator choice when debugging the loop-prevention
+    behaviour.
+    """
+    raw = jobstore.settings_all().get(name)
+    if raw in (None, ""):
+        raw = os.environ.get(name)
+    try:
+        return max(0, int(raw))
+    except (TypeError, ValueError):
+        return default
+
+
 def _setting_values() -> tuple[dict[str, int], dict[str, int], dict[str, str]]:
     """(current, defaults, source) per short key, for the panel."""
     stored = jobstore.settings_all()
@@ -1035,8 +1150,12 @@ def _setting_values() -> tuple[dict[str, int], dict[str, int], dict[str, str]]:
         else:
             raw = os.environ.get(env_name)
             sources[key] = "env" if raw not in (None, "") else "default"
+        # The TTL setting is the only one in the spec where 0 is a
+        # valid value (it means "always re-OCR"). Everything else has
+        # a meaningful lower bound of 1, so the floor is per-key.
+        floor = 0 if key == "processed_ttl" else 1
         try:
-            current[key] = max(1, int(raw))
+            current[key] = max(floor, int(raw))
         except (TypeError, ValueError):
             current[key] = default
             sources[key] = "default"
@@ -1101,6 +1220,31 @@ def _run_job(job: dict) -> None:
         if result.get("skipped"):
             job["reason"] = result.get("reason", "")
         log.info("worker: job %d %s: %s", job["id"], job["status"], job["path"])
+    except requests.HTTPError as exc:
+        # 404 means the file is gone from Nextcloud (deleted between
+        # the webhook firing and our GET). Mark it ``gone`` rather
+        # than ``error`` so /stats doesn't show it as a failure:
+        # retrying will 404 again, and a permanent ``error`` row is
+        # what produced the 36 phantom-errors on production. Any
+        # other 4xx/5xx is still a real error.
+        status_code = (
+            exc.response.status_code if exc.response is not None else None
+        )
+        if status_code == 404:
+            job["status"] = "gone"
+            job["reason"] = "file_removed"
+            job["error"] = str(exc)
+            log.warning(
+                "worker: job %d: file gone (404): %s",
+                job["id"], job["path"],
+            )
+        else:
+            job["status"] = "error"
+            job["error"] = str(exc)
+            log.error(
+                "worker: job %d failed (%s): %s — %s",
+                job["id"], status_code, job["path"], exc,
+            )
     except Exception as exc:
         job["status"] = "error"
         job["error"] = str(exc)
@@ -1304,6 +1448,35 @@ def _vision_credentials_path() -> str:
     return ""
 
 
+def _pick_quota_dimension(dims: list[dict], want_loc: str) -> dict | None:
+    """Return the dimension entry whose ``location`` matches the
+    engine's configured region.
+
+    Extracted from :func:`_vision_quota_once` so the matching can be
+    unit-tested without going through Google auth (the original code
+    read ``dims[0]``, which is whichever region happens to come back
+    first — usually not the engine's region).
+
+    Rules:
+
+      * Empty ``want_loc`` defaults to ``"US"`` (matches the engine
+        env-var default).
+      * Case-insensitive comparison; both sides are upper-cased.
+      * The literal region ``"GLOBAL"`` is the wildcard bucket — when
+        the engine is configured that way, the *first* non-empty
+        dimension is accepted (its value is the aggregate bucket the
+        wildcard consumes from).
+      * Returns ``None`` if no dimension matches. The caller falls
+        back to a conservative 1800 req/min and logs a WARNING.
+    """
+    want = (want_loc or "US").upper()
+    for d in dims:
+        loc = (d.get("dimensions") or {}).get("location", "").upper()
+        if want == "GLOBAL" or loc == want:
+            return d
+    return None
+
+
 def _vision_quota_once() -> None:
     """Read the Vision rate quota and last-minute usage into settings.
 
@@ -1339,10 +1512,34 @@ def _vision_quota_once() -> None:
                "/locations/global/services/vision.googleapis.com/quotaInfos")
         for qi in _get(url).get("quotaInfos", []):
             if qi.get("quotaId") == "DocumentTextDetectionRequestsPerMinutePerProject":
-                dims = qi.get("dimensionsInfos") or [{}]
-                val = dims[0].get("details", {}).get("value")
-                if val is not None:
-                    limit = int(val)
+                # The ``dimensionsInfos`` list carries one entry per
+                # dimension the API knows about; the engine actually
+                # consumes one specific region (NC_OCR_GOOGLE_LOCATION,
+                # default "US"), and the first element of the list is
+                # whatever region happens to come back first. Reading
+                # dims[0] therefore reports a healthy limit for the
+                # wrong bucket and /stats shows a quota we never
+                # actually have. Match the dimension to the engine's
+                # region; fall back to a conservative 1800 with a
+                # logged WARNING when no dimension matches. The
+                # matching rule itself lives in
+                # :func:`_pick_quota_dimension` so the unit test can
+                # exercise it without going through Google auth.
+                match = _pick_quota_dimension(
+                    qi.get("dimensionsInfos") or [],
+                    os.environ.get("NC_OCR_GOOGLE_LOCATION", "US") or "US",
+                )
+                if match is None:
+                    log.warning(
+                        "vision quota: no dimension matched region=%r;"
+                        " using conservative fallback 1800 req/min",
+                        (os.environ.get("NC_OCR_GOOGLE_LOCATION", "US")
+                         or "US").upper(),
+                    )
+                else:
+                    val = match.get("details", {}).get("value")
+                    if val is not None:
+                        limit = int(val)
 
         now = _dt.datetime.now(_dt.timezone.utc)
         flt = ('metric.type="serviceruntime.googleapis.com/quota/rate/net_usage"'
@@ -1405,7 +1602,13 @@ def _vision_summary() -> dict:
     return {
         "pages_month": pages,
         "jobs_month": month["jobs"],
-        "cost_usd": round(pages * VISION_USD_PER_1000 / 1000, 4),
+        # Subtract the monthly free quota (1000 pages) before charging;
+        # a 500-page run reports $0, not $0.75. The rounding step is
+        # preserved so a non-free run still reports cents. See
+        # :data:`VISION_FREE_UNITS`.
+        "cost_usd": round(
+            max(0, pages - VISION_FREE_UNITS) * VISION_USD_PER_1000 / 1000, 4
+        ),
         "free_units": VISION_FREE_UNITS,
         "free_left": max(0, VISION_FREE_UNITS - pages),
         "limit_per_min": limit,
@@ -1447,6 +1650,40 @@ def _enqueue(nc_path: str, node_id: int, engine: str | None = None,
     cannot collide with whatever the next process happens to call
     itself. ``record_enqueue`` writes the new id back into ``job`` so
     the API response reflects the canonical id.
+
+    Atomicity (the B8 fix)
+    ----------------------
+    The previous order was ``record_enqueue`` (jobs row insert) then
+    ``file_put`` (files row update). A concurrent ``/scan-all`` that
+    read the files row between the two writes saw ``status='done'``
+    (or missing) and inserted a duplicate jobs row, both of which
+    would race to download / OCR the same file. The new order closes
+    the race:
+
+      1. **Take a per-path lock** (``_enqueue_lock_for``): closes the
+         in-process race where /webhook and /scan-all both call
+         ``_enqueue`` for the same NC path at the same time.
+      2. **Re-check in-flight** (``_path_in_flight``): if the files
+         row already shows ``queued`` or ``running``, this caller was
+         itself racing with a concurrent enqueue; skip the insert
+         instead of creating a duplicate.
+      3. **Mark the file ``queued`` first** (``file_put``): any
+         concurrent reader of the files row will see
+         ``status='queued'`` and skip via ``_path_in_flight``.
+      4. **Insert the jobs row** (``record_enqueue``): the queue's
+         durable record. This wraps in ``BEGIN IMMEDIATE`` itself.
+
+    If step 4 fails (DB-level fault; not the explicit-id collision,
+    which raises before this code runs), the file row stays at
+    ``queued`` with no matching jobs row — the orphan reconciler
+    picks that up on next startup or on ``/admin/reconcile-orphans``.
+    That's the same recovery shape as a process crash mid-enqueue,
+    which we already accept.
+
+    Multi-process deployments (one uvicorn per host × N workers
+    across separate processes) need a jobstore-level helper that
+    wraps both writes in a single ``BEGIN IMMEDIATE`` transaction
+    to fully close the race — described in the report.
     """
     job = {
         # id intentionally unset — let SQLite's rowid alias assign.
@@ -1463,18 +1700,34 @@ def _enqueue(nc_path: str, node_id: int, engine: str | None = None,
         "error": None,
         "reason": None,
     }
-    # Mirror to durable SQLite history. ``record_enqueue`` writes the
-    # canonical id back into ``job`` and may raise on an explicit-id
-    # collision (the bug we just removed).
-    jobstore.record_enqueue(job)
-    # The row is already in SQLite (``record_enqueue`` above) — that IS
-    # the queue. Mark the file in-flight so a repeat scan skips it,
-    # then wake a worker.
-    _prev = jobstore.file_get(nc_path) or {}
-    jobstore.file_put({**_prev, "path": nc_path, "status": "queued",
-                       "node_id": node_id})
-    _work_available.set()
-    return job
+    # Step 1: take the per-path lock. Two concurrent _enqueue calls
+    # for the same path serialise here, so the read-modify-write
+    # sequence below sees a consistent files row.
+    with _enqueue_lock_for(nc_path):
+        # Step 2: re-check in-flight. If a peer already inserted
+        # a job for this path inside the lock window, don't create
+        # a duplicate jobs row. The /scan-all path takes
+        # ``_path_in_flight`` as a pre-check (before the lock) to
+        # avoid the round-trip in the common case; this is the
+        # inside-lock belt-and-braces.
+        if _path_in_flight(nc_path) and not force:
+            log.info(
+                "enqueue: %s already in flight, skipping duplicate",
+                nc_path,
+            )
+            _work_available.set()
+            return job
+
+        # Step 3: mark the file queued first. Any concurrent
+        # reader (outside the per-path lock) now sees
+        # ``status='queued'`` and ``_path_in_flight`` returns True.
+        _prev = jobstore.file_get(nc_path) or {}
+        jobstore.file_put({**_prev, "path": nc_path, "status": "queued",
+                           "node_id": node_id})
+        # Step 4: durable queue insert.
+        jobstore.record_enqueue(job)
+        _work_available.set()
+        return job
 
 
 def _check_secret(x_webhook_secret: str | None) -> None:
@@ -1528,7 +1781,17 @@ async def handle_webhook(
     """Handle NC webhook for file events. Enqueues job, returns immediately."""
     _check_secret(x_webhook_secret)
 
-    body = await request.json()
+    # Catch malformed JSON: a 500 here used to retry-storm a healthy
+    # backend (Nextcloud's dispatcher retries every 5xx indefinitely).
+    # A bad body is a 400, not a server fault.
+    try:
+        body = await request.json()
+    except Exception as exc:
+        log.warning("webhook: invalid JSON body: %s", exc)
+        return JSONResponse(
+            {"detail": "invalid JSON body"},
+            status_code=400,
+        )
     event = body.get("event", {})
     event_class = event.get("class", "")
     node = event.get("node", {})
@@ -1663,10 +1926,13 @@ async def put_settings(
             raise HTTPException(
                 status_code=422,
                 detail=f"{key} must be a positive integer") from None
-        if ival < 1:
+        # The TTL is the only setting where 0 is meaningful ("never
+        # dedup"), so the minimum is per-key.
+        floor = 0 if key == "processed_ttl" else 1
+        if ival < floor:
             raise HTTPException(
                 status_code=422,
-                detail=f"{key} must be at least 1 (got {ival})")
+                detail=f"{key} must be at least {floor} (got {ival})")
         jobstore.setting_put(_SETTING_SPEC[key][0], str(ival))
         saved.append(key)
     restart = any(k in _RESTART_SETTINGS for k in saved)
@@ -1767,11 +2033,44 @@ async def stats(
 ):
     """Aggregate OCR metrics from the durable index.
 
-    ``scanned`` counts distinct files OCR'd by this service; ``by_engine``
-    breaks that down by the engine that actually ran; ``skipped`` are files
-    we deliberately did not OCR (born-digital PDFs, non-document photos).
-    The caller (NC app) supplies the denominator — the total number of
-    OCR-able files — because only Nextcloud knows the file tree.
+    Contract (this version)
+    -----------------------
+    The two historical endpoints have always been described as a single
+    number-pair, but they actually counted different things:
+
+      * ``/stats`` is built from the ``files`` table — one row per
+        NC path we ever saw, so ``errors`` there is the *unique
+        failed paths* count (a file may have been retried several
+        times and still leave only one row, marked ``error``).
+      * ``/jobs/stats`` is built from the ``jobs`` table — one row per
+        *attempt*, so its ``error`` number is the total attempts that
+        failed.
+
+    Production saw ``errors=36`` from ``/stats`` while ``/jobs/stats``
+    held 0 error rows, all of which was a deadlock of misread numbers
+    (the 36 were leftover rows for test files that have since been
+    deleted from Nextcloud — the WebDAV call still 404s, but the row
+    is permanent until manually cleaned).
+
+    The fix is to keep both numbers but make the contract explicit and
+    add a third counter that ties them together:
+
+      * ``errors``         — UNIQUE failed *paths* (``files.status = 'error'``)
+      * ``gone``            — UNIQUE paths whose file vanished from NC
+                              (404 on every WebDAV call); NOT counted
+                              in ``errors`` (the file was never
+                              successfully processed)
+      * ``errors_attempts`` — total *attempts* that failed
+                              (``jobs.status = 'error'``); the
+                              ``/jobs/stats`` value mirrored here so
+                              a panel can never read the two endpoints
+                              as contradictory
+
+    Operators can therefore answer both questions independently:
+
+      * "is anything failing right now?" → ``errors_attempts`` (live)
+      * "what files are stuck?"           → ``errors`` and ``gone``
+                                            (durable index)
     """
     _check_secret(x_webhook_secret)
     idx = list(jobstore.file_all().values())
@@ -1779,6 +2078,11 @@ async def stats(
     scanned = [m for m in idx if m.get("status") == "done"]
     skipped = [m for m in idx if m.get("status") == "skipped"]
     errors = [m for m in idx if m.get("status") == "error"]
+    # 'gone' is a separate state: the file is no longer in NC
+    # (WebDAV GET → 404), so retrying it is futile. Excluded from
+    # ``errors`` so the two endpoints are never read as
+    # contradictory.
+    gone = [m for m in idx if m.get("status") == "gone"]
 
     by_engine: dict[str, int] = {}
     for m in scanned:
@@ -1790,12 +2094,23 @@ async def stats(
         r = m.get("reason") or "unknown"
         skip_reasons[r] = skip_reasons.get(r, 0) + 1
 
+    # Mirror the jobs-table error count so /stats and /jobs/stats
+    # agree on attempts. ``jobstore.stats()`` is keyed by status
+    # already (see :func:`jobstore.stats`).
+    js = jobstore.stats()
+    errors_attempts = int(js.get("error", 0))
+
     return {
         "service": "nc-ocr-flow",
+        # Index-page counts (one per NC path).
         "indexed": len(idx),
         "scanned": len(scanned),
         "skipped": len(skipped),
         "errors": len(errors),
+        "gone": len(gone),
+        # Attempt-page counts (one per job), so /stats and /jobs/stats
+        # never appear contradictory. See the docstring above.
+        "errors_attempts": errors_attempts,
         "by_engine": by_engine,
         "skip_reasons": skip_reasons,
         # Spend and rate-limit visibility for the panel (see _vision_summary).
@@ -1909,7 +2224,14 @@ async def scan_all(
     resp.raise_for_status()
 
     import re as _re
-    found = _re.findall(r"<d:href>([^<]+)</d:href>", resp.text)
+    # Some Nextcloud installs use a non-``d:`` namespace prefix in the
+    # PROPFIND body (``D:``, ``DAV:``, no prefix at all, etc.). The
+    # earlier hard-coded ``<d:href>`` dropped every entry whose prefix
+    # happened to differ and silently broke /scan-all. Match any
+    # prefix (or no prefix) the server happens to send.
+    found = _re.findall(
+        r"<[A-Za-z0-9_]*:?href>([^<]+)</[A-Za-z0-9_]*:?href>", resp.text
+    )
     # Filter to processable extensions, decode %XX
     from urllib.parse import unquote
     enqueued = 0

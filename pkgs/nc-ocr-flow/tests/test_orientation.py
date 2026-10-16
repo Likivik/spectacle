@@ -1392,6 +1392,15 @@ class TestPreorientEnvBypass:
         ``NC_OCR_DISABLE_ORIENTATION=1`` set, confirm the env key
         short-circuits the orientation pre-pass and the engine
         sees the original input path.
+
+        Regression target: the historical gate was case-sensitive on
+        the value (``getenv(...).strip() in ("1", "true", "yes")``),
+        so ``NC_OCR_DISABLE_ORIENTATION=TRUE`` was silently ignored.
+        The old test re-implemented the check inline (so it tested
+        its own copy) and could not catch that drift. The real gate
+        now lives in :func:`nc_ocr_flow.ocr.orientation_disabled_by_env`
+        and the test calls that helper directly so future changes
+        to the gate cannot silently diverge from this test.
         """
         import os as _os
         from nc_ocr_flow import orientation as orient_mod
@@ -1407,14 +1416,12 @@ class TestPreorientEnvBypass:
 
         _os.environ["NC_OCR_DISABLE_ORIENTATION"] = "1"
         try:
-            # Pretend we are process_pdf: we only need to check
-            # the gate, not the full engine.
             monkeypatch.setattr(
                 orient_mod, "preorient_pages_safe", _capture)
-            # Inline the gate from process_pdf to keep the test
-            # self-contained (no PDF engine wiring).
-            if _os.environ.get("NC_OCR_DISABLE_ORIENTATION", "").strip() in (
-                    "1", "true", "yes"):
+            # Drive the REAL gate (no inlined copy): with
+            # NC_OCR_DISABLE_ORIENTATION=1 the gate is True, so the
+            # preorient pre-pass must be skipped.
+            if ocr_mod.orientation_disabled_by_env(_os.environ):
                 # Pre-pass bypassed.
                 pass
             else:
@@ -1425,13 +1432,25 @@ class TestPreorientEnvBypass:
             )
         finally:
             _os.environ.pop("NC_OCR_DISABLE_ORIENTATION", None)
-        # Engine-side smoke: the literal env-string check accepts
-        # 1/true/yes (case-insensitive on whitespace).
-        for v in ("1", "true", "yes", " TRUE ", "Yes"):
+
+        # The gate must accept the documented values AND mixed-case
+        # variants — the bug we're regressing was exactly that
+        # ``TRUE`` / ``Yes`` / ``" TRUE "`` were silently ignored.
+        for v, expected in (
+            ("1", True),
+            ("true", True),
+            ("yes", True),
+            (" TRUE ", True),
+            ("Yes", True),
+            ("FALSE", False),
+            ("0", False),
+            ("", False),
+        ):
             _os.environ["NC_OCR_DISABLE_ORIENTATION"] = v
-            assert _os.environ.get(
-                "NC_OCR_DISABLE_ORIENTATION", "").strip().lower() in (
-                "1", "true", "yes")
+            assert ocr_mod.orientation_disabled_by_env(_os.environ) is expected, (
+                f"orientation_disabled_by_env({v!r}) returned "
+                f"{not expected}, expected {expected}"
+            )
         _os.environ.pop("NC_OCR_DISABLE_ORIENTATION", None)
 
 

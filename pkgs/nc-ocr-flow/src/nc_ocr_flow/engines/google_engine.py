@@ -63,8 +63,17 @@ ENGINE_NAME = "google"
 
 # Vision API limits per file for DOCUMENT_TEXT_DETECTION.
 # https://cloud.google.com/vision/docs/detect-document-text
-_MAX_INLINE_BYTES = 20 * 1024 * 1024  # 20 MB on inline content
-_BATCH_TIMEOUT_S = int(os.environ.get("NC_OCR_GOOGLE_BATCH_TIMEOUT", "300"))
+#
+# There is NO inline-content path for whole-document PDF OCR — the
+# skill-proven flow always uploads the PDF to GCS first (see
+# ``_ocr_pdf``). The 20 MB limit that used to live here was a leftover
+# from a removed inline design and hard-failed every legitimate
+# scanned PDF above 20 MB (Vision's whole-doc batch limit is 2000
+# pages; this guard is now a sane byte ceiling to surface truly
+# oversized inputs as an operator-visible error rather than letting
+# the upload silently consume GCS quota).
+_MAX_PDF_BYTES = 200 * 1024 * 1024  # 200 MB
+_BATCH_TIMEOUT_S = int(os.environ.get("NC_OCR_GOOGLE_BATCH_TIMEOUT", "1800"))
 _POLL_INTERVAL_S = float(os.environ.get("NC_OCR_GOOGLE_POLL_INTERVAL", "2"))
 
 
@@ -116,6 +125,14 @@ def process_pdf(pdf_path: str | os.PathLike,
 
     page_results = _ocr_pdf(pdf_path)
 
+    # Google Vision processes and bills every page of the uploaded PDF.
+    # webhook_server counts billable pages from result["vlm_pages"], so
+    # populate it with the 0-indexed page numbers we actually got
+    # results for (matches the 0-indexed convention in
+    # engines/minimax_engine.py). page_results is in ascending page
+    # order, so the index-into-page_results == source page index.
+    vlm_pages = list(range(len(page_results)))
+
     # The orchestrator will embed the text layer, save, and stamp
     # metadata. This engine just returns the per-page OCR results.
     result = _ocr.ProcessResult(
@@ -123,7 +140,7 @@ def process_pdf(pdf_path: str | os.PathLike,
         page_results=page_results,
         engine_used=ENGINE_NAME,
         tess_pages=[],
-        vlm_pages=[],
+        vlm_pages=vlm_pages,
         vlm_failed_pages=[],
         l2_pages={},
     )
@@ -136,10 +153,10 @@ def process_pdf(pdf_path: str | os.PathLike,
 def _ocr_pdf(pdf_path: str) -> list[OcrResult]:
     """Submit the whole PDF to Vision async batch + return per-page results."""
     pdf_bytes = Path(pdf_path).read_bytes()
-    if len(pdf_bytes) > _MAX_INLINE_BYTES:
+    if len(pdf_bytes) > _MAX_PDF_BYTES:
         raise RuntimeError(
-            f"PDF too large for inline batch ({len(pdf_bytes)} > "
-            f"{_MAX_INLINE_BYTES} bytes); split first or use the GCS path"
+            f"PDF too large for Vision whole-doc batch ({len(pdf_bytes)} > "
+            f"{_MAX_PDF_BYTES} bytes); split into smaller files first"
         )
 
     from google.cloud import vision  # type: ignore[import-not-found]
@@ -193,7 +210,7 @@ def _ocr_pdf(pdf_path: str) -> list[OcrResult]:
     # Read them all and aggregate per-page by context.pageNumber (the
     # proven skill flow: batch_size=1 may produce multiple JSON files).
     try:
-        out = _aggregate_json_results(bucket, out_prefix)
+        out = _aggregate_json_results(bucket, out_prefix, pdf_path)
     finally:
         # The uploaded PDF is a full copy of the user's document and the
         # JSON outputs are dead weight: leave nothing behind.
@@ -202,7 +219,8 @@ def _ocr_pdf(pdf_path: str) -> list[OcrResult]:
     return out
 
 
-def _aggregate_json_results(bucket: str, prefix: str) -> list[OcrResult]:
+def _aggregate_json_results(bucket: str, prefix: str,
+                              pdf_path: str | None = None) -> list[OcrResult]:
     """Download Vision's per-file JSON outputs + aggregate by page.
 
     Vision writes one JSON per file/page under the run's ``prefix``.
@@ -246,30 +264,73 @@ def _aggregate_json_results(bucket: str, prefix: str) -> list[OcrResult]:
         if full is None:
             out.append(OcrResult(blocks=[], page_width=0.0, page_height=0.0))
             continue
-        page_w, page_h = _page_dims(full, parsed)
         page_idx = page_num - 1
+        page_w, page_h = _page_dims(full, parsed, pdf_path, page_idx)
         blocks = _blocks_from_page(full, page_w, page_h, page_idx)
         out.append(OcrResult(blocks=blocks, page_width=page_w, page_height=page_h))
 
     return out
 
 
-def _page_dims(full, page_resp) -> tuple[float, float]:
-    """Get the page width/height in image pixels."""
-    # The top-level Page (pages[0]) has page-level bbox & dims.
+def _page_dims(full, page_resp, pdf_path: str | None = None,
+                 page_idx: int | None = None) -> tuple[float, float]:
+    """Get the page width/height in image pixels.
+
+    Tries, in order:
+
+      1. Vision's top-level ``Page`` (``pages[0].width`` / ``.height``).
+      2. Vision's top-level ``bounding_boxes[0]`` vertices.
+
+      Both come from the Vision response and are the same coord space
+      as the per-Word bboxes we use downstream, so they are preferred.
+
+    If both are missing/unusable AND we have ``pdf_path`` + ``page_idx``,
+    fall back to the source PDF page dimensions read locally. The
+    engine always has the source PDF (it uploads a byte copy to GCS),
+    so the true page size is on disk and matches Vision's pixel space
+    well enough for the bbox math to remain valid (the embedder only
+    uses page_w/page_h to scale Word bboxes, and per-page Vision
+    responses carry the same coords regardless of where page_w comes
+    from).
+
+    If we have no usable source — return ``(0.0, 0.0)`` would silently
+    drop every Word and turn the job into a status=error, so we raise
+    a clear RuntimeError naming the page and source file.
+    """
+    # Preferred: Vision's top-level Page.
     pages = list(getattr(full, "pages", []))
     if pages:
         p = pages[0]
-        # Property `width`/`height` are ints in the proto.
         return float(p.width), float(p.height)
-    # Fallback: top-level bounding box vertices.
+    # Fallback: Vision's top-level bounding box vertices.
     bb = getattr(full, "bounding_boxes", None)
     if bb:
         v0 = bb[0].vertices[0]
         v2 = bb[0].vertices[2]
         return float(v2.x - v0.x), float(v2.y - v0.y)
-    # Last resort — use the rendered page dimensions if we can.
-    return 0.0, 0.0
+    # Last resort: derive from the source PDF we uploaded to GCS.
+    if pdf_path is not None and page_idx is not None and page_idx >= 0:
+        try:
+            import fitz  # PyMuPDF — local page rect in PDF points
+            with fitz.open(pdf_path) as doc:
+                if page_idx < len(doc):
+                    rect = doc[page_idx].rect
+                    return float(rect.width), float(rect.height)
+        except Exception as exc:  # noqa: BLE001 — best-effort local fallback
+            log.warning(
+                "vision: local-PDF page-dim fallback failed for page %d "
+                "of %r: %s", page_idx, pdf_path, exc,
+            )
+    # No usable source — fail loudly rather than silently zeroing
+    # (silent zeros dropped every Word and masked the page as empty,
+    # which webhook_server's _assert_ocr_produced_blocks then turned
+    # into status=error with only one rate-limited warning as a clue).
+    raise RuntimeError(
+        f"google_engine: cannot determine page dimensions for page "
+        f"{page_idx} of {pdf_path!r}: Vision returned neither pages[] "
+        f"nor bounding_boxes[], and the local PDF fallback was "
+        f"unavailable or failed"
+    )
 
 
 def _blocks_from_page(full, page_w: float, page_h: float, page_idx: int) -> list[OcrBlock]:
@@ -507,11 +568,22 @@ def _wait_for_operation(op, timeout_s: int):
     The Vision SDK exposes ``op.result(timeout=...)`` which blocks;
     we use the more transparent ``op.done()`` loop so logs show
     progress for large docs.
+
+    Vision's async whole-document batch regularly takes tens of
+    minutes for big multi-hundred-page scans, so the caller's
+    timeout (default 1800s, override via NC_OCR_GOOGLE_BATCH_TIMEOUT)
+    must be generous enough for real workloads.
     """
+    op_name = getattr(op, "operation", None) or op
+    op_name_str = getattr(op_name, "name", None) or repr(op)[:80]
     t0 = time.time()
     while not op.done():
         if time.time() - t0 > timeout_s:
-            raise TimeoutError(f"vision batch timed out after {timeout_s}s")
+            elapsed = int(time.time() - t0)
+            raise TimeoutError(
+                f"vision batch timed out after {elapsed}s "
+                f"(limit {timeout_s}s); operation={op_name_str}"
+            )
         time.sleep(_POLL_INTERVAL_S)
     return op.result()
 

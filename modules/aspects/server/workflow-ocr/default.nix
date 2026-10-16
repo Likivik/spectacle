@@ -196,6 +196,14 @@
           # Google Cloud Vision (service-account key via CREDENTIALS_DIRECTORY)
           NC_OCR_GOOGLE_PROJECT = "spectacle-xandria";
           NC_OCR_GOOGLE_BUCKET = "ocr-project-tmp";
+          # NC_OCR_GOOGLE_LOCATION MUST match the bucket's region — if
+          # the project/bucket live in another region, Vision silently
+          # fails with no operator-visible hint (the engine defaults
+          # to "US" otherwise). Keep in sync with ``NC_OCR_GOOGLE_BUCKET``.
+          NC_OCR_GOOGLE_LOCATION = "US";
+          # Async whole-document batch can take tens of minutes on
+          # large scans. Default 1800s; raise this for very large jobs.
+          NC_OCR_GOOGLE_BATCH_TIMEOUT = "1800";
           NC_OCR_LISTEN_HOST = "127.0.0.1";
           NC_OCR_LISTEN_PORT = "8095";
           NC_OCR_FONT_PATH = "${pkgs.dejavu_fonts}/share/fonts/truetype/DejaVuSans.ttf";

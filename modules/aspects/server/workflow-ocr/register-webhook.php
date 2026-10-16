@@ -63,19 +63,45 @@ $listeners = [
 ];
 
 foreach ($listeners as $listener) {
-    // Check if this listener already exists (idempotent)
+    // Look up an existing listener for this uri+event+user (idempotent)
     $qb = $db->getQueryBuilder();
-    $qb->select($qb->createFunction('COUNT(*)'))
+    $qb->select('id', 'headers')
         ->from('webhook_listeners')
         ->where($qb->expr()->eq('uri', $qb->createNamedParameter($webhookUri)))
         ->andWhere($qb->expr()->eq('event', $qb->createNamedParameter($listener['event'])))
-        ->andWhere($qb->expr()->eq('user_id', $qb->createNamedParameter($userId)));
+        ->andWhere($qb->expr()->eq('user_id', $qb->createNamedParameter($userId)))
+        ->setMaxResults(1);
     $result = $qb->executeQuery();
-    $count = (int) $result->fetchOne();
+    $row = $result->fetch();
     $result->closeCursor();
 
-    if ($count > 0) {
-        file_put_contents($logFile, "Webhook listener for {$listener['event']} already exists (count=$count), skipping\n", FILE_APPEND);
+    if ($row !== false) {
+        // The listener exists. Its stored headers are a SNAPSHOT of the secret
+        // taken when it was first created — so a rotated secret would keep
+        // 401-ing forever unless we refresh it here. Compare semantically
+        // (json_decode) so key order / formatting cannot cause a false refresh.
+        $id = (int) $row['id'];
+        $stored = json_decode((string) $row['headers'], true);
+        $want = json_decode($headers, true);
+
+        if ($stored !== $want) {
+            $qb = $db->getQueryBuilder();
+            $qb->update('webhook_listeners')
+                ->set('headers', $qb->createNamedParameter($headers))
+                ->where($qb->expr()->eq('id', $qb->createNamedParameter($id)));
+            $qb->executeStatement();
+            file_put_contents(
+                $logFile,
+                "Refreshed stale headers for {$listener['event']} (id=$id) — secret rotated\n",
+                FILE_APPEND
+            );
+        } else {
+            file_put_contents(
+                $logFile,
+                "Webhook listener for {$listener['event']} already up to date (id=$id)\n",
+                FILE_APPEND
+            );
+        }
         continue;
     }
 

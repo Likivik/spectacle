@@ -202,6 +202,21 @@
         # GOOGLE_APPLICATION_CREDENTIALS, read once at process start.
         restartUnits = [ "nc-ocr-webhook.service" ];
       };
+      # App password for the dedicated webhook-registration service account.
+      # The account (user ``ocr-svc``, group ``ocr-webhooks``) holds ONLY the
+      # OCA\WebhookListeners\Settings\Admin delegation, granted with
+      #   occ admin-delegation:add 'OCA\WebhookListeners\Settings\Admin' ocr-webhooks
+      # It exists because the admin account has TOTP 2FA enabled (so its account
+      # password cannot be used for basic auth) and the sops copy of that
+      # password is stale. A passwordless app password is not sufficient: it
+      # authenticates but is not an admin session.
+      sops.secrets."nextcloud/ocr-svc-app-password" = {
+        sopsFile = ../../../secrets/poweredge/secrets.yaml;
+        owner = "nextcloud"; group = "nextcloud"; mode = "0400";
+        # LoadCredential ocr-svc-app-password in nc-ocr-register-webhook, read
+        # once at unit start.
+        restartUnits = [ "nc-ocr-register-webhook.service" ];
+      };
 
       services.tailscale.authKeyFile =
         config.sops.secrets."tailscale/auth-key".path;

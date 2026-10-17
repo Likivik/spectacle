@@ -72,12 +72,27 @@ Open sub-questions:
   `nextcloud.log`, including `X-Webhook-Secret`.** Nothing we control suppresses
   it. Treat the secret as compromised whenever a dispatch failure is
   investigated, rotate it, and scrub the log.
-- **`nextcloud/admin-password` (sops) is stale.** It only feeds the installer's
-  `adminpassFile`, which is inert after the first install. The OCR units no
-  longer load it as a systemd credential either — `occ status` succeeds with
-  only `mail_smtppassword` present, so `adminpass` was provably unread and was
-  dropped (least privilege). Refresh it deliberately or delete it; do not reach
-  for it as a working credential.
+- **`nextcloud/admin-password` (sops) is a first-install bootstrap secret, not a
+  credential store — and it is SUPPOSED to diverge from the live admin
+  password.** The NixOS module is explicit: "The password is set only in the
+  initial setup of Nextcloud by the systemd service `nextcloud-setup.service`".
+  It is consumed once, by the installer, through the `adminpass` credential.
+  Nothing reads it at runtime: the OCR units no longer load it (`occ status`
+  succeeds with only `mail_smtppassword` present, so it was provably unread) and
+  the live `config.php` contains no `adminpass` entry. `scripts/deploy-poweredge.sh`
+  generates it when it creates the secrets file and prints it during bootstrap,
+  and it is the value a from-scratch reinstall would apply — so keep it.
+  Do NOT "refresh" it to the live admin password (that would put a real admin
+  credential in the repo), and do NOT delete it unless you also set
+  `adminuser = null` + `adminpassFile = null` (the module permits disabling
+  initial admin creation on Nextcloud >= 32, and asserts the two must match),
+  accepting a manual admin-creation step on any reinstall.
+- **The SMTP credential in `config.php` is the module's deliberate design.** It
+  asserts that `services.nextcloud.settings.mail_smtppassword` "must not be
+  used, as it puts the password into the world-readable nix store", so the value
+  is resolved through `nix_read_secret` and rendered into `config.php` (mode
+  0640, `nextcloud:nextcloud`) instead. Verified absent from the nix store, the
+  system profile, the repo and every log.
 - **`config.php` holds the SMTP credential in plaintext** (mode 0640,
   `nextcloud:nextcloud`). Verified NOT present in the nix store, the system
   profile, the repo, or any log — this is how Nextcloud config works (it has no

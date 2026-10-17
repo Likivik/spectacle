@@ -2804,6 +2804,232 @@ def test_two_force_concurrent_enqueues_produce_one_jobs_row(client, monkeypatch)
     )
 
 
+def test_force_inflight_gate_holds_check_and_insert_atomically(
+        client, monkeypatch):
+    """Deterministic regression for the racy ``force=True`` in-flight gate.
+
+    The existing ``test_two_force_concurrent_enqueues_produce_one_jobs_row``
+    test only FAILS on the old buggy code when the OS happens to
+    schedule the threads in a way that lets the second caller hit the
+    in-flight re-check before the first caller inserts. CI's timing
+    exposes the race even when local runs miss it. So this test FORCES
+    the bad interleaving by controlling two gates:
+
+      * ``in_flight_job_for_path`` — the FIRST call returns ``None`` and
+        sets ``t1_at_gate`` (so we know the first caller has reached
+        the in-flight check but has not yet inserted). The SECOND call
+        waits for ``t1_at_gate`` to be set and then runs the REAL
+        ``in_flight_job_for_path`` query — which returns ``None`` under
+        the buggy code (T1 has not inserted yet) but returns the row
+        under the fix (T1 has already inserted, because the single
+        critical section spans check + insert).
+      * ``_enqueue_path_lock`` — on the buggy code the same lock object
+        is returned for both critical sections, which serialises the
+        two ``with`` blocks and turns the race into a sub-microsecond
+        timing window CI sometimes catches and local runs never do. We
+        split it per-caller: each thread's FIRST acquire returns one
+        lock, each thread's SECOND acquire returns a different lock.
+        The BUGGY code then sees ``with L1: check; with L2: insert``
+        with L1 and L2 independent — so T2's first lock is free while
+        T1 is mid-insert, the race fires, and both threads insert. The
+        FIX only has one ``with _enqueue_path_lock`` per call, so both
+        callers' single lock resolves to the SAME object — T2 blocks
+        behind T1 and only enters after T1's insert is visible, so
+        T2 sees the row and returns ``'already_running'``.
+      * ``record_enqueue`` — sleeps 50 ms so T2 reliably reaches its
+        in-flight check (in the first lock, in the buggy code) before
+        T1 finishes the insert in its second lock.
+    """
+    import threading
+    import time
+    monkeypatch.setattr(ws.jobstore, "claim_next", lambda: None)
+
+    path = "/likivik/files/Work/force-gate-atomic.pdf"
+
+    real_in_flight = ws.jobstore.in_flight_job_for_path
+    real_record_enqueue = ws.jobstore.record_enqueue
+    gate_calls = [0]
+    t1_at_gate = threading.Event()
+    lock_calls: dict[int, int] = {}
+    split_lock_a = threading.Lock()
+    split_lock_b = threading.Lock()
+
+    def controlled_in_flight(nc_path):
+        n = gate_calls[0]
+        gate_calls[0] = n + 1
+        if n == 0:
+            # First caller (T1): signal that we are AT the in-flight
+            # gate but have not yet inserted; return None to mimic
+            # "no in-flight" at the moment of T1's check.
+            t1_at_gate.set()
+            return None
+        # Second caller (T2): wait for T1 to have reached the gate,
+        # THEN run the real check. On the BUGGY code T1 has only just
+        # passed its check and has not inserted yet → real check
+        # returns None → T2 also falls through. On the FIX T1 has
+        # already inserted (T2 was blocked on the lock until then) →
+        # real check returns the row → T2 returns 'already_running'.
+        assert t1_at_gate.wait(timeout=5.0), (
+            "first caller never reached the in-flight gate — the "
+            "test scaffolding cannot reproduce the bad interleaving"
+        )
+        return real_in_flight(nc_path)
+
+    def slow_record_enqueue(job):
+        # Sleep enough that T2 reliably reaches its in-flight check
+        # before T1 finishes the insert.
+        time.sleep(0.05)
+        return real_record_enqueue(job)
+
+    def split_path_lock(nc_path):
+        """Return a DIFFERENT lock per call within one thread.
+
+        Per-thread counter: each thread's first acquire is lock A,
+        each thread's second acquire is lock B. On the buggy code the
+        two ``with _enqueue_path_lock`` blocks therefore use
+        different lock objects — the original buggy design intent,
+        which the brief notes was accidentally collapsed to the same
+        lock by a duplicate ``_ENQUEUE_LOCKS`` global. On the fix
+        there is only ONE acquire per ``_enqueue`` call, so both
+        callers' single lock resolves to lock A — T2 blocks behind
+        T1, sees the row, returns 'already_running'.
+        """
+        tid = threading.get_ident()
+        n = lock_calls.get(tid, 0)
+        lock_calls[tid] = n + 1
+        return split_lock_a if n == 0 else split_lock_b
+
+    monkeypatch.setattr(ws.jobstore, "in_flight_job_for_path",
+                        controlled_in_flight)
+    monkeypatch.setattr(ws.jobstore, "record_enqueue",
+                        slow_record_enqueue)
+    monkeypatch.setattr(ws, "_enqueue_path_lock", split_path_lock)
+
+    results: list[dict] = []
+    errors: list[BaseException] = []
+
+    def caller(idx: int) -> None:
+        try:
+            results.append(ws._enqueue(path, node_id=10, engine="google",
+                                       force=True))
+        except BaseException as e:  # noqa: BLE001
+            errors.append(e)
+
+    # Start caller 0 and wait for it to reach the in-flight gate so
+    # the interleaving is deterministic, not racy.
+    t1 = threading.Thread(target=caller, args=(0,))
+    t1.start()
+    assert t1_at_gate.wait(timeout=5.0), (
+        "first caller never reached the in-flight gate — the test "
+        "scaffolding cannot reproduce the bad interleaving"
+    )
+    t2 = threading.Thread(target=caller, args=(1,))
+    t2.start()
+    t1.join(timeout=10.0)
+    t2.join(timeout=10.0)
+
+    assert not errors, f"unexpected errors: {errors}"
+    assert len(results) == 2, (
+        f"both _enqueue calls must return, got {len(results)}: {results}"
+    )
+    statuses = sorted(r["status"] for r in results)
+    assert statuses == ["already_running", "queued"], (
+        f"force=True must collapse to one queued row + one "
+        f"'already_running' handoff even under a forced bad "
+        f"interleaving, got {statuses} "
+        f"(in_flight_job_for_path was called {gate_calls[0]} times)"
+    )
+
+    # Durable invariant: exactly ONE jobs row for the path. This is
+    # the property the test is really about — the in-process
+    # response statuses are a secondary signal.
+    rows = [r for r in ws.jobstore.query(path_contains=path)
+            if r.get("path") == path and r.get("status") in
+            ("queued", "running")]
+    assert len(rows) == 1, (
+        f"two force=True callers under the bad interleaving must "
+        f"produce ONE jobs row, got {len(rows)}: "
+        f"{[r['status'] for r in rows]}"
+    )
+
+
+def test_enqueue_cross_process_collision_returns_already_running(
+        client, monkeypatch):
+    """_enqueue hand-off when ``record_enqueue`` is rejected by the DB.
+
+    Simulates the cross-process B1 backstop: another worker in a
+    separate process slipped a queued row in for this path while we
+    held the in-process ``_enqueue_path_lock``. Our
+    ``record_enqueue`` hits ``uq_jobs_inflight`` and returns ``None``;
+    ``_enqueue`` must then look up the winner and return it with
+    ``status='already_running'``, matching the shape the
+    in-process race produces — so the webhook / rescan / scan-all
+    callers see one consistent contract regardless of which
+    process actually inserted the row.
+
+    The threading lock above is process-local; this path is the
+    only thing that protects multi-worker uvicorn deployments
+    from the same double-billing bug. The webhook / rescan / scan-all
+    callers do not need to know which case fired.
+    """
+    monkeypatch.setattr(ws.jobstore, "claim_next", lambda: None)
+
+    path = "/likivik/files/Work/cross-process.pdf"
+    # Seed one in-flight row for this path via the real
+    # ``record_enqueue`` — simulates "another process inserted first".
+    # We need ``time.time()`` and a ``time`` import.
+    import time as _time
+    seeded_id = ws.jobstore.record_enqueue({
+        "path": path, "nc_path": path, "node_id": 0,
+        "engine": "google", "force": False, "status": "queued",
+        "created": _time.time(), "started": None, "finished": None,
+        "result": None, "error": None, "reason": None,
+        "attempts": 0, "next_run_at": 0,
+    })
+    assert seeded_id is not None
+
+    real_in_flight = ws.jobstore.in_flight_job_for_path
+    call_count = [0]
+
+    def lie_first_call_only(nc_path):
+        # Lie the FIRST call (the in-process pre-check) so _enqueue
+        # proceeds past the in-lock gate to the actual insert where
+        # the DB backstop fires. From the SECOND call on (the
+        # post-insert fallback) we let the real function run so it
+        # returns the winner — that's the row we expect _enqueue to
+        # hand back as ``status='already_running'``.
+        call_count[0] += 1
+        if call_count[0] == 1:
+            return None
+        return real_in_flight(nc_path)
+
+    monkeypatch.setattr(ws.jobstore, "in_flight_job_for_path",
+                        lie_first_call_only)
+
+    result = ws._enqueue(path, node_id=10, engine="google", force=True)
+    assert result.get("status") == "already_running", (
+        "the cross-process path-collision must surface as"
+        " 'already_running' (same contract as the in-process race),"
+        f" got {result.get('status')!r}"
+    )
+    assert result.get("path") == path
+
+    # And exactly ONE in-flight row exists.
+    rows = [r for r in ws.jobstore.query(path_contains=path)
+            if r.get("path") == path and r.get("status") in
+            ("queued", "running")]
+    assert len(rows) == 1
+
+    # Sanity: restore the real in_flight_job_for_path and confirm
+    # the second call (from a fresh _enqueue) sees the existing row
+    # via the in-process check and returns 'already_running' there
+    # too. Both paths converge on the same observable contract.
+    monkeypatch.setattr(ws.jobstore, "in_flight_job_for_path",
+                        real_in_flight)
+    result2 = ws._enqueue(path, node_id=10, engine="google", force=True)
+    assert result2.get("status") == "already_running"
+
+
 # --- B2: /stats exposes retries_total + retries_queued --------------------
 
 

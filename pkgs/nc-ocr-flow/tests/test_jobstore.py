@@ -28,6 +28,8 @@ import threading
 import time
 import traceback
 
+import pytest
+
 
 class _Env:
     """Context manager: temporarily set env vars and restore on exit."""
@@ -863,6 +865,165 @@ def test_prune_skips_rows_waiting_on_backoff(tmp_path: Path,
         "B4 fix: a row waiting on backoff (next_run_at > now) must "
         "survive _prune regardless of how old it is"
     )
+
+
+# --- B1 backstop: uq_jobs_inflight + retry-path hole ----------------------
+#
+# The partial unique index ``uq_jobs_inflight`` (added by
+# ``_migrate_inflight_unique_index``) is the cross-process backstop
+# for the "one queued/running row per path" invariant. The in-process
+# ``_enqueue_path_lock`` only protects threads within ONE process;
+# two workers in separate processes can both ``record_enqueue`` the
+# same path, and the index is what rejects the second one. These
+# tests pin the in-process behaviour of ``record_enqueue`` /
+# ``enqueue_retry`` / ``record_retry`` when the index refuses the
+# row: they must NOT raise (raising into the worker would tear down
+# the retry loop); they must return ``None`` and leave the existing
+# row alone.
+
+
+def test_record_enqueue_returns_none_on_path_collision(
+        tmp_path: Path) -> None:
+    """Second queued row for the same path → ``None``, no insert.
+
+    The first ``record_enqueue`` lands a row; the second hits the
+    ``uq_jobs_inflight`` constraint and returns ``None``. The
+    durable invariant — exactly one queued row for the path —
+    holds, and the caller can decide whether to surface the skip
+    (``enqueue_retry`` / ``record_retry``) or look up the winner
+    (``_enqueue``).
+    """
+    mod = _isolated_jobstore(
+        tmp_path, name="test_record_enqueue_returns_none_on_path_collision"
+    )
+    path = "/dup/queued.pdf"
+    first = mod.record_enqueue(_make_job(1, path=path, status="queued"))
+    assert first == 1, "first insert must succeed"
+
+    second = mod.record_enqueue(_make_job(2, path=path, status="queued"))
+    assert second is None, (
+        "the second insert for the same in-flight path must return"
+        " None, not raise — raising would crash the worker /"
+        " retry loop"
+    )
+
+    # Exactly one row for the path — the durable invariant.
+    rows = mod.query(path_contains=path)
+    rows_for_path = [r for r in rows if r.get("path") == path]
+    assert len(rows_for_path) == 1, (
+        f"uq_jobs_inflight must keep exactly one queued row per path,"
+        f" got {len(rows_for_path)}"
+    )
+    assert rows_for_path[0]["id"] == 1, "the first-inserted row wins"
+
+
+def test_record_enqueue_still_raises_on_explicit_id_collision(
+        tmp_path: Path) -> None:
+    """The legacy RuntimeError path is preserved.
+
+    An explicit-id collision (the pre-existing loud-fail behaviour)
+    is independent of ``uq_jobs_inflight`` and must still raise — a
+    silent ``INSERT OR IGNORE`` was the original bug, and a
+    service-boot id-counter reset hitting a persisted id is exactly
+    the case the loud raise catches.
+    """
+    mod = _isolated_jobstore(
+        tmp_path,
+        name="test_record_enqueue_still_raises_on_explicit_id_collision",
+    )
+    path = "/explicit.pdf"
+    # Insert once so id 42 exists.
+    mod.record_enqueue(_make_job(42, path=path, status="done"))
+    # Now try to insert ANOTHER job with id=42 but a different path.
+    # The id is the conflict, not the path.
+    with pytest.raises(RuntimeError) as exc_info:
+        mod.record_enqueue(
+            _make_job(42, path="/other.pdf", status="done")
+        )
+    assert "id collision" in str(exc_info.value).lower()
+    # And the other-path row was NOT inserted.
+    assert mod.query(path_contains="/other.pdf") == []
+
+
+def test_enqueue_retry_skips_when_path_already_in_flight(
+        tmp_path: Path) -> None:
+    """``enqueue_retry`` must skip — never raise — when path is queued.
+
+    This is the retry-path hole the migration closes: a failed job's
+    retry used to bypass ``_enqueue`` and call ``record_enqueue``
+    directly, which on a path that already had a queued row would
+    raise (``sqlite3.IntegrityError`` → ``RuntimeError``) and crash
+    the worker. The partial unique index makes that path-collision
+    surface as ``None``; ``enqueue_retry`` must now return ``None``
+    and log instead of raising.
+    """
+    mod = _isolated_jobstore(
+        tmp_path,
+        name="test_enqueue_retry_skips_when_path_already_in_flight",
+    )
+    path = "/retry/dup.pdf"
+    # Insert one in-flight row (queued) for the path.
+    mod.record_enqueue(_make_job(1, path=path, status="queued"))
+
+    # Now schedule a retry for the same path. Before the migration,
+    # this would have raised IntegrityError (and the legacy
+    # record_enqueue path translated that to RuntimeError). After:
+    # enqueue_retry returns None gracefully.
+    parent = {
+        "id": 1, "path": path, "nc_path": path,
+        "node_id": 0, "engine": "google", "force": 0,
+        "status": "error",
+        "created": 1_700_000_000.0, "started": None, "finished": None,
+        "result": None, "error": "boom", "reason": None,
+        "attempts": 0, "next_run_at": 0.0,
+    }
+    new_id = mod.enqueue_retry(
+        parent, attempts=1, next_run_at=1_700_000_300.0,
+    )
+    assert new_id is None, (
+        "enqueue_retry must skip when the path is already in flight"
+        " — raising would crash the worker"
+    )
+    # Still exactly one row for the path — the retry must NOT have
+    # landed a duplicate.
+    rows = [r for r in mod.query(path_contains=path)
+            if r.get("path") == path]
+    assert len(rows) == 1
+    assert rows[0]["status"] == "queued"
+
+
+def test_record_retry_skips_when_path_already_in_flight(
+        tmp_path: Path) -> None:
+    """``record_retry`` has the same skip-and-log shape as ``enqueue_retry``.
+
+    ``record_retry`` is the legacy / low-level sibling of
+    ``enqueue_retry``; both call ``record_enqueue`` directly. Both
+    must return ``None`` (not raise) when the path is already
+    in flight, otherwise the worker that called them would tear
+    down.
+    """
+    mod = _isolated_jobstore(
+        tmp_path,
+        name="test_record_retry_skips_when_path_already_in_flight",
+    )
+    path = "/retry-legacy.pdf"
+    mod.record_enqueue(_make_job(1, path=path, status="queued"))
+
+    parent = {
+        "id": 1, "path": path, "nc_path": path,
+        "node_id": 0, "engine": "google", "force": 0,
+        "status": "error",
+        "created": 1_700_000_000.0, "started": None, "finished": None,
+        "result": None, "error": "boom", "reason": None,
+        "attempts": 0, "next_run_at": 0.0,
+    }
+    new_id = mod.record_retry(parent, next_run_at=1_700_000_300.0)
+    assert new_id is None, (
+        "record_retry must skip when the path is already in flight"
+    )
+    rows = [r for r in mod.query(path_contains=path)
+            if r.get("path") == path]
+    assert len(rows) == 1
 
 
 if __name__ == "__main__":

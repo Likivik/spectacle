@@ -157,31 +157,6 @@ def _processed_ttl_seconds() -> float:
     ))
 
 
-# --- _enqueue concurrency control ------------------------------------------
-#
-# A webhook and /scan-all for the same NC path can land in
-# :func:`_enqueue` at the same time. Without a lock, both readers can
-# see ``files.status = 'done'`` and both insert a fresh ``jobs`` row.
-# SQLite serialises writes inside a single transaction, but
-# ``file_put`` and ``record_enqueue`` are two separate transactions.
-# A per-path ``threading.Lock`` closes the in-process race cheaply.
-# Multi-process deployments (one uvicorn per host × N workers) need a
-# jobstore-level helper that wraps both writes in a single
-# BEGIN IMMEDIATE transaction — see the report.
-_ENQUEUE_LOCKS_GUARD = threading.Lock()
-_ENQUEUE_LOCKS: dict[str, threading.Lock] = {}
-
-
-def _enqueue_lock_for(path: str) -> threading.Lock:
-    """Return the per-path lock, creating it on first use."""
-    with _ENQUEUE_LOCKS_GUARD:
-        lock = _ENQUEUE_LOCKS.get(path)
-        if lock is None:
-            lock = threading.Lock()
-            _ENQUEUE_LOCKS[path] = lock
-        return lock
-
-
 # --- Per-file OCR state (survives restarts) --------------------------------
 # Maps NC path -> {status, engine, reason, node_id, finished, size, etag}.
 # It lives in the ``files`` table (see jobstore), so the index costs no
@@ -2370,17 +2345,17 @@ jobstore.init()
 #
 # B5 bound: a module-level dict keyed by nc_path would grow without
 # bound across a long-running service (one entry per distinct path
-# ever seen). ``_GC_ENQUEUE_LOCKS`` sweeps on insert, evicting entries
-# unused for more than ``_ENQUEUE_LOCK_TTL_S`` seconds, so memory
-# usage stays proportional to the active working set.
-import threading as _th
-_ENQUEUE_LOCKS: "dict[str, _th.Lock]" = {}
-_ENQUEUE_LOCKS_LAST_USED: "dict[str, float]" = {}
-_ENQUEUE_LOCK_TTL_S = 3600.0  # 1 hour idle ⇒ evicted on next insert
-_ENQUEUE_LOCKS_LOCK = _th.Lock()
+# ever seen). The lock acquired below sweeps on every acquire,
+# evicting entries unused for more than ``_ENQUEUE_LOCK_TTL_S``
+# seconds, so memory usage stays proportional to the active working
+# set.
+_ENQUEUE_LOCKS: dict[str, threading.Lock] = {}
+_ENQUEUE_LOCKS_LAST_USED: dict[str, float] = {}
+_ENQUEUE_LOCK_TTL_S = 3600.0  # 1 hour idle ⇒ evicted on next acquire
+_ENQUEUE_LOCKS_LOCK = threading.Lock()
 
 
-def _enqueue_path_lock(nc_path: str) -> _th.Lock:
+def _enqueue_path_lock(nc_path: str) -> threading.Lock:
     """Return the per-path enqueue lock, evicting idle entries first.
 
     B5 leak fix: never returns a stale lock from ``_ENQUEUE_LOCKS``
@@ -2394,6 +2369,8 @@ def _enqueue_path_lock(nc_path: str) -> _th.Lock:
       - keeping the lock for the path we are about to hand back.
 
     Thread-safe under simultaneous webhook / rescan / scan-all callers.
+    Only protects threads within ONE process — see ``_enqueue`` for the
+    multi-process caveat.
     """
     now = time.time()
     with _ENQUEUE_LOCKS_LOCK:
@@ -2407,7 +2384,7 @@ def _enqueue_path_lock(nc_path: str) -> _th.Lock:
             _ENQUEUE_LOCKS_LAST_USED.pop(k, None)
         lock = _ENQUEUE_LOCKS.get(nc_path)
         if lock is None:
-            lock = _th.Lock()
+            lock = threading.Lock()
             _ENQUEUE_LOCKS[nc_path] = lock
         _ENQUEUE_LOCKS_LAST_USED[nc_path] = now
         return lock
@@ -2426,13 +2403,14 @@ def _enqueue(nc_path: str, node_id: int, engine: str | None = None,
     B1 fix: an in-flight job for this path is **never** bypassed by
     ``force``. Two concurrent callers (a /rescan racing the webhook,
     or "Re-OCR anyway" double-clicked) used to produce two jobs rows
-    for the same path and bill Vision twice. Now we hold the per-path
-    enqueue lock and re-check ``in_flight_job_for_path`` once inside
-    it; if a job is already queued or running for this path we return
-    that existing job with ``status='already_running'`` and the
-    caller's ``force`` bit is ignored at the in-flight gate (it still
-    applies to the born-digital / stamp / TTL guards inside
-    ``_process_file``).
+    for the same path and bill Vision twice. We hold a single per-path
+    critical section across the in-flight check AND the durable writes;
+    the second caller either blocks on the lock and then sees the
+    existing row (returning ``status='already_running'``) or, if it lost
+    the race, returns the same handoff without ever calling
+    ``record_enqueue`` twice. The caller's ``force`` bit is ignored at
+    the in-flight gate — it still applies to the born-digital / stamp /
+    TTL guards inside ``_process_file``.
 
     The ``id`` is **assigned by SQLite**, not by an in-process counter
     — that means the row's primary key survives a service restart and
@@ -2440,59 +2418,31 @@ def _enqueue(nc_path: str, node_id: int, engine: str | None = None,
     itself. ``record_enqueue`` writes the new id back into ``job`` so
     the API response reflects the canonical id.
 
-    Atomicity (the B8 fix)
-    ----------------------
-    The previous order was ``record_enqueue`` (jobs row insert) then
-    ``file_put`` (files row update). A concurrent ``/scan-all`` that
-    read the files row between the two writes saw ``status='done'``
-    (or missing) and inserted a duplicate jobs row, both of which
-    would race to download / OCR the same file. The new order closes
-    the race:
+    Atomicity — a single critical section
+    --------------------------------------
+    The whole gate-and-insert pair runs under ``_enqueue_path_lock`` so
+    no other thread on this process can interleave between "I saw no
+    in-flight job" and "I just inserted one". If step ``record_enqueue``
+    fails (DB-level fault), the file row stays at ``queued`` with no
+    matching jobs row — the orphan reconciler picks that up on next
+    startup or on ``/admin/reconcile-orphans``. That's the same
+    recovery shape as a process crash mid-enqueue, which we already
+    accept.
 
-      1. **Take a per-path lock** (``_enqueue_lock_for``): closes the
-         in-process race where /webhook and /scan-all both call
-         ``_enqueue`` for the same NC path at the same time.
-      2. **Re-check in-flight** (``_path_in_flight``): if the files
-         row already shows ``queued`` or ``running``, this caller was
-         itself racing with a concurrent enqueue; skip the insert
-         instead of creating a duplicate.
-      3. **Mark the file ``queued`` first** (``file_put``): any
-         concurrent reader of the files row will see
-         ``status='queued'`` and skip via ``_path_in_flight``.
-      4. **Insert the jobs row** (``record_enqueue``): the queue's
-         durable record. This wraps in ``BEGIN IMMEDIATE`` itself.
-
-    If step 4 fails (DB-level fault; not the explicit-id collision,
-    which raises before this code runs), the file row stays at
-    ``queued`` with no matching jobs row — the orphan reconciler
-    picks that up on next startup or on ``/admin/reconcile-orphans``.
-    That's the same recovery shape as a process crash mid-enqueue,
-    which we already accept.
-
-    Multi-process deployments (one uvicorn per host × N workers
-    across separate processes) need a jobstore-level helper that
-    wraps both writes in a single ``BEGIN IMMEDIATE`` transaction
-    to fully close the race — described in the report.
+    Multi-process deployments (one uvicorn per host × N workers across
+    separate processes) are NOT fully covered by ``_enqueue_path_lock``
+    — a threading.Lock only protects threads within ONE process. The
+    cross-process backstop is the ``uq_jobs_inflight`` partial unique
+    index on ``jobs(path) WHERE status IN ('queued','running')``
+    installed by ``jobstore._migrate_inflight_unique_index``: if
+    another worker slipped a row in for this path while we held the
+    in-process lock, our ``record_enqueue`` hits ``IntegrityError`` and
+    returns ``None``; we look up the winner and return it with
+    ``status='already_running'`` so the call site sees the same shape
+    as the in-process race. The single-process flow described above
+    produces the cleanest response (no DB round-trip); the
+    multi-process path is the rare-but-correct fallback.
     """
-    # Serialise the in-flight-check + insert pair per path. Without
-    # this lock two concurrent callers can both pass
-    # ``in_flight_job_for_path == None`` and each spawn a job.
-    path_lock = _enqueue_path_lock(nc_path)
-    with path_lock:
-        # Inside the lock: in-flight is final. force must NOT bypass
-        # this — see B1 audit. The existing force semantics still
-        # apply to the born-digital/stamp/TTL guards downstream in
-        # _process_file.
-        existing = jobstore.in_flight_job_for_path(nc_path)
-        if existing is not None and existing.get("status") in (
-                "queued", "running"):
-            existing = dict(existing)
-            existing["status"] = "already_running"
-            # Don't claim a fresh engine — the existing job is the
-            # source of truth on what is actually running.
-            existing["engine"] = existing.get("engine") or engine
-            existing["force"] = bool(existing.get("force") or force)
-            return existing
     job = {
         # id intentionally unset — let SQLite's rowid alias assign.
         "path": nc_path,
@@ -2510,34 +2460,62 @@ def _enqueue(nc_path: str, node_id: int, engine: str | None = None,
         "attempts": 0,
         "next_run_at": None,
     }
-    # Step 1: take the per-path lock. Two concurrent _enqueue calls
-    # for the same path serialise here, so the read-modify-write
-    # sequence below sees a consistent files row.
-    with _enqueue_lock_for(nc_path):
-        # Step 2: re-check in-flight. If a peer already inserted
-        # a job for this path inside the lock window, don't create
-        # a duplicate jobs row. The /scan-all path takes
-        # ``_path_in_flight`` as a pre-check (before the lock) to
-        # avoid the round-trip in the common case; this is the
-        # inside-lock belt-and-braces.
-        if _path_in_flight(nc_path) and not force:
-            log.info(
-                "enqueue: %s already in flight, skipping duplicate",
-                nc_path,
-            )
-            _work_available.set()
-            return job
-
-        # Step 3: mark the file queued first. Any concurrent
-        # reader (outside the per-path lock) now sees
-        # ``status='queued'`` and ``_path_in_flight`` returns True.
+    # ONE critical section per path: the in-flight check and the
+    # durable writes are atomic relative to other threads on this
+    # process. A second caller arriving while we're inside this block
+    # blocks on ``_enqueue_path_lock`` and, once admitted, sees the
+    # row we just inserted — so it returns ``status='already_running'``
+    # instead of creating a duplicate jobs row.
+    with _enqueue_path_lock(nc_path):
+        # In-flight is final here. ``force`` must NOT bypass this —
+        # see B1 audit. ``force`` semantics still apply to the
+        # born-digital / stamp / TTL guards downstream in
+        # ``_process_file``.
+        existing = jobstore.in_flight_job_for_path(nc_path)
+        if existing is not None and existing.get("status") in (
+                "queued", "running"):
+            existing = dict(existing)
+            existing["status"] = "already_running"
+            # Don't claim a fresh engine — the existing job is the
+            # source of truth on what is actually running.
+            existing["engine"] = existing.get("engine") or engine
+            existing["force"] = bool(existing.get("force") or force)
+            return existing
+        # Mark the file ``queued`` first. Any concurrent reader of
+        # the files row (outside the per-path lock) sees
+        # ``status='queued'`` and would short-circuit on its own
+        # _path_in_flight check before reaching this code.
         _prev = jobstore.file_get(nc_path) or {}
         jobstore.file_put({**_prev, "path": nc_path, "status": "queued",
                            "node_id": node_id})
-        # Step 4: durable queue insert.
-        jobstore.record_enqueue(job)
-        _work_available.set()
-        return job
+        # Durable queue insert. ``record_enqueue`` wraps its own
+        # ``BEGIN IMMEDIATE`` transaction; on a path collision
+        # (``uq_jobs_inflight`` — added by
+        # ``_migrate_inflight_unique_index``) it returns ``None``
+        # instead of raising, because the cross-process DB backstop
+        # is the only thing that protects against two workers in
+        # separate processes both inserting the same path. The
+        # in-process ``_enqueue_path_lock`` above does NOT protect
+        # against that case — it is process-local.
+        assigned = jobstore.record_enqueue(job)
+        if assigned is None:
+            # Another process slipped in and inserted this path while
+            # we held the in-process lock. The DB unique index
+            # refused our row. Hand back the existing in-flight row
+            # so the caller (webhook / scan-all / rescan) gets the
+            # same ``status='already_running'`` shape the
+            # in-process race would have produced.
+            winner = jobstore.in_flight_job_for_path(nc_path)
+            if winner is not None:
+                winner = dict(winner)
+                winner["status"] = "already_running"
+                winner["engine"] = winner.get("engine") or engine
+                winner["force"] = bool(
+                    winner.get("force") or force
+                )
+                return winner
+    _work_available.set()
+    return job
 
 
 def _check_secret(x_webhook_secret: str | None) -> None:

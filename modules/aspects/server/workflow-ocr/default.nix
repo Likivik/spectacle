@@ -30,8 +30,11 @@
       #      is the only way a rival could appear at runtime (the throw can only
       #      see what nix configures).
       #   3. ``enforce-single-owner.php``, run from the nc-ocr-register-webhook
-      #      oneshot: disables a competing app that is still enabled and deletes
-      #      its leftover Flow rule. Covers an app enabled by hand, and the
+      #      oneshot: disables a competing app that is still enabled, and
+      #      REPORTS (never deletes) its leftover Flow rule — every deletion
+      #      path needs an interactive password confirmation, and a rule whose
+      #      app is disabled is skipped silently anyway. Covers an app enabled
+      #      by hand, and the
       #      transition itself — nixpkgs never disables an app dropped from
       #      ``extraApps`` (nextcloud.nix only ever runs ``app:enable``), and
       #      Nextcloud's Updater only disables apps whose files vanished when it
@@ -50,7 +53,10 @@
       # rejects loopback and the LAN address with AdminIpNotAllowed
       # (SecurityMiddleware -> RemoteAddress::allowsAdminActions). See
       # register-webhook.php for the full rationale.
-      ocsBaseUrl = "http://poweredge.oryx-galaxy.ts.net";
+      # Derived from the host, so this aspect cannot silently point at
+      # another machine's Nextcloud if it is ever reused. The tailnet domain
+      # is the fleet-wide constant. poweredge -> http://poweredge.oryx-galaxy.ts.net
+      ocsBaseUrl = "http://${config.networking.hostName}.oryx-galaxy.ts.net";
       ocsServiceUser = "ocr-svc";
 
       ncRoot = config.services.nextcloud.finalPackage;
@@ -128,7 +134,7 @@
         exec ${ocrVenv}/bin/python -m nc_ocr_flow.webhook_server
       '';
 
-      # PHP script to register webhook listeners via NC internal API (idempotent)
+      # PHP script registering the listeners through the documented OCS API
       registerWebhookPhp = ./register-webhook.php;
       # PHP script enforcing the single-OCR-owner invariant (guard #3 above)
       enforceSingleOwnerPhp = ./enforce-single-owner.php;
@@ -382,7 +388,10 @@
       # --- Register webhook listener (idempotent oneshot via PHP) ---
       systemd.services.nc-ocr-register-webhook = {
         description = "Register OCR webhook listener in Nextcloud";
-        after = [ "nextcloud-setup.service" "nc-ocr-webhook.service" ];
+        # tailscaled: the OCS call goes to this host's tailnet name, so
+        # MagicDNS must be up (see register-webhook.php for why loopback and
+        # the LAN address are refused).
+        after = [ "nextcloud-setup.service" "nc-ocr-webhook.service" "tailscaled.service" ];
         wants = [ "nextcloud-setup.service" "nc-ocr-webhook.service" ];
         wantedBy = [ "multi-user.target" ];
 
@@ -391,6 +400,9 @@
           User = "nextcloud";
           Group = "nextcloud";
           RemainAfterExit = true;
+          # the PHP scripts log to /tmp; the default umask would leave them
+          # world-readable
+          UMask = "0077";
           LoadCredential = let
             adminPass = config.sops.secrets."nextcloud/admin-password".path;
             resendKey = config.sops.secrets."resend/api-key".path;
@@ -414,17 +426,39 @@
           # Register the file-event webhooks through the documented OCS API as
           # the dedicated service account (register-webhook.php explains why the
           # base URL has to be the Tailscale name).
-          if ! ${ncPhp}/bin/php ${registerWebhookPhp} \
+          #
+          # Retried: at boot MagicDNS may not be up yet. The failure that
+          # matters is otherwise silent — after a secret rotation a stale
+          # listener 401s every dispatch while the service still looks
+          # perfectly healthy and only uploads quietly stop being processed.
+          regRc=0
+          attempt=1
+          while [ "$attempt" -le 5 ]; do
+            if ${ncPhp}/bin/php ${registerWebhookPhp} \
                  ${ocsBaseUrl} ${ocsServiceUser} \
                  "$CREDENTIALS_DIRECTORY/ocr-svc-app-password" \
                  "$CREDENTIALS_DIRECTORY/nc-ocr-webhook-secret"; then
-            echo "nc-ocr-register-webhook: webhook registration FAILED (see /tmp/ocr-webhook-register.log)" >&2
-          fi
+              regRc=0
+              break
+            else
+              regRc=$?
+              echo "nc-ocr-register-webhook: attempt $attempt failed (see /tmp/ocr-webhook-register.log)" >&2
+              attempt=$((attempt + 1))
+              sleep 10
+            fi
+          done
           # Guard #3: make the single-owner invariant true of the running
           # instance, not just of the nix config (disables a competing OCR app
           # that is still enabled; reports, but does not delete, its leftover
           # Flow rule).
           ${ncPhp}/bin/php ${enforceSingleOwnerPhp} ${ncRoot} ${lib.concatStringsSep " " competingOcrApps}
+          enfRc=$?
+          if [ "$regRc" -ne 0 ]; then
+            echo "nc-ocr-register-webhook: webhook registration FAILED after 5 attempts" >&2
+          fi
+          # Leave the unit FAILED (visible in `systemctl --failed`) rather than
+          # succeeding while automatic OCR is silently dead.
+          [ "$regRc" -eq 0 ] && [ "$enfRc" -eq 0 ]
         '';
       };
 

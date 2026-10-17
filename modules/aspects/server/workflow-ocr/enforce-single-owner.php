@@ -5,22 +5,34 @@ declare(strict_types=1);
  * Enforce the single-OCR-owner invariant inside Nextcloud.
  *
  * Runs after nextcloud-setup as the nextcloud user with a full NC bootstrap
- * (called from the nc-ocr-register-webhook oneshot). Two jobs, both idempotent
- * and best-effort:
+ * (called from the nc-ocr-register-webhook oneshot). Idempotent, best-effort.
  *
- *   1. Disable any competing OCR app that is still enabled. The nix-level
- *      throw only guards what nix configures; this catches an app enabled by
- *      hand, or left enabled by a previous generation. Nextcloud itself only
- *      disables an app whose files disappeared while it is actually running an
- *      upgrade (lib/private/Updater.php checkAppsRequirements -> disableApp,
- *      line 372), so it cannot be relied on for this.
+ * 1. Disable any competing OCR app that is still enabled. The nix-level throw
+ *    only guards what nix configures; this catches an app enabled by hand, or
+ *    left enabled by a previous generation. Nextcloud itself only disables an
+ *    app whose files disappeared while it is actually running an upgrade
+ *    (lib/private/Updater.php checkAppsRequirements -> disableApp, line 372),
+ *    so it cannot be relied on for this. Uses the public OCP API (IAppManager),
+ *    the same call `occ app:disable` makes.
  *
- *   2. Delete leftover Flow operations belonging to a competing OCR app. The
- *      workflowengine silently skips an operation whose class cannot be loaded
- *      (lib/Manager.php:269-271 and lib/RuleMatcher.php:204-207 catch the
- *      container exception), so an orphan row is harmless — but it is dead
- *      config that would come back to life if the app were ever re-installed,
- *      and there is no occ command to delete a rule, so it is removed here.
+ * 2. REPORT — never delete — leftover Flow operations belonging to a competing
+ *    OCR app. A leftover rule is inert AND silent while the app is disabled:
+ *    the workflowengine catches the container exception when the operation
+ *    class cannot be loaded and skips the rule
+ *    (lib/Manager.php:269-272 is a bare `continue`, no logging;
+ *    lib/RuleMatcher.php:204-207 for checks). So the invariant holds without
+ *    touching the rule, and we deliberately do not delete it:
+ *      - every deletion path is closed to a headless service. The
+ *        workflowengine OCS route exists, but its create/update/destroy all
+ *        carry #[PasswordConfirmationRequired], which only an interactive
+ *        browser session can satisfy. Manager::deleteOperation() is the
+ *        app-internal class, not public API. There is no occ delete command
+ *        (only `occ workflows:list`).
+ *      - a raw DELETE against the internal flow_operations table is
+ *        unsanctioned and coupled to a schema we do not own.
+ *    The check below is a read-only SELECT whose only job is to surface the
+ *    leftover rule in the log, so an operator can remove it deliberately in
+ *    the Nextcloud admin UI if they want it gone.
  *
  * Usage: php enforce-single-owner.php <nc-root> [app-id]...
  */
@@ -50,32 +62,11 @@ try {
     exit(1);
 }
 
-use OCA\WorkflowEngine\Helper\ScopeContext;
-use OCA\WorkflowEngine\Manager as WorkflowManager;
 use OCP\App\IAppManager;
-use OCP\DB\IQueryBuilder;
 use OCP\IDBConnection;
 
 $appManager = \OCP\Server::get(IAppManager::class);
 $db = \OCP\Server::get(IDBConnection::class);
-
-// The workflowengine app's own Manager. It is an app class rather than public
-// OCP API, but there is no public API and no occ command for deleting a Flow
-// rule, and this is the exact code path the admin UI's delete endpoint takes
-// (apps/workflowengine/lib/Controller/AWorkflowOCSController.php:180), so it is
-// the sanctioned route. Resolved through the container the same way the app's
-// own bootstrap does (apps/workflowengine/lib/AppInfo/Application.php:57).
-$workflowManager = null;
-try {
-    $workflowManager = \OCP\Server::get(WorkflowManager::class);
-} catch (\Throwable $e) {
-    file_put_contents(
-        $logFile,
-        "WARN: workflowengine Manager unavailable, skipping Flow-rule cleanup: "
-        . $e->getMessage() . "\n",
-        FILE_APPEND
-    );
-}
 
 // --- 1. disable competing apps that are still enabled ----------------------
 foreach ($apps as $app) {
@@ -95,85 +86,40 @@ foreach ($apps as $app) {
     }
 }
 
-// --- 2. delete leftover Flow operations owned by those apps ---------------
+// --- 2. report (do not delete) leftover Flow rules for those apps ----------
 // The operation class lives in the app's namespace: workflow_ocr ->
-// OCA\WorkflowOcr\Operation.
-//
-// Done through WorkflowManager::deleteOperation(), NOT a raw SQL DELETE: the
-// supported method removes the flow_operations row and its flow_operations_scope
-// row in a single transaction AND invalidates the distributed 'flow' cache. A
-// raw delete leaves that cache warm, so the removed rule can keep firing until
-// the entry expires.
+// OCA\WorkflowOcr\Operation. READ ONLY.
 foreach ($apps as $app) {
     $app = trim((string) $app);
-    if ($app === '' || $workflowManager === null) {
+    if ($app === '') {
         continue;
     }
     $camel = str_replace(' ', '', ucwords(str_replace('_', ' ', $app)));
     $class = 'OCA\\' . $camel . '\\Operation';
 
-    // Look up the rules (and their scope) for that class first: deleteOperation
-    // is keyed by operation id + ScopeContext, not by class name.
     try {
         $qb = $db->getQueryBuilder();
-        $qb->select('o.id', 's.type', 's.value')
-            ->from('flow_operations', 'o')
-            ->leftJoin(
-                'o',
-                'flow_operations_scope',
-                's',
-                $qb->expr()->eq('o.id', 's.operation_id')
-            )
-            ->where($qb->expr()->eq('o.class', $qb->createNamedParameter($class)));
+        $qb->select('id')
+            ->from('flow_operations')
+            ->where($qb->expr()->eq('class', $qb->createNamedParameter($class)));
         $result = $qb->executeQuery();
-        $rules = $result->fetchAll();
+        $ids = array_map('intval', array_column($result->fetchAll(), 'id'));
         $result->closeCursor();
     } catch (\Throwable $e) {
-        file_put_contents($logFile, "WARN: could not look up flow rules for $class: " . $e->getMessage() . "\n", FILE_APPEND);
+        file_put_contents($logFile, "WARN: could not read flow rules for $class: " . $e->getMessage() . "\n", FILE_APPEND);
         continue;
     }
 
-    foreach ($rules as $rule) {
-        // ScopeContext(int $scope, ?string $scopeId); the scope row is what the
-        // engine groups rules by (0 = admin scope).
-        $scope = new ScopeContext((int) ($rule['type'] ?? 0), (string) ($rule['value'] ?? ''));
-        try {
-            $deleted = $workflowManager->deleteOperation((int) $rule['id'], $scope);
-            file_put_contents(
-                $logFile,
-                ($deleted ? "Deleted" : "Could not delete")
-                . " leftover flow rule id={$rule['id']} class=$class (scope "
-                . $scope->getScope() . ")\n",
-                FILE_APPEND
-            );
-        } catch (\Throwable $e) {
-            file_put_contents($logFile, "WARN: deleteOperation failed for rule id={$rule['id']} ($class): " . $e->getMessage() . "\n", FILE_APPEND);
-        }
-    }
-}
-
-// --- 3. drop scope rows that now point at no operation --------------------
-try {
-    $qb = $db->getQueryBuilder();
-    $qb->select('id')->from('flow_operations');
-    $result = $qb->executeQuery();
-    $ids = array_map('intval', array_column($result->fetchAll(), 'id'));
-    $result->closeCursor();
-
-    $qb = $db->getQueryBuilder();
-    $qb->delete('flow_operations_scope');
     if ($ids !== []) {
-        $qb->where($qb->expr()->notIn(
-            'operation_id',
-            $qb->createNamedParameter($ids, IQueryBuilder::PARAM_INT_ARRAY)
-        ));
+        file_put_contents(
+            $logFile,
+            "NOTE: $class still has " . count($ids) . " leftover Flow rule(s) (id "
+            . implode(', ', $ids) . "). Harmless and silent while $app stays disabled; "
+            . "remove it in the Nextcloud admin UI if you want it gone "
+            . "(there is no occ or headless API for it).\n",
+            FILE_APPEND
+        );
     }
-    $deleted = $qb->executeStatement();
-    if ($deleted > 0) {
-        file_put_contents($logFile, "Deleted $deleted orphaned flow scope row(s)\n", FILE_APPEND);
-    }
-} catch (\Throwable $e) {
-    file_put_contents($logFile, "WARN: flow scope cleanup failed: " . $e->getMessage() . "\n", FILE_APPEND);
 }
 
 file_put_contents($logFile, "Single-owner enforcement complete\n", FILE_APPEND);

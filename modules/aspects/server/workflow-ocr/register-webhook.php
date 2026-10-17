@@ -2,150 +2,182 @@
 declare(strict_types=1);
 
 /**
- * Idempotently register OCR webhook listeners in Nextcloud.
- * Runs as the nextcloud user with full NC bootstrap — no OCS API auth needed.
+ * Idempotently register this service's webhook listeners through the
+ * documented Nextcloud OCS API (webhook_listeners app).
  *
- * Usage: php register-webhook.php <nc-root> <webhook-secret-file>
+ * Usage:
+ *   php register-webhook.php <ocs-base-url> <service-user> <app-password-file> <webhook-secret-file>
+ *
+ * <ocs-base-url> MUST be an address Nextcloud's admin-action IP policy accepts
+ * (config.php `allowed_admin_ranges`). On this host that list is
+ * ["100.64.0.0/10", "fd7a:115c:a1e0::/48"] — the Tailscale ranges — so the
+ * host's own Tailscale name works, while 127.0.0.1 and the LAN address are
+ * rejected with "Your current IP address doesn't allow you to perform admin
+ * actions". That check runs AFTER authorisation and applies even to ExApps
+ * (lib/private/AppFramework/Middleware/Security/SecurityMiddleware.php).
+ *
+ * Credential: a dedicated service account whose group holds ONLY
+ * OCA\WebhookListeners\Settings\Admin, granted with
+ *   occ admin-delegation:add 'OCA\WebhookListeners\Settings\Admin' <group>
+ * authenticating with a REAL app password
+ *   occ user:auth-tokens:add <user> --name=... --password-from-env
+ * A passwordless app password (created without the login password) is NOT
+ * enough: it authenticates, but is not treated as an admin session, and
+ * AuthorizedAdminSetting then rejects it with "must be an admin, a sub admin
+ * or gotten special right to access this setting".
+ *
+ * Why the OCS API rather than the database: the admin manual documents webhook
+ * management as the OCS API / CLI ("Management and configuration of webhook
+ * listeners are handled via the Nextcloud OCS API and command-line tools"),
+ * and oc_webhook_listeners is an internal table owned by that app. Two fields
+ * the API decides for us:
+ *   - user_id becomes the authenticated service user. This does NOT affect
+ *     delivery: the app matches listeners on user_id_filter (empty here =
+ *     every user) — WebhookListenerMapper::getByEvent().
+ *   - app_id can only be set for an AppAPI/ExApp session (WebhooksController
+ *     reads the ex-app-id header only when session 'app_api' is true), so these
+ *     rows carry app_id NULL. Harmless: app_id is used only by the by-appid
+ *     delete route.
  */
 
-define('OC_CONSOLE', 1);
-
 $logFile = '/tmp/ocr-webhook-register.log';
-file_put_contents($logFile, "Starting webhook registration\n");
 
-$ncRoot = $argv[1] ?? '';
-$secretFile = $argv[2] ?? '';
+function log_line(string $message): void
+{
+    global $logFile;
+    file_put_contents($logFile, $message . "\n", FILE_APPEND);
+}
 
-if ($ncRoot === '' || $secretFile === '') {
-    file_put_contents($logFile, "ERROR: missing arguments\n", FILE_APPEND);
+file_put_contents($logFile, "Starting webhook registration (OCS API)\n");
+
+$baseUrl = rtrim((string) ($argv[1] ?? ''), '/');
+$serviceUser = (string) ($argv[2] ?? '');
+$appPasswordFile = (string) ($argv[3] ?? '');
+$secretFile = (string) ($argv[4] ?? '');
+
+if ($baseUrl === '' || $serviceUser === '' || $appPasswordFile === '' || $secretFile === '') {
+    log_line('ERROR: usage: register-webhook.php <ocs-base-url> <service-user> <app-password-file> <webhook-secret-file>');
     exit(1);
 }
 
-chdir($ncRoot);
-error_reporting(E_ALL);
-ini_set('display_errors', '1');
-ini_set('log_errors', '1');
-
-try {
-    require_once $ncRoot . '/lib/base.php';
-} catch (\Throwable $e) {
-    file_put_contents($logFile, "Bootstrap failed: " . $e->getMessage() . "\n", FILE_APPEND);
+$appPassword = trim((string) @file_get_contents($appPasswordFile));
+$webhookSecret = trim((string) @file_get_contents($secretFile));
+if ($appPassword === '' || $webhookSecret === '') {
+    log_line('ERROR: empty app password or webhook secret');
     exit(1);
 }
 
-file_put_contents($logFile, "Bootstrap OK\n", FILE_APPEND);
-
-// Read the webhook secret
-$webhookSecret = trim(file_get_contents($secretFile));
-if ($webhookSecret === '') {
-    file_put_contents($logFile, "ERROR: webhook secret is empty\n", FILE_APPEND);
-    exit(1);
-}
-
-use OCP\IDBConnection;
-
-/** @var IDBConnection $db */
-$db = \OCP\Server::get(IDBConnection::class);
-
-// Registered by writing the row directly rather than through the
-// webhook_listeners app's own OCS API: that API is ExApp-scoped (it authorises
-// on an `ex-app-id` header set by the app_api layer,
-// apps/webhook_listeners/lib/Controller/WebhooksController.php), which a plain
-// PHP bootstrap script has no way to present. Everything else here is
-// idempotent and re-run on every activation.
-$webhookUri = 'http://127.0.0.1:8095/webhook';
-$userId = 'admin';
-// The owning app id should belong to an app that stays installed. This was
-// 'workflow_ocr' — the third-party OCR app that has now been removed — which
-// left these listeners owned by an app that no longer exists. Nextcloud does
-// NOT clean them up automatically in that case (verified against 34.0.4:
-// WebhookListenerMapper::deleteByAppId is only called by the OCS DELETE
-// endpoint and by app_api's ExApp uninstall; AppManager::disableApp and
-// Installer::removeApp never touch webhook_listeners), so the rows would have
-// lingered, owned by a ghost app. 'ocrflow' is our own app and is here to stay.
-// This script re-homes existing rows (see the update branch below).
-$appId = 'ocrflow';
-$headers = json_encode(['X-Webhook-Secret' => $webhookSecret]);
-$eventFilter = json_encode(['event.node.path' => '/^\/.*\/files\//']);
-
-$listeners = [
-    [
-        'event' => 'OCP\\Files\\Events\\Node\\NodeCreatedEvent',
-    ],
-    [
-        'event' => 'OCP\\Files\\Events\\Node\\NodeWrittenEvent',
-    ],
+const WEBHOOK_URI = 'http://127.0.0.1:8095/webhook';
+const EVENT_FILTER = ['event.node.path' => '/^\/.*\/files\//'];
+const EVENTS = [
+    'OCP\\Files\\Events\\Node\\NodeCreatedEvent',
+    'OCP\\Files\\Events\\Node\\NodeWrittenEvent',
 ];
 
-foreach ($listeners as $listener) {
-    // Look up an existing listener for this uri+event+user (idempotent)
-    $qb = $db->getQueryBuilder();
-    $qb->select('id', 'headers', 'app_id')
-        ->from('webhook_listeners')
-        ->where($qb->expr()->eq('uri', $qb->createNamedParameter($webhookUri)))
-        ->andWhere($qb->expr()->eq('event', $qb->createNamedParameter($listener['event'])))
-        ->andWhere($qb->expr()->eq('user_id', $qb->createNamedParameter($userId)))
-        ->setMaxResults(1);
-    $result = $qb->executeQuery();
-    $row = $result->fetch();
-    $result->closeCursor();
+$endpoint = $baseUrl . '/ocs/v2.php/apps/webhook_listeners/api/v1/webhooks';
+$requestHeaders = [
+    'OCS-APIRequest: true',
+    'Accept: application/json',
+    'Authorization: Basic ' . base64_encode($serviceUser . ':' . $appPassword),
+];
 
-    if ($row !== false) {
-        // The listener exists. Its stored headers are a SNAPSHOT of the secret
-        // taken when it was first created — so a rotated secret would keep
-        // 401-ing forever unless we refresh it here. Compare semantically
-        // (json_decode) so key order / formatting cannot cause a false refresh.
-        $id = (int) $row['id'];
-        $stored = json_decode((string) $row['headers'], true);
-        $want = json_decode($headers, true);
-        $storedAppId = (string) ($row['app_id'] ?? '');
+/**
+ * Perform one OCS request.
+ *
+ * @return array{0:int,1:string} HTTP status code and raw response body
+ */
+function ocs_request(string $method, string $url, array $headers, ?array $body = null): array
+{
+    $http = [
+        'method' => $method,
+        'header' => implode("\r\n", $headers),
+        // Read 4xx/5xx bodies instead of getting `false` back.
+        'ignore_errors' => true,
+        'timeout' => 30,
+    ];
+    if ($body !== null) {
+        $http['header'] .= "\r\nContent-Type: application/json";
+        $http['content'] = json_encode($body);
+    }
 
-        // Refresh the headers on a rotated secret, and re-home the row when it
-        // was registered under an app id that may be removed (see $appId above).
-        if ($stored !== $want || $storedAppId !== $appId) {
-            $qb = $db->getQueryBuilder();
-            $qb->update('webhook_listeners')
-                ->set('headers', $qb->createNamedParameter($headers))
-                ->set('app_id', $qb->createNamedParameter($appId))
-                ->where($qb->expr()->eq('id', $qb->createNamedParameter($id)));
-            $qb->executeStatement();
-            file_put_contents(
-                $logFile,
-                "Refreshed listener for {$listener['event']} (id=$id)"
-                . ($stored !== $want ? " — secret rotated" : '')
-                . ($storedAppId !== $appId ? " — app_id $storedAppId -> $appId" : '')
-                . "\n",
-                FILE_APPEND
+    $raw = @file_get_contents($url, false, stream_context_create(['http' => $http]));
+    $code = 0;
+    if (isset($http_response_header[0])
+        && preg_match('#^HTTP/\S+\s+(\d{3})#', $http_response_header[0], $m)) {
+        $code = (int) $m[1];
+    }
+
+    return [$code, $raw === false ? '' : $raw];
+}
+
+[$code, $raw] = ocs_request('GET', $endpoint . '?uri=' . rawurlencode(WEBHOOK_URI), $requestHeaders);
+if ($code !== 200) {
+    log_line("ERROR: could not list listeners (HTTP $code): " . substr(trim($raw), 0, 300));
+    exit(1);
+}
+
+$decoded = json_decode($raw, true);
+$existing = [];
+foreach (($decoded['ocs']['data'] ?? []) as $row) {
+    if (is_array($row) && ($row['uri'] ?? null) === WEBHOOK_URI && isset($row['event'])) {
+        $existing[(string) $row['event']] = $row;
+    }
+}
+log_line('Listed ' . count($existing) . ' existing listener(s) for ' . WEBHOOK_URI);
+
+$failed = false;
+foreach (EVENTS as $event) {
+    $payload = [
+        'httpMethod' => 'POST',
+        'uri' => WEBHOOK_URI,
+        'event' => $event,
+        'eventFilter' => EVENT_FILTER,
+        'userIdFilter' => '',
+        'headers' => ['X-Webhook-Secret' => $webhookSecret],
+        'authMethod' => 'none',
+        'authData' => null,
+    ];
+
+    if (isset($existing[$event])) {
+        $row = $existing[$event];
+        $id = (int) ($row['id'] ?? 0);
+        $storedHeaders = is_array($row['headers'] ?? null) ? $row['headers'] : [];
+        // The stored headers are a SNAPSHOT of the secret taken when the
+        // listener was last written, so a rotated secret would 401 forever
+        // unless we refresh it here.
+        $storedSecret = (string) ($storedHeaders['X-Webhook-Secret'] ?? '');
+
+        $upToDate = $storedSecret === $webhookSecret
+            && ($row['uri'] ?? null) === WEBHOOK_URI
+            && ($row['httpMethod'] ?? null) === 'POST'
+            && ($row['eventFilter'] ?? null) == EVENT_FILTER;
+
+        if ($upToDate) {
+            log_line("Listener for $event already up to date (id=$id)");
+            continue;
+        }
+
+        [$code, $raw] = ocs_request('POST', "$endpoint/$id", $requestHeaders, $payload);
+        if ($code === 200) {
+            log_line(
+                "Updated listener for $event (id=$id)"
+                . ($storedSecret !== $webhookSecret ? ' - webhook secret rotated' : '')
             );
         } else {
-            file_put_contents(
-                $logFile,
-                "Webhook listener for {$listener['event']} already up to date (id=$id)\n",
-                FILE_APPEND
-            );
+            log_line("ERROR: update failed for $event (id=$id, HTTP $code): " . substr(trim($raw), 0, 300));
+            $failed = true;
         }
         continue;
     }
 
-    // Insert the listener
-    $qb = $db->getQueryBuilder();
-    $qb->insert('webhook_listeners')
-        ->values([
-            'app_id' => $qb->createNamedParameter($appId),
-            'user_id' => $qb->createNamedParameter($userId),
-            'http_method' => $qb->createNamedParameter('POST'),
-            'uri' => $qb->createNamedParameter($webhookUri),
-            'event' => $qb->createNamedParameter($listener['event']),
-            'event_filter' => $qb->createNamedParameter($eventFilter),
-            'user_id_filter' => $qb->createNamedParameter(''),
-            'headers' => $qb->createNamedParameter($headers),
-            'auth_method' => $qb->createNamedParameter('none'),
-            'auth_data' => $qb->createNamedParameter(''),
-            'token_needed' => $qb->createNamedParameter('[]'),
-        ]);
-    $qb->executeStatement();
-
-    file_put_contents($logFile, "Created webhook listener for {$listener['event']}\n", FILE_APPEND);
+    [$code, $raw] = ocs_request('POST', $endpoint, $requestHeaders, $payload);
+    if ($code === 200) {
+        log_line("Created listener for $event");
+    } else {
+        log_line("ERROR: create failed for $event (HTTP $code): " . substr(trim($raw), 0, 300));
+        $failed = true;
+    }
 }
 
-file_put_contents($logFile, "Webhook registration complete\n", FILE_APPEND);
+log_line($failed ? 'Webhook registration finished with errors' : 'Webhook registration complete');
+exit($failed ? 1 : 0);

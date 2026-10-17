@@ -35,6 +35,7 @@ declare(strict_types=1);
  *    the Nextcloud admin UI if they want it gone.
  *
  * Usage: php enforce-single-owner.php <nc-root> [app-id]...
+ * Exits non-zero if an app could not actually be disabled.
  */
 
 define('OC_CONSOLE', 1);
@@ -67,6 +68,7 @@ use OCP\IDBConnection;
 
 $appManager = \OCP\Server::get(IAppManager::class);
 $db = \OCP\Server::get(IDBConnection::class);
+$failed = false;
 
 // --- 1. disable competing apps that are still enabled ----------------------
 foreach ($apps as $app) {
@@ -75,14 +77,22 @@ foreach ($apps as $app) {
         continue;
     }
     try {
-        if ($appManager->isEnabledForAnyone($app)) {
-            $appManager->disableApp($app);
-            file_put_contents($logFile, "Disabled competing OCR app: $app\n", FILE_APPEND);
-        } else {
+        if (!$appManager->isEnabledForAnyone($app)) {
             file_put_contents($logFile, "Competing OCR app already disabled: $app\n", FILE_APPEND);
+            continue;
+        }
+        $appManager->disableApp($app);
+        // Verify the post-condition: logging "disabled" while the app is still
+        // enabled would be worse than not checking at all.
+        if ($appManager->isEnabledForAnyone($app)) {
+            file_put_contents($logFile, "ERROR: $app is STILL enabled after disableApp()\n", FILE_APPEND);
+            $failed = true;
+        } else {
+            file_put_contents($logFile, "Disabled competing OCR app: $app\n", FILE_APPEND);
         }
     } catch (\Throwable $e) {
-        file_put_contents($logFile, "WARN: could not disable $app: " . $e->getMessage() . "\n", FILE_APPEND);
+        file_put_contents($logFile, "ERROR: could not disable $app: " . $e->getMessage() . "\n", FILE_APPEND);
+        $failed = true;
     }
 }
 
@@ -123,3 +133,4 @@ foreach ($apps as $app) {
 }
 
 file_put_contents($logFile, "Single-owner enforcement complete\n", FILE_APPEND);
+exit($failed ? 1 : 0);

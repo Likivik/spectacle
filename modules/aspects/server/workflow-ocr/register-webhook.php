@@ -38,6 +38,11 @@ declare(strict_types=1);
  *     reads the ex-app-id header only when session 'app_api' is true), so these
  *     rows carry app_id NULL. Harmless: app_id is used only by the by-appid
  *     delete route.
+ *
+ * Exit code is meaningful: 0 only when BOTH listeners are confirmed to carry
+ * the current webhook secret. A listener whose stored header snapshot is stale
+ * 401s every dispatch, and that failure is invisible everywhere else — the
+ * service stays healthy and only uploads silently stop being processed.
  */
 
 $logFile = '/tmp/ocr-webhook-register.log';
@@ -46,6 +51,16 @@ function log_line(string $message): void
 {
     global $logFile;
     file_put_contents($logFile, $message . "\n", FILE_APPEND);
+}
+
+/**
+ * Strip the webhook secret out of anything we are about to write to the log.
+ * An OCS error body can echo the submitted payload, and this log is in /tmp.
+ */
+function redact(string $text): string
+{
+    global $webhookSecret;
+    return $webhookSecret === '' ? $text : str_replace($webhookSecret, '[REDACTED]', $text);
 }
 
 file_put_contents($logFile, "Starting webhook registration (OCS API)\n");
@@ -110,18 +125,32 @@ function ocs_request(string $method, string $url, array $headers, ?array $body =
     return [$code, $raw === false ? '' : $raw];
 }
 
-[$code, $raw] = ocs_request('GET', $endpoint . '?uri=' . rawurlencode(WEBHOOK_URI), $requestHeaders);
-if ($code !== 200) {
-    log_line("ERROR: could not list listeners (HTTP $code): " . substr(trim($raw), 0, 300));
-    exit(1);
+/**
+ * List this service's listeners, keyed by event class.
+ *
+ * @return array<string,array<string,mixed>>|null null when the request failed
+ */
+function list_listeners(): ?array
+{
+    global $endpoint, $requestHeaders;
+    [$code, $raw] = ocs_request('GET', $endpoint . '?uri=' . rawurlencode(WEBHOOK_URI), $requestHeaders);
+    if ($code !== 200) {
+        log_line("ERROR: could not list listeners (HTTP $code): " . redact(substr(trim($raw), 0, 300)));
+        return null;
+    }
+    $decoded = json_decode($raw, true);
+    $found = [];
+    foreach (($decoded['ocs']['data'] ?? []) as $row) {
+        if (is_array($row) && ($row['uri'] ?? null) === WEBHOOK_URI && isset($row['event'])) {
+            $found[(string) $row['event']] = $row;
+        }
+    }
+    return $found;
 }
 
-$decoded = json_decode($raw, true);
-$existing = [];
-foreach (($decoded['ocs']['data'] ?? []) as $row) {
-    if (is_array($row) && ($row['uri'] ?? null) === WEBHOOK_URI && isset($row['event'])) {
-        $existing[(string) $row['event']] = $row;
-    }
+$existing = list_listeners();
+if ($existing === null) {
+    exit(1);
 }
 log_line('Listed ' . count($existing) . ' existing listener(s) for ' . WEBHOOK_URI);
 
@@ -164,7 +193,7 @@ foreach (EVENTS as $event) {
                 . ($storedSecret !== $webhookSecret ? ' - webhook secret rotated' : '')
             );
         } else {
-            log_line("ERROR: update failed for $event (id=$id, HTTP $code): " . substr(trim($raw), 0, 300));
+            log_line("ERROR: update failed for $event (id=$id, HTTP $code): " . redact(substr(trim($raw), 0, 300)));
             $failed = true;
         }
         continue;
@@ -174,8 +203,27 @@ foreach (EVENTS as $event) {
     if ($code === 200) {
         log_line("Created listener for $event");
     } else {
-        log_line("ERROR: create failed for $event (HTTP $code): " . substr(trim($raw), 0, 300));
+        log_line("ERROR: create failed for $event (HTTP $code): " . redact(substr(trim($raw), 0, 300)));
         $failed = true;
+    }
+}
+
+// --- verify: re-read and confirm both rows carry the CURRENT secret ---------
+// Registration returning 200 is not the same as the row being right, and the
+// consequence of a stale snapshot is a silent stop of all automatic OCR.
+$after = list_listeners();
+if ($after === null) {
+    $failed = true;
+} else {
+    foreach (EVENTS as $event) {
+        $stored = (string) ((($after[$event] ?? [])['headers'] ?? [])['X-Webhook-Secret'] ?? '');
+        if ($stored !== $webhookSecret) {
+            log_line("ERROR: listener for $event does not carry the current webhook secret after registration");
+            $failed = true;
+        }
+    }
+    if (!$failed) {
+        log_line('Verified: ' . count(EVENTS) . ' listener(s) carry the current webhook secret');
     }
 }
 

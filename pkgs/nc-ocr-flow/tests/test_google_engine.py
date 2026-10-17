@@ -335,3 +335,334 @@ def test_process_pdf_seeds_real_base_pdf(monkeypatch, tmp_path):
     finally:
         got.close()
     assert result.output_pdf == str(out)
+
+
+# --- vlm_pages source-index fidelity (regression: A2) ----------------------
+#
+# Audit: ``vlm_pages = list(range(len(page_results)))`` was true only when
+# Vision returned every page. When Vision skips pages (sparse output —
+# pageNumber {1,3,5} for a 5-page PDF), it silently recorded ``[0,1,2]``
+# instead of ``[0,2,4]``, so the metadata stamp and the billing count
+# diverged from what Vision actually saw. Also: a duplicate ``pageNumber``
+# overwrote the first response silently. These tests pin both fixes at
+# the engine contract level (the tuple list ``(source_page_idx,
+# OcrResult)`` that ``_aggregate_json_results`` / ``_ocr_pdf`` return) and
+# at the public ``ProcessResult.vlm_pages`` level (what webhook_server
+# reads).
+
+
+import json as _json  # for the by_page assembly tests below
+
+
+def _b(*, page_idx, blocks=()):
+    """Tiny ``(page_idx, OcrResult)`` tuple builder for the engine."""
+    from nc_ocr_flow.ocr_models import OcrBlock, OcrResult
+    return (
+        page_idx,
+        OcrResult(
+            blocks=[OcrBlock(bbox=(0, 0, 10, 10), text=f"p{page_idx}",
+                             confidence=0.9, label="x")] if blocks else [],
+            page_width=100.0,
+            page_height=100.0,
+        ),
+    )
+
+
+def test_process_pdf_vlm_pages_use_sparse_source_indices(monkeypatch, tmp_path):
+    """Audit A2: when the engine returns results for only pages {0, 2, 4}
+    of a source PDF, ``vlm_pages`` MUST be ``[0, 2, 4]``, NOT
+    ``[0, 1, 2]`` (which is what the old ``list(range(len(page_results)))``
+    produced).
+    """
+    src = tmp_path / "src.pdf"
+    doc = fitz.open()
+    for _ in range(5):
+        doc.new_page(width=595, height=842)
+    doc.save(src)
+    doc.close()
+
+    out = tmp_path / "out.pdf"
+
+    # Vision returned results only for source pages 0, 2, 4.
+    # In sparse Vision output the engine tuples carry the real source
+    # page index — this is the contract that fixes A2.
+    monkeypatch.setattr(
+        google_engine, "_ocr_pdf",
+        lambda *a, **k: [_b(page_idx=0), _b(page_idx=2), _b(page_idx=4)],
+    )
+    google_engine._batch_bucket = None
+
+    result = google_engine.process_pdf(str(src), str(out))
+
+    # vlm_pages is the SORTED 0-indexed list of real pages.
+    assert result.vlm_pages == [0, 2, 4], (
+        f"A2: vlm_pages should reflect the SPARSE Vision page indices, "
+        f"got {result.vlm_pages!r} (expected [0, 2, 4])"
+    )
+    # page_results stays in the same (sparse) ascending order.
+    assert len(result.page_results) == 3
+    # Billing semantics preserved: count = pages Vision actually answered.
+    assert len(result.vlm_pages) == 3
+
+
+def test_process_pdf_vlm_pages_full_coverage_when_no_sparse(monkeypatch, tmp_path):
+    """Control test: dense Vision output yields vlm_pages == [0..n-1]
+    (i.e. minimax convention), so the A2 fix is a no-op when Vision
+    answers every page.
+    """
+    src = tmp_path / "src.pdf"
+    doc = fitz.open()
+    for _ in range(3):
+        doc.new_page(width=595, height=842)
+    doc.save(src)
+    doc.close()
+
+    out = tmp_path / "out.pdf"
+
+    monkeypatch.setattr(
+        google_engine, "_ocr_pdf",
+        lambda *a, **k: [_b(page_idx=0), _b(page_idx=1), _b(page_idx=2)],
+    )
+    google_engine._batch_bucket = None
+
+    result = google_engine.process_pdf(str(src), str(out))
+
+    assert result.vlm_pages == [0, 1, 2]
+    assert len(result.page_results) == 3
+
+
+def test_aggregate_json_results_warns_on_duplicate_page_number(monkeypatch, caplog):
+    """Audit A2: a repeated ``pageNumber`` in Vision's batch output
+    must emit a WARNING (it used to silently overwrite the first
+    occurrence). The last-seen response wins — we do not multiply-count.
+    """
+    import logging
+
+    # Stub the GCS interaction so the test does not need real Vision
+    # JSON files. Two fake "blobs" each carry one response with the
+    # SAME pageNumber=2 — the second occurrence triggers the WARNING.
+    responses_blob1 = {"responses": [{
+        "context": {"pageNumber": 2},
+        "fullTextAnnotation": {"pages": []},
+    }]}
+    responses_blob2 = {"responses": [{
+        "context": {"pageNumber": 2},
+        "fullTextAnnotation": {"pages": []},
+    }]}
+
+    class _FakeBlob:
+        def __init__(self, name, payload):
+            self.name = name
+            self._payload = payload
+            self.deleted = False
+
+        def download_as_text(self):
+            return _json.dumps(self._payload)
+
+        def delete(self):
+            self.deleted = True
+
+    fake_blobs = [
+        _FakeBlob("out/run/response-1.json", responses_blob1),
+        _FakeBlob("out/run/response-2.json", responses_blob2),
+    ]
+
+    class _FakeBucket:
+        def list_blobs(self, prefix):
+            return [b for b in fake_blobs if b.name.startswith(prefix)]
+
+
+    class _FakeStorageClient:
+        def __init__(self, *a, **k):
+            pass
+
+        def list_blobs(self, bucket, prefix=None):
+            return [b for b in fake_blobs
+                    if b.name.startswith(prefix or "")
+                    and b.name.startswith("out/")]
+
+    monkeypatch.setattr(google_engine, "_get_client", lambda: object())
+    monkeypatch.setattr(google_engine, "_project_id", lambda c: None)
+
+    # Patch the storage.Client import inside the function.
+    import google.cloud.storage as _storage_mod
+    monkeypatch.setattr(_storage_mod, "Client", _FakeStorageClient)
+
+    # Skip _blocks_from_page / _page_dims entirely — both responses are
+    # full text annotation with empty pages; we just want the WARNING
+    # path AND the resulting aggregate size (1 entry, not 2).
+    import google.cloud.vision_v1 as _v1
+    class _FakeParsed:
+        full_text_annotation = None  # triggers the "empty full" branch
+    monkeypatch.setattr(
+        _v1, "AnnotateImageResponse",
+        type("FakeResponse", (), {"from_json": staticmethod(lambda j: _FakeParsed())}),
+    )
+
+    with caplog.at_level(logging.WARNING, logger="nc_ocr_flow.engines.google_engine"):
+        out = google_engine._aggregate_json_results("any-bucket", "out/run/")
+
+    # Duplicate pageNumber should produce exactly ONE output entry
+    # (last-wins), not two.
+    assert len(out) == 1, (
+        f"duplicate pageNumber must NOT produce duplicate entries, "
+        f"got {len(out)}: {out!r}"
+    )
+    # And the index must be the 0-indexed source page (pageNumber=2 → idx=1).
+    assert out[0][0] == 1, f"expected source_page_idx=1 from pageNumber=2, got {out[0][0]!r}"
+
+    warns = [
+        r for r in caplog.records
+        if r.levelname == "WARNING"
+        and "duplicate pageNumber" in r.getMessage()
+    ]
+    assert len(warns) == 1, (
+        f"expected exactly one duplicate-pageNumber WARNING, got "
+        f"{[r.getMessage() for r in warns]!r}"
+    )
+    assert "pageNumber=2" in warns[0].getMessage()
+
+
+def test_aggregate_json_results_sparse_returns_real_indices(monkeypatch, caplog):
+    """Audit A2: sparse Vision output (pageNumber {1, 3, 5} only)
+    must produce tuples whose first element is the 0-indexed SOURCE
+    page index (``[0, 2, 4]``), NOT the position-into-the-list
+    (``[0, 1, 2]``). This is the engine-contract half of the fix;
+    ``process_pdf`` then promotes that into ``vlm_pages``."""
+    responses = {"responses": [
+        {"context": {"pageNumber": 1}, "fullTextAnnotation": {"pages": []}},
+        {"context": {"pageNumber": 3}, "fullTextAnnotation": {"pages": []}},
+        {"context": {"pageNumber": 5}, "fullTextAnnotation": {"pages": []}},
+    ]}
+
+    class _FakeBlob:
+        def __init__(self):
+            self.name = "out/run/response-1.json"
+
+        def download_as_text(self):
+            return _json.dumps(responses)
+
+        def delete(self):
+            pass
+
+    class _FakeBucket:
+        def list_blobs(self, prefix):
+            return [_FakeBlob()]
+
+    class _FakeStorageClient:
+        def __init__(self, *a, **k):
+            pass
+
+        def bucket(self, name):
+            return _FakeBucket()
+
+        def list_blobs(self, bucket, prefix=None):
+            return [_FakeBlob()]
+
+    monkeypatch.setattr(google_engine, "_get_client", lambda: object())
+    monkeypatch.setattr(google_engine, "_project_id", lambda c: None)
+    import google.cloud.storage as _storage_mod
+    monkeypatch.setattr(_storage_mod, "Client", _FakeStorageClient)
+    import google.cloud.vision_v1 as _v1
+    class _FakeParsed:
+        full_text_annotation = None
+    monkeypatch.setattr(
+        _v1, "AnnotateImageResponse",
+        type("FakeResponse", (), {"from_json": staticmethod(lambda j: _FakeParsed())}),
+    )
+
+    out = google_engine._aggregate_json_results("any-bucket", "out/run/")
+
+    # REAL page indices, not position-into-list.
+    page_indices = [pi for pi, _res in out]
+    assert page_indices == [0, 2, 4], (
+        f"A2: sparse Vision output must yield 0-indexed SOURCE page "
+        f"indices, got {page_indices!r}"
+    )
+
+
+# --- _page_dims unit consistency (regression: A3) --------------------------
+#
+# Audit: ``_page_dims`` last-resort fallback returned ``rect.width`` /
+# ``rect.height`` (PDF POINTS) while the two Vision branches above
+# returned ``Page.width`` / ``Page.height`` (Vision pixels). The
+# embedder scales Word bboxes via ``sx = page.rect.width /
+# ocr_result.page_width`` — the numerator is PDF points, so the
+# denominator must be PNG pixels at the engine's working DPI; the
+# old fallback returned PDF points too, which kept working only
+# because Vision's ``normalized_vertices`` are dimensionless [0..1]
+# and the ratio collapsed to ~1 by coincidence. The fix renders the
+# local page at the engine DPI (200 DPI, see
+# ``_PAGE_DIMS_FALLBACK_DPI``) and returns pixel dimensions.
+
+
+def test_page_dims_local_fallback_returns_pixels_not_points(tmp_path):
+    """A3 spec: with no Vision ``Page`` / ``bounding_boxes`` to read,
+    the local PDF fallback must return PIXEL dimensions (rendered at
+    ``_PAGE_DIMS_FALLBACK_DPI``), NOT raw ``rect.width/height`` PDF
+    POINTS.
+
+    The visual point: 200 DPI for an A4-ish 595x842 PDF page is
+    ~1652 x ~2338 PIXELS. If the fallback returns 595 / 842 (PDF
+    points) we have a silent unit mismatch — the embedder would
+    then put Word bboxes at PDF-point coords while
+    ``page.rect.width / ocr_result.page_width`` was supposed to
+    convert from PNG pixels.
+    """
+    src = tmp_path / "src.pdf"
+    doc = fitz.open()
+    doc.new_page(width=595.0, height=842.0)
+    doc.save(src)
+    doc.close()
+
+    # Bypass the two Vision branches — hand _page_dims a near-empty
+    # ``full`` that exposes neither ``pages`` nor ``bounding_boxes``.
+    class _EmptyFta:
+        pages: list = []
+        bounding_boxes = None
+
+    w, h = google_engine._page_dims(
+        _EmptyFta(), None, str(src), 0,
+    )
+
+    # Sanity: dimensions must match what ``page.get_pixmap(dpi=...)``
+    # produces for the SAME source page.
+    with fitz.open(str(src)) as d:
+        pix = d[0].get_pixmap(dpi=google_engine._PAGE_DIMS_FALLBACK_DPI)
+    assert abs(w - pix.width) < 2, (
+        f"A3: local fallback width {w} should match pixmap.width "
+        f"{pix.width} (±1 px for render rounding)"
+    )
+    assert abs(h - pix.height) < 2, (
+        f"A3: local fallback height {h} should match pixmap.height "
+        f"{pix.height} (±1 px for render rounding)"
+    )
+
+    # And it MUST NOT match the raw rect dimensions in PDF points
+    # (the old behaviour). 595 PDF points ≠ 1652 pixels at 200 DPI.
+    pdf_rect_w, pdf_rect_h = 595.0, 842.0
+    assert abs(w - pdf_rect_w) > 100, (
+        f"A3: local fallback width {w} is suspiciously close to the "
+        f"PDF rect width {pdf_rect_w} — looks like raw PDF points "
+        f"were returned instead of rendered pixels"
+    )
+    assert abs(h - pdf_rect_h) > 100, (
+        f"A3: local fallback height {h} is suspiciously close to the "
+        f"PDF rect height {pdf_rect_h} — looks like raw PDF points "
+        f"were returned instead of rendered pixels"
+    )
+
+
+def test_page_dims_fallback_dpi_matches_orchestrator_render_dpi():
+    """Sanity: ``_PAGE_DIMS_FALLBACK_DPI`` is 200, the same DPI the
+    rest of the pipeline uses. If you move the constant, move all of
+    ``ocr._render_page_png``, ``ocr._generate_tsv``,
+    ``minimax_engine._render_page_png_bytes`` together.
+    """
+    assert google_engine._PAGE_DIMS_FALLBACK_DPI == 200
+    # The orchestrator helper defaults to 200; if you change the
+    # default, update _PAGE_DIMS_FALLBACK_DPI together.
+    import inspect
+    sig = inspect.signature(google_engine.__class__) if False else None  # noqa: F841
+    from nc_ocr_flow import ocr as _ocr
+    assert _ocr._render_page_png.__defaults__[0] == 200

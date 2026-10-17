@@ -244,23 +244,40 @@ def _finalize(engine_result: ProcessResult, engine: str, out_pdf: str,
     doc = fitz.open(out_pdf)
     try:
         # CRITICAL: scrub any pre-existing (possibly broken, e.g. a
-        # user-side Tesseract mojibake layer) text off EVERY page
-        # first. Doing this once up-front — instead of relying on
-        # ``_embed_ocr_text``'s embedded redaction step — guarantees
-        # the invariant
+        # user-side Tesseract mojibake layer) text off ONLY the pages
+        # we are about to overwrite. Stripping every page up-front was
+        # the old bug: a re-OCR whose engine blanked out on page 2
+        # (Vision timeout, parse failure, genuinely blank page) would
+        # then wipe page 2's pre-existing good text layer along with
+        # the pages we did get blocks for. The new invariant after
+        # process_pdf is per-page:
         #
-        #     after process_pdf, the page text is either our OCR
-        #     output or empty — never the previous (potentially
-        #     garbage) layer.
+        #     for each page i:
+        #       - engine returned blocks for i → that page's text is our
+        #         OCR output (we stripped the old and embedded the new);
+        #       - engine returned no  blocks for i → that page's text
+        #         is whatever was there before (i.e. untouched).
         #
-        # on every page, regardless of whether the engine returned
-        # blocks for it. ``PDF_REDACT_IMAGE_NONE`` keeps the visible
-        # raster untouched, so the file is still a faithful copy of
-        # the source image with only the text layer swapped out.
-        _strip_existing_text(doc)
-        for page_idx, res in enumerate(page_results):
+        # Use ``engine_result.vlm_pages`` (the engine-supplied
+        # 0-indexed list of source pages it actually returned results
+        # for) as the source-of-truth page index, NOT enumerate(). For
+        # engines whose vlm_pages may be sparse (Google Vision can
+        # skip pages; the index-into-page_results is therefore NOT a
+        # source page index), enumerate would embed the result onto
+        # the wrong page. For engines with full coverage (minimax)
+        # vlm_pages is ``[0..n-1]`` and zip(vlm_pages, page_results)
+        # matches the old enumerate behaviour exactly.
+        #
+        # ``PDF_REDACT_IMAGE_NONE`` keeps the visible raster untouched,
+        # so the file is still a faithful copy of the source image
+        # with only the text layer swapped out on the pages we
+        # actually re-OCR'd.
+        vlm_pages_aligned = list(engine_result.vlm_pages)
+        for page_idx, res in zip(vlm_pages_aligned, page_results):
             if res.blocks:
+                _strip_existing_text(doc, page_idx=page_idx)
                 _embed_ocr_text(doc, page_idx, res, already_redacted=True)
+            # else: leave this page's text layer untouched.
         # saveIncr writes a new revision to the same file (PyMuPDF's
         # standard "save incrementally" path). If the file didn't exist
         # before, fall back to a full save.
@@ -445,9 +462,21 @@ def _get_font():
     return fitz.Font("helv")
 
 
-def _strip_existing_text(doc) -> None:
-    """Remove the existing text layer from every page in ``doc``,
-    keeping the visible raster intact (PDF_REDACT_IMAGE_NONE).
+def _strip_existing_text(doc, page_idx: int | None = None) -> None:
+    """Remove the existing text layer from pages in ``doc``, keeping the
+    visible raster intact (PDF_REDACT_IMAGE_NONE).
+
+    Parameters
+    ----------
+    doc : ``fitz.Document``
+        Open PyMuPDF document to scrub.
+    page_idx : int | None
+        If ``None`` (default), strip every page of ``doc``. If an int,
+        strip only that one page. The per-page form is what
+        :func:`_finalize` uses so that pages where the engine returned
+        no blocks keep whatever text layer they already had — re-OCR'ing
+        a multi-page file whose engine blanked out on page 2 must NOT
+        also kill page 2's previously-good text.
 
     This is the first step of every re-OCR run. The redaction-annot
     + apply_redactions pair is PyMuPDF's supported way to remove all
@@ -470,18 +499,32 @@ def _strip_existing_text(doc) -> None:
     production only happened when the engine returned blocks for
     every page, and silently regressed on every other page.
 
-    Stripping the text layer unconditionally at the orchestrator
-    guarantees the invariant
+    The orchestrator-level strip was then unconditionally applied to
+    every page — but that inverted the bug into its mirror: a re-OCR
+    whose engine timed out on a single page would now also wipe the
+    pre-existing (good) text layer on every other page the engine
+    had also returned empty for. The current model is per-page: the
+    strip runs only on the pages we are about to overwrite, and
+    pages for which the engine returned no blocks preserve their
+    prior text layer verbatim.
 
-        after process_pdf, the page text is either our OCR output
-        or empty — never the previous layer.
+    Invariant after :func:`_finalize`:
 
-    on every page, regardless of what the engine returned.
+        For each page i:
+          - if the engine returned blocks for i, the page text is our
+            OCR output (the previous layer is replaced);
+          - if the engine returned no blocks for i, the page text is
+            whatever was there before (typically the previous good OCR
+            output, possibly empty on a true blank).
     """
     import fitz  # local import keeps module-level import side-effect free
-    for page in doc:
+    if page_idx is None:
+        pages = list(doc)
+    else:
+        pages = [doc[page_idx]]
+    for page in pages:
         page.add_redact_annot(page.rect)
-    for page in doc:
+    for page in pages:
         page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
 
 

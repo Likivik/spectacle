@@ -29,12 +29,13 @@
       #   2. ``appstoreEnable = lib.mkForce false`` further down — the app store
       #      is the only way a rival could appear at runtime (the throw can only
       #      see what nix configures).
-      #   3. ``enforce-single-owner.php``, run from the nc-ocr-register-webhook
-      #      oneshot: disables a competing app that is still enabled, and
-      #      REPORTS (never deletes) its leftover Flow rule — every deletion
-      #      path needs an interactive password confirmation, and a rule whose
-      #      app is disabled is skipped silently anyway. Covers an app enabled
-      #      by hand, and the
+      #   3. ``enforce-single-owner.php`` + ``occ workflows:list``, run from the
+      #      nc-ocr-register-webhook oneshot: disables a competing app that is
+      #      still enabled (public OCP API, i.e. what ``occ app:disable``
+      #      calls) and REPORTS (never deletes) its leftover Flow rule — every
+      #      deletion path needs an interactive password confirmation, and a
+      #      rule whose app is disabled is skipped silently anyway. Covers an
+      #      app enabled by hand, and the
       #      transition itself — nixpkgs never disables an app dropped from
       #      ``extraApps`` (nextcloud.nix only ever runs ``app:enable``), and
       #      Nextcloud's Updater only disables apps whose files vanished when it
@@ -136,7 +137,7 @@
 
       # PHP script registering the listeners through the documented OCS API
       registerWebhookPhp = ./register-webhook.php;
-      # PHP script enforcing the single-OCR-owner invariant (guard #3 above)
+      # PHP script disabling a still-enabled competing OCR app (guard #3 above)
       enforceSingleOwnerPhp = ./enforce-single-owner.php;
     in {
       # ── Guard #1: single-owner block (eval-time) ──────────────────────────
@@ -361,11 +362,10 @@
           Group = "nextcloud";
           Restart = "always";
           RestartSec = "30s";
+          # Only mail_smtppassword: Nextcloud's config bootstrap reads it.
           LoadCredential = let
-            adminPass = config.sops.secrets."nextcloud/admin-password".path;
             resendKey = config.sops.secrets."resend/api-key".path;
           in [
-            "adminpass:${adminPass}"
             "mail_smtppassword:${resendKey}"
           ];
         };
@@ -377,9 +377,14 @@
         path = [ ncPhp ];
 
         script = ''
+          # Never fail the unit (it must keep polling), but never swallow a
+          # failure either: a dispatch worker that dies quietly is how OCR
+          # silently stops.
           while true; do
-            ${ncPhp}/bin/php ${ncRoot}/occ background-job:worker -t 60 \
-              "OCA\WebhookListeners\BackgroundJobs\WebhookCall" 2>&1 || true
+            if ! ${ncPhp}/bin/php ${ncRoot}/occ background-job:worker -t 60 \
+                 "OCA\WebhookListeners\BackgroundJobs\WebhookCall" 2>&1; then
+              echo "nc-webhook-worker: background-job:worker exited non-zero" >&2
+            fi
             sleep 5
           done
         '';
@@ -400,16 +405,16 @@
           User = "nextcloud";
           Group = "nextcloud";
           RemainAfterExit = true;
-          # the PHP scripts log to /tmp; the default umask would leave them
-          # world-readable
-          UMask = "0077";
+          # mail_smtppassword is required by Nextcloud's own config bootstrap
+          # (it resolves the value through nix_read_secret from
+          # $CREDENTIALS_DIRECTORY). adminpass used to be loaded here too and
+          # is NOT read by anything: `occ status` succeeds with only
+          # mail_smtppassword present, so it was dropped (2026-10-17).
           LoadCredential = let
-            adminPass = config.sops.secrets."nextcloud/admin-password".path;
             resendKey = config.sops.secrets."resend/api-key".path;
             webhookSecret = config.sops.secrets."nextcloud/ocr-webhook-secret".path;
             ocsAppPassword = config.sops.secrets."nextcloud/ocr-svc-app-password".path;
           in [
-            "adminpass:${adminPass}"
             "mail_smtppassword:${resendKey}"
             "nc-ocr-webhook-secret:${webhookSecret}"
             "ocr-svc-app-password:${ocsAppPassword}"
@@ -420,7 +425,9 @@
           NEXTCLOUD_CONFIG_DIR = lib.mkForce "/tank/nextcloud/config";
         };
 
-        path = [ ncPhp ];
+        # coreutils + gnugrep: the leftover-Flow-rule report below pipes
+        # `occ workflows:list` through grep/tr.
+        path = [ ncPhp pkgs.coreutils pkgs.gnugrep ];
 
         script = ''
           # Register the file-event webhooks through the documented OCS API as
@@ -442,7 +449,7 @@
               break
             else
               regRc=$?
-              echo "nc-ocr-register-webhook: attempt $attempt failed (see /tmp/ocr-webhook-register.log)" >&2
+              echo "nc-ocr-register-webhook: attempt $attempt failed (see the journal above)" >&2
               attempt=$((attempt + 1))
               sleep 10
             fi
@@ -453,6 +460,18 @@
           # Flow rule).
           ${ncPhp}/bin/php ${enforceSingleOwnerPhp} ${ncRoot} ${lib.concatStringsSep " " competingOcrApps}
           enfRc=$?
+          # Report — never delete — a leftover Flow rule for a competing app.
+          # It is inert AND silent while the app is disabled, and every
+          # deletion path needs an interactive password confirmation, so all
+          # that is left to do is surface it. `occ workflows:list` is the
+          # documented surface (it json_encodes the flow operations), which
+          # keeps this off the internal tables entirely.
+          for app in ${lib.concatStringsSep " " competingOcrApps}; do
+            if ${ncPhp}/bin/php ${ncRoot}/occ workflows:list 2>/dev/null \
+                 | grep -qi "OCA.*$(printf '%s' "$app" | tr -d '_')"; then
+              echo "nc-ocr-register-webhook: NOTE: $app still has a leftover Flow rule. Harmless and silent while it is disabled; remove it in the Nextcloud admin UI if you want it gone (no occ or headless API exists for it)." >&2
+            fi
+          done
           if [ "$regRc" -ne 0 ]; then
             echo "nc-ocr-register-webhook: webhook registration FAILED after 5 attempts" >&2
           fi

@@ -225,6 +225,10 @@
         '';
       };
 
+      # Netmap guard now lives in the shared core.tailscale aspect
+      # (modules/aspects/core/tailscale.nix) so every host recovers from a lost
+      # netmap, not just this one.
+
       services.fail2ban = {
         enable = true;
         jails.nextcloud = {

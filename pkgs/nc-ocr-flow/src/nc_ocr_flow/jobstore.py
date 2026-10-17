@@ -126,7 +126,10 @@ CREATE TABLE IF NOT EXISTS jobs (
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs(created);
 CREATE INDEX IF NOT EXISTS idx_jobs_status  ON jobs(status);
-CREATE INDEX IF NOT EXISTS idx_jobs_next_run ON jobs(next_run_at);
+-- NB: the index on jobs(next_run_at) is created by
+-- ``_migrate_add_retry_columns`` AFTER its ALTER TABLEs, never here:
+-- on a database that predates those columns this statement would fail
+-- with "no such column: next_run_at" and abort the whole init.
 
 -- Per-file OCR state. Replaces the in-memory _ocr_index dict and the
 -- _ocrd_paths set, which grew with the number of files in the account.
@@ -256,6 +259,20 @@ def _migrate_add_retry_columns(conn: "sqlite3.Connection") -> None:
             )
         except Exception as exc:  # noqa: BLE001
             log.warning("jobstore: ADD COLUMN next_run_at failed (%s)", exc)
+    # The index on the retry column MUST be created here, after the
+    # ALTERs above — never in the schema script. On a database that
+    # predates these columns the schema script's CREATE INDEX runs
+    # before this migration and raises "no such column: next_run_at",
+    # which aborts init() and leaves jobstore permanently in the
+    # no-op state (no job history, no file index). That ordering bug
+    # disabled the state layer on the first production rollout.
+    try:
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_jobs_next_run"
+            " ON jobs(next_run_at)",
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("jobstore: CREATE INDEX idx_jobs_next_run failed (%s)", exc)
 
 
 def _row_from_dict(job: dict[str, Any]) -> tuple:

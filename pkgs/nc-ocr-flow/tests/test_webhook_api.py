@@ -1769,9 +1769,23 @@ def test_enqueue_same_path_no_duplicate_when_inflight(monkeypatch):
 
 
 def test_enqueue_force_ignores_inflight_check(monkeypatch):
-    """B8 (counter-test): force=True bypasses the in-flight re-check
-    so /rescan?force=true can still re-OCR an in-flight path (this
-    matches the existing scan-all force semantics)."""
+    """B1 audit: ``force=True`` does NOT bypass the in-flight gate.
+
+    Before B1, ``/rescan?force=true`` could spawn a duplicate jobs
+    row for a file the worker was already mid-flight on, billing
+    Vision twice for the same file. The fix holds a per-path
+    enqueue lock and re-checks ``in_flight_job_for_path`` once
+    inside it; if a job is already queued or running for the
+    path we return that existing job with ``status='already_running'``
+    regardless of the caller's ``force`` bit. ``force`` still
+    applies to the downstream born-digital / stamp / TTL guards
+    in ``_process_file`` — only the in-flight gate is unconditional.
+
+    Production shape this guards: the Nextcloud app's "Re-OCR
+    anyway" is double-clicked, or ``/rescan`` races a /webhook
+    handler. The previous behaviour inserted two rows and ran
+    Vision twice; the B1 fix collapses both to one row.
+    """
     monkeypatch.setattr(ws, "_run_job", lambda _job: None)
     ws.jobstore._reset_for_tests()
     nc_path = "/likivik/files/force.pdf"
@@ -1784,10 +1798,17 @@ def test_enqueue_force_ignores_inflight_check(monkeypatch):
         __import__("time").sleep(0.05)
 
     jobs_before = ws.jobstore.stats().get("total", 0)
-    ws._enqueue(nc_path, node_id=10, force=True)
+    second = ws._enqueue(nc_path, node_id=10, force=True)
     jobs_after = ws.jobstore.stats().get("total", 0)
-    # force=True inserts a fresh jobs row.
-    assert jobs_after == jobs_before + 1, jobs_after
+    # B1: force=True does NOT bypass the in-flight gate.
+    assert jobs_after == jobs_before, (
+        f"force=True must collapse to the existing in-flight job, "
+        f"got {jobs_after - jobs_before} new rows (status={second.get('status')})"
+    )
+    assert second.get("status") == "already_running", (
+        f"second force=True enqueue must report 'already_running', "
+        f"got {second.get('status')!r}"
+    )
 
 
 # --- B9: PROPFIND parser accepts any namespace prefix -----------------------
@@ -2408,8 +2429,13 @@ def test_c5_reconcile_stale_marks_404_rows_gone(monkeypatch):
         })
 
     # HEAD returns 404 for the *probe* paths and 200 for the
-    # real / done paths.
-    def fake_head(url, *, auth, timeout):
+    # real / done paths. We mock ``requests.request`` directly
+    # because ``requests.head`` captures ``request`` at import
+    # time and bypasses attribute lookup on the parent module,
+    # so monkeypatching ``ws.requests.head`` doesn't intercept
+    # the call from ``_webdav_exists``.
+    def fake_request(method, url, **k):
+        assert method.upper() == "HEAD"
         if "__probe" in url or "another_probe" in url:
             class R:
                 status_code = 404
@@ -2418,7 +2444,7 @@ def test_c5_reconcile_stale_marks_404_rows_gone(monkeypatch):
             status_code = 200
         return R()
 
-    monkeypatch.setattr(ws.requests, "head", fake_head)
+    monkeypatch.setattr(ws.requests, "request", fake_request)
 
     # First pass: scope the query to the probe paths only so the
     # real_doc row does not show up in the test's pass-2
@@ -2486,11 +2512,12 @@ def test_c5_reconcile_endpoint_runs_and_returns_counts(client, monkeypatch):
         "finished": 1.0, "size": 1, "etag": "x",
     })
 
-    def fake_head(url, *, auth, timeout):
+    def fake_request(method, url, **k):
+        assert method.upper() == "HEAD"
         class R:
             status_code = 404
         return R()
-    monkeypatch.setattr(ws.requests, "head", fake_head)
+    monkeypatch.setattr(ws.requests, "request", fake_request)
 
     r = client.post(
         "/reconcile", headers=h(),
@@ -2708,3 +2735,234 @@ def test_c7_gone_status_round_trips_through_states_endpoint(client):
     assert "gone" in s or s.get("gone", 0) == 0  # not counted as error
     # The critical assertion: 'gone' is NOT lumped into 'error'.
     assert s.get("error", 0) == 0
+
+
+# --- B1: force=True must not bypass the in-flight gate ---------------------
+
+
+def test_two_force_concurrent_enqueues_produce_one_jobs_row(client, monkeypatch):
+    """B1 audit: two force=True callers for the SAME path while the
+    first job is still queued must produce exactly ONE ``jobs`` row.
+
+    Production shape this guards: the Nextcloud app's "Re-OCR anyway"
+    is double-clicked, or ``/rescan`` races a /webhook handler, both
+    with ``force=true``. The previous behaviour inserted two rows
+    and ran Vision twice for one file. The fix holds a per-path
+    enqueue lock so the second call sees the existing in-flight row
+    and returns ``status='already_running'`` pointing at the first
+    job — no second jobs row, no second Vision bill.
+
+    We don't have to time the threads down to microseconds; the lock
+    is held across the gate-and-insert pair so any interleaving of
+    two force=True enqueues collapses to one row regardless of who
+    lost the race.
+    """
+    import threading
+    monkeypatch.setattr(ws, "_work_available",
+                        ws._work_available)  # keep behaviour visible
+    # The real worker would claim-and-run the row in milliseconds,
+    # finishing it before the second caller gets a chance to see the
+    # in-flight row. Stub claim_next so the first row stays
+    # 'queued' across the whole test.
+    monkeypatch.setattr(ws.jobstore, "claim_next", lambda: None)
+
+    path = "/likivik/files/Work/double-clicked.pdf"
+
+    results: list[dict] = []
+    barrier = threading.Barrier(2)
+
+    def caller(idx: int) -> None:
+        barrier.wait()  # sync the start so both threads call in lockstep
+        results.append(ws._enqueue(path, node_id=10, engine="google",
+                                   force=True))
+
+    t1 = threading.Thread(target=caller, args=(0,))
+    t2 = threading.Thread(target=caller, args=(1,))
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+
+    # At least one caller must have actually enqueued — otherwise the
+    # test is a no-op and proves nothing. Without the lock, both
+    # would insert; with the lock, exactly one does, the second
+    # returns 'already_running'.
+    assert len(results) == 2
+    statuses = sorted(r["status"] for r in results)
+    assert statuses == ["already_running", "queued"], (
+        f"force=True must collapse to one queued row + one "
+        f"'already_running' handoff, got {statuses}"
+    )
+
+    # The durable invariant: exactly ONE jobs row exists for the path.
+    rows = [r for r in ws.jobstore.query(path_contains=path)
+            if r.get("path") == path and r.get("status") in
+            ("queued", "running")]
+    assert len(rows) == 1, (
+        f"two force=True callers must produce ONE jobs row, "
+        f"got {len(rows)}: {[r['status'] for r in rows]}"
+    )
+
+
+# --- B2: /stats exposes retries_total + retries_queued --------------------
+
+
+def test_stats_endpoint_exposes_retry_counters(client, monkeypatch):
+    """B2 wire contract: /stats must include ``retries_total`` and
+    ``retries_queued`` keys with int values, and the NC-app
+    StatsService guard ``if (!empty(...))`` must now find them.
+    """
+    # Seed a few rows: one done, one queued-but-attempts>0 (a retry
+    # waiting on backoff), one finished retry.
+    import time
+    now = time.time()
+    ws.jobstore.record_enqueue({
+        "path": "/likivik/files/Work/a.pdf", "nc_path": "/likivik/files/Work/a.pdf",
+        "node_id": 0, "engine": "google", "force": 0, "status": "done",
+        "created": now, "started": now, "finished": now,
+        "result": None, "error": None, "reason": None,
+        "attempts": 0, "next_run_at": None,
+    })
+    ws.jobstore.record_enqueue({
+        "path": "/likivik/files/Work/b.pdf", "nc_path": "/likivik/files/Work/b.pdf",
+        "node_id": 0, "engine": "google", "force": 0, "status": "queued",
+        "created": now, "started": None, "finished": None,
+        "result": None, "error": None, "reason": None,
+        "attempts": 1, "next_run_at": now + 60,
+    })
+    ws.jobstore.record_enqueue({
+        "path": "/likivik/files/Work/c.pdf", "nc_path": "/likivik/files/Work/c.pdf",
+        "node_id": 0, "engine": "google", "force": 0, "status": "done",
+        "created": now - 100, "started": now - 100, "finished": now - 90,
+        "result": None, "error": None, "reason": None,
+        "attempts": 1, "next_run_at": None,
+    })
+
+    r = client.get("/stats", headers=h())
+    assert r.status_code == 200
+    d = r.json()
+    assert "retries_total" in d, (
+        "/stats must include retries_total so the NC app's "
+        "StatsService row renders — B2 wire contract"
+    )
+    assert "retries_queued" in d, (
+        "/stats must include retries_queued for the same reason"
+    )
+    assert d["retries_total"] == 2, (
+        f"two rows with attempts>0 must count to 2, got {d['retries_total']}"
+    )
+    assert d["retries_queued"] == 1, (
+        f"only one row is status=queued+attempts>0, got {d['retries_queued']}"
+    )
+    # The pre-existing keys must still be present (so we didn't
+    # accidentally drop the wire contract for the rest of the panel).
+    for k in ("service", "indexed", "scanned", "skipped", "errors",
+              "by_engine", "skip_reasons"):
+        assert k in d, f"/stats lost key {k}"
+
+
+# --- B3: _webdav_exists treats 404 *and* 410 Gone as gone ----------------
+
+
+class _FakeResp:
+    def __init__(self, status_code: int) -> None:
+        self.status_code = status_code
+
+
+def test_webdav_exists_treats_410_gone_like_404(monkeypatch):
+    """B3 audit: HTTP 410 Gone must yield ``False`` from
+    ``_webdav_exists`` (i.e. "the path is gone for good"). Before
+    the fix the helper used ``status_code != 404`` so 410 was
+    classified as 'still exists' and rows could never be
+    reconciled to ``status='gone'``.
+    """
+    monkeypatch.setattr(ws, "NC_USER", "likivik")
+    monkeypatch.setattr(ws, "NC_PASSWORD", "x")
+
+    def fake_request(method, url, **k):
+        assert method == "HEAD"
+        return _FakeResp(410)
+
+    monkeypatch.setattr(ws.requests, "request", fake_request)
+
+    assert ws._webdav_exists("/likivik/files/Work/deleted.pdf") is False, (
+        "B3 fix: 410 Gone must be treated identically to 404"
+    )
+
+
+def test_webdav_exists_keeps_5xx_uncertain(monkeypatch):
+    """B3 hardening: a transport blip (5xx) must NOT mark the file
+    gone — leave it for the next reconciliation pass.
+    """
+    monkeypatch.setattr(ws, "NC_USER", "likivik")
+    monkeypatch.setattr(ws, "NC_PASSWORD", "x")
+
+    monkeypatch.setattr(ws.requests, "request",
+                        lambda *a, **k: _FakeResp(503))
+    assert ws._webdav_exists("/likivik/files/Work/blip.pdf") is True, (
+        "a 5xx blip must not regress to 'gone' — keep the row for the "
+        "next reconciliation pass"
+    )
+
+    # Transport error too → keep.
+    def boom(*a, **k):
+        import requests as _r
+        raise _r.ConnectionError("tailnet down")
+    monkeypatch.setattr(ws.requests, "request", boom)
+    assert ws._webdav_exists("/likivik/files/Work/down.pdf") is True
+
+
+# --- B5: enqueue-lock cache evicts idle entries -----------------------------
+
+
+def test_enqueue_lock_cache_evicts_idle_entries(monkeypatch):
+    """B5 leak guard: ``_enqueue_path_lock`` must drop entries
+    unused for more than ``_ENQUEUE_LOCK_TTL_S`` so the per-path
+    lock dict cannot grow without bound on a long-running service.
+
+    We don't want to sleep for an hour — shrink the TTL and step
+    forward in fake time.
+    """
+    # Shrink TTL so the test runs in milliseconds. Also shrink the
+    # sweep interval the same way so the eviction logic stays in one
+    # place.
+    monkeypatch.setattr(ws, "_ENQUEUE_LOCK_TTL_S", 60.0)
+    # Reset the module-level caches so a prior test's locks don't
+    # leak into this one's eviction assertions. The real service
+    # never does this — module state is a happy-forever effect, but
+    # the test set has the freedom to clear it.
+    ws._ENQUEUE_LOCKS.clear()
+    ws._ENQUEUE_LOCKS_LAST_USED.clear()
+    fake_now = {"t": 1_000_000.0}
+
+    def fake_time():
+        return fake_now["t"]
+
+    monkeypatch.setattr(ws.time, "time", fake_time)
+
+    # First call inserts an entry at t=1_000_000.
+    lock_a = ws._enqueue_path_lock("/likivik/files/A/one.pdf")
+    assert "/likivik/files/A/one.pdf" in ws._ENQUEUE_LOCKS
+    # A second path co-exists, distinct lock.
+    lock_b = ws._enqueue_path_lock("/likivik/files/B/two.pdf")
+    assert lock_a is not lock_b
+    assert len(ws._ENQUEUE_LOCKS) == 2
+
+    # 30s later, neither is stale — both stay.
+    fake_now["t"] += 30
+    ws._enqueue_path_lock("/likivik/files/C/three.pdf")
+    assert len(ws._ENQUEUE_LOCKS) == 3
+
+    # 200s after the original entry (well past the 60s TTL), the two
+    # long-untouched entries are gone, but B was touched at +30 so
+    # it's only 170s old — it survives a sweep.
+    fake_now["t"] = 1_000_000.0 + 200.0
+    ws._enqueue_path_lock("/likivik/files/A/one.pdf")  # touched → survives
+    # Now A is fresh; B+ are stale → should be evicted.
+    assert len(ws._ENQUEUE_LOCKS) == 1
+    assert "/likivik/files/A/one.pdf" in ws._ENQUEUE_LOCKS
+
+    # And the race protection that the lock exists for is preserved:
+    # re-acquiring the per-path lock returns the same ``Lock`` object.
+    same = ws._enqueue_path_lock("/likivik/files/A/one.pdf")
+    assert same is ws._ENQUEUE_LOCKS["/likivik/files/A/one.pdf"]

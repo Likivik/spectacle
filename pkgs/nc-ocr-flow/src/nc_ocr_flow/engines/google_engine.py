@@ -123,15 +123,21 @@ def process_pdf(pdf_path: str | os.PathLike,
     import shutil as _shutil
     _shutil.copy2(pdf_path, out_path)
 
-    page_results = _ocr_pdf(pdf_path)
+    page_results_pairs = _ocr_pdf(pdf_path)
 
-    # Google Vision processes and bills every page of the uploaded PDF.
-    # webhook_server counts billable pages from result["vlm_pages"], so
-    # populate it with the 0-indexed page numbers we actually got
-    # results for (matches the 0-indexed convention in
-    # engines/minimax_engine.py). page_results is in ascending page
-    # order, so the index-into-page_results == source page index.
-    vlm_pages = list(range(len(page_results)))
+    # Google Vision processes the uploaded PDF page-by-page. The number
+    # of pages Vision actually returns can be < the source PDF's page
+    # count (blank pages, parse failures, sometimes the batch summary
+    # is missing a page). webhook_server counts billable pages from
+    # ``result["vlm_pages"]``, so we record the SORTED 0-indexed page
+    # numbers we actually got results for. This matches the 0-indexed
+    # convention in engines/minimax_engine.py and fixes the previous
+    # behaviour where we recorded ``[0, 1, 2]`` for a Vision run that
+    # only returned pages {1, 3, 5}, costing wrong billing and wrong
+    # ``vlm_pages`` metadata. The length stays equal to the number of
+    # pages Vision actually returned (billing semantically unchanged).
+    page_results = [res for _pi, res in page_results_pairs]
+    vlm_pages = sorted(pi for pi, _res in page_results_pairs)
 
     # The orchestrator will embed the text layer, save, and stamp
     # metadata. This engine just returns the per-page OCR results.
@@ -150,8 +156,14 @@ def process_pdf(pdf_path: str | os.PathLike,
 # --- Core: async batch annotate --------------------------------------------
 
 
-def _ocr_pdf(pdf_path: str) -> list[OcrResult]:
-    """Submit the whole PDF to Vision async batch + return per-page results."""
+def _ocr_pdf(pdf_path: str) -> list[tuple[int, OcrResult]]:
+    """Submit the whole PDF to Vision async batch + return per-page results.
+
+    Each entry in the returned list is ``(source_page_idx, OcrResult)``.
+    ``source_page_idx`` is the **0-indexed** page number Vision
+    actually returned a response for (NOT just the position into the
+    list — Vision may skip pages). The ordering is ascending.
+    """
     pdf_bytes = Path(pdf_path).read_bytes()
     if len(pdf_bytes) > _MAX_PDF_BYTES:
         raise RuntimeError(
@@ -220,12 +232,29 @@ def _ocr_pdf(pdf_path: str) -> list[OcrResult]:
 
 
 def _aggregate_json_results(bucket: str, prefix: str,
-                              pdf_path: str | None = None) -> list[OcrResult]:
+                              pdf_path: str | None = None
+                              ) -> list[tuple[int, "OcrResult"]]:
     """Download Vision's per-file JSON outputs + aggregate by page.
 
     Vision writes one JSON per file/page under the run's ``prefix``.
     Each response carries ``context.pageNumber``; we key pages by that so
     results are ordered by real page index regardless of JSON-file count.
+
+    Returns a list of ``(source_page_idx, OcrResult)`` tuples where
+    ``source_page_idx`` is the **0-indexed** source PDF page Vision
+    actually returned a response for. The index is required because
+    Vision can skip pages (e.g. a blank page comes back with no
+    annotation and no ``pageNumber``), so the position-into-our-output
+    list is NOT a reliable source-page index — the caller needs the
+    real one. The list length equals the number of pages Vision
+    actually returned, which is what webhook_server counts under
+    ``result["vlm_pages"]`` for billing.
+
+    A repeated ``pageNumber`` (e.g. Vision emitted one JSON per page
+    but then a batch summary file also carried the same response)
+    is logged at WARNING and the last-seen response wins — we do not
+    silently multiply-count a page, but we also don't fail the job
+    over it.
     """
     import json as _json
     from google.cloud import storage as _gs  # lazy, same as _ocr_pdf
@@ -245,10 +274,18 @@ def _aggregate_json_results(bucket: str, prefix: str,
             page_num = ctx.get("pageNumber") or ctx.get("page_number")
             if page_num is None:
                 continue
-            by_page[int(page_num)] = resp
+            key = int(page_num)
+            if key in by_page:
+                log.warning(
+                    "vision: duplicate pageNumber=%d in batch output "
+                    "(bucket=%s); keeping the last occurrence — Vision's "
+                    "JSON-file count is not 1:1 with page count",
+                    key, bucket,
+                )
+            by_page[key] = resp
         blob.delete()
 
-    out: list[OcrResult] = []
+    out: list[tuple[int, "OcrResult"]] = []
     for page_num in sorted(by_page):
         resp = by_page[page_num]
         # Deserialize the raw JSON response into a proto for _blocks_from_page.
@@ -257,23 +294,23 @@ def _aggregate_json_results(bucket: str, prefix: str,
             parsed = AnnotateImageResponse.from_json(_json.dumps(resp))
         except Exception as exc:  # noqa: BLE001 — best-effort parse
             log.warning("vision: could not parse page %d JSON: %s", page_num, exc)
-            out.append(OcrResult(blocks=[], page_width=0.0, page_height=0.0))
+            out.append((page_num - 1, OcrResult(blocks=[], page_width=0.0, page_height=0.0)))
             continue
 
         full = getattr(parsed, "full_text_annotation", None)
         if full is None:
-            out.append(OcrResult(blocks=[], page_width=0.0, page_height=0.0))
+            out.append((page_num - 1, OcrResult(blocks=[], page_width=0.0, page_height=0.0)))
             continue
         page_idx = page_num - 1
         page_w, page_h = _page_dims(full, parsed, pdf_path, page_idx)
         blocks = _blocks_from_page(full, page_w, page_h, page_idx)
-        out.append(OcrResult(blocks=blocks, page_width=page_w, page_height=page_h))
+        out.append((page_idx, OcrResult(blocks=blocks, page_width=page_w, page_height=page_h)))
 
     return out
 
 
 def _page_dims(full, page_resp, pdf_path: str | None = None,
-                 page_idx: int | None = None) -> tuple[float, float]:
+                page_idx: int | None = None) -> tuple[float, float]:
     """Get the page width/height in image pixels.
 
     Tries, in order:
@@ -285,17 +322,20 @@ def _page_dims(full, page_resp, pdf_path: str | None = None,
       as the per-Word bboxes we use downstream, so they are preferred.
 
     If both are missing/unusable AND we have ``pdf_path`` + ``page_idx``,
-    fall back to the source PDF page dimensions read locally. The
-    engine always has the source PDF (it uploads a byte copy to GCS),
-    so the true page size is on disk and matches Vision's pixel space
-    well enough for the bbox math to remain valid (the embedder only
-    uses page_w/page_h to scale Word bboxes, and per-page Vision
-    responses carry the same coords regardless of where page_w comes
-    from).
+    fall back to rendering the source PDF page locally at
+    ``_PAGE_DIMS_FALLBACK_DPI`` (200 DPI) and returning those pixel
+    dimensions, NOT the raw PDF rect width/height. The embedder
+    (``ocr._embed_ocr_text``) computes
+    ``sx = page.rect.width / ocr_result.page_width``; ``page.rect.width``
+    is in PDF POINTS, so the denominator MUST be in the same pixel
+    space the per-Word bboxes live in (PNG pixels at the engine's
+    working DPI). Returning PDF points here was a silent unit
+    mismatch — kept working only because Vision's normalized_vertices
+    are dimensionless [0..1] and the bbox math collapsed to ~1.
 
-    If we have no usable source — return ``(0.0, 0.0)`` would silently
-    drop every Word and turn the job into a status=error, so we raise
-    a clear RuntimeError naming the page and source file.
+    If we have no usable source — returning ``(0.0, 0.0)`` would
+    silently drop every Word and turn the job into status=error, so
+    we raise a clear RuntimeError naming the page and source file.
     """
     # Preferred: Vision's top-level Page.
     pages = list(getattr(full, "pages", []))
@@ -308,14 +348,39 @@ def _page_dims(full, page_resp, pdf_path: str | None = None,
         v0 = bb[0].vertices[0]
         v2 = bb[0].vertices[2]
         return float(v2.x - v0.x), float(v2.y - v0.y)
-    # Last resort: derive from the source PDF we uploaded to GCS.
+    # Last resort: derive from the source PDF we uploaded to GCS, but
+    # return **pixel** dimensions consistent with the Vision-pixel
+    # space the other branches return, NOT raw PDF rect points.
+    #
+    # Why this matters
+    # ----------------
+    # ``ocrmypdf`` / ``_embed_ocr_text`` computes
+    # ``sx = page.rect.width / ocr_result.page_width`` to scale Word
+    # bboxes from PNG pixels to PDF points. ``page.rect.width`` is
+    # therefore in PDF POINTS, and the denominator (the value this
+    # function returns) must be in the **same** pixel space the Word
+    # bboxes live in — namely, PNG-pixels rendered at the engine's
+    # working DPI. The old implementation returned ``rect.width``
+    # and ``rect.height`` directly, which are in PDF points (~72/in),
+    # so the only thing keeping it working was that Vision's
+    # ``normalized_vertices`` are dimensionless [0..1] and the
+    # ratio collapsed to ~1 by coincidence (both numerator and
+    # denominator were the same page width).
+    #
+    # Fix: render the local page at the same DPI the rest of the
+    # pipeline uses for image bboxes (200 DPI — the same value as
+    # ``ocr._render_page_png``, ``ocr._generate_tsv``,
+    # ``minimax_engine._render_page_png_bytes``). Keep them all in
+    # sync if you change this constant — see the module constant
+    # ``_PAGE_DIMS_FALLBACK_DPI`` below.
     if pdf_path is not None and page_idx is not None and page_idx >= 0:
         try:
-            import fitz  # PyMuPDF — local page rect in PDF points
+            import fitz  # PyMuPDF — render at engine DPI for pixel dims
             with fitz.open(pdf_path) as doc:
                 if page_idx < len(doc):
-                    rect = doc[page_idx].rect
-                    return float(rect.width), float(rect.height)
+                    page = doc[page_idx]
+                    pix = page.get_pixmap(dpi=_PAGE_DIMS_FALLBACK_DPI)
+                    return float(pix.width), float(pix.height)
         except Exception as exc:  # noqa: BLE001 — best-effort local fallback
             log.warning(
                 "vision: local-PDF page-dim fallback failed for page %d "
@@ -331,6 +396,15 @@ def _page_dims(full, page_resp, pdf_path: str | None = None,
         f"nor bounding_boxes[], and the local PDF fallback was "
         f"unavailable or failed"
     )
+
+
+#: DPI to render the local PDF page at in :func:`_page_dims` last-resort
+#: fallback. The returned (pix.width, pix.height) are then in the SAME
+#: pixel space the rest of the pipeline (ocr._render_page_png,
+#: ocr._generate_tsv, minimax_engine._render_page_png_bytes) uses, so
+#: ``OcrBlock.bbox`` math and the ``sx = page.rect.width / page_w``
+#: scaling stay in sync. Keep this in lock-step with those callers.
+_PAGE_DIMS_FALLBACK_DPI: int = 200
 
 
 def _blocks_from_page(full, page_w: float, page_h: float, page_idx: int) -> list[OcrBlock]:

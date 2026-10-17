@@ -105,31 +105,41 @@ def _connect() -> sqlite3.Connection:
 
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS jobs (
-    id         INTEGER PRIMARY KEY,
-    path       TEXT,
-    nc_path    TEXT,
-    node_id    INTEGER,
-    engine     TEXT,
-    force      INTEGER,
-    status     TEXT,
-    created    REAL,
-    started    REAL,
-    finished   REAL,
-    error      TEXT,
-    reason     TEXT,
-    result     TEXT,
-    -- C6: retry counter and "do not claim before" timestamp. Present
-    -- on every freshly-created database; older databases gain them
-    -- via ``_migrate_add_retry_columns`` at ``init()`` time.
-    attempts   INTEGER DEFAULT 0,
-    next_run_at REAL   DEFAULT 0
+    id           INTEGER PRIMARY KEY,
+    path         TEXT,
+    nc_path      TEXT,
+    node_id      INTEGER,
+    engine       TEXT,
+    force        INTEGER,
+    status       TEXT,
+    created      REAL,
+    started      REAL,
+    finished     REAL,
+    error        TEXT,
+    reason       TEXT,
+    result       TEXT,
+    -- Retry tracking. C6 additive migration adds these to existing
+    -- production databases via ``_migrate_add_retry_columns`` at
+    -- ``init()`` time; on fresh databases the columns are part of
+    -- the schema below. ``DEFAULT 0`` is required (not ``NOT NULL``
+    -- with a default) so ``ALTER TABLE ADD COLUMN`` succeeds on
+    -- existing rows in SQLite.
+    --
+    -- B2 audit: ``attempts`` is bumped ONLY on the queued retry
+    -- row, never on the failed row that spawned the retry — that
+    -- is what stops ``stats()`` from double-counting one retry as
+    -- two.
+    attempts     INTEGER DEFAULT 0,
+    next_run_at  REAL    DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs(created);
 CREATE INDEX IF NOT EXISTS idx_jobs_status  ON jobs(status);
 -- NB: the index on jobs(next_run_at) is created by
 -- ``_migrate_add_retry_columns`` AFTER its ALTER TABLEs, never here:
 -- on a database that predates those columns this statement would fail
--- with "no such column: next_run_at" and abort the whole init.
+-- with "no such column: next_run_at" and abort the whole init. (PR #68
+-- was the fix that put the index behind the ALTERs; B2 audit confirms
+-- the index lives in the migration, not the schema script.)
 
 -- Per-file OCR state. Replaces the in-memory _ocr_index dict and the
 -- _ocrd_paths set, which grew with the number of files in the account.
@@ -182,13 +192,16 @@ def init() -> None:
     try:
         with _connect() as conn:
             conn.executescript(_SCHEMA_SQL)
-            # C6: additive migration for the retry-related columns.
+# C6: additive migration for the retry-related columns.
             # Idempotent: the function checks ``PRAGMA table_info``
             # before altering, so calling it on a fresh DB (where
             # the columns do not exist yet but the schema created
             # them) and on an upgraded production DB (where they
             # already exist) are both no-ops beyond the second
-            # ``SELECT`` from ``PRAGMA table_info``.
+            # ``SELECT`` from ``PRAGMA table_info``. The index on
+            # ``next_run_at`` is created INSIDE this migration AFTER
+            # the ALTERs (PR #68 fixed the ordering bug that put it
+            # in the schema script).
             _migrate_add_retry_columns(conn)
         _INITIALISED = True
         log.info("jobstore: schema ready at %s", db_path())
@@ -360,13 +373,43 @@ def _row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
 _MAX_ROWS = 20000
 
 
+def _coerce_col(name: str, value: Any) -> Any:
+    """Per-column defaulting for INSERT value lists.
+
+    Some columns (e.g. ``attempts NOT NULL DEFAULT 0``) reject an
+    explicit ``None`` and rely on the schema default only when the
+    column is omitted from the INSERT. The new ``attempts`` column
+    was added with that NOT NULL guarantee, so a job dict whose
+    caller pre-dates the retry track will hand us ``None`` and the
+    INSERT would raise. Substituting the SQL default up-front keeps
+    every existing call site working unchanged.
+    """
+    if name == "attempts" and value is None:
+        return 0
+    return value
+
+
 def _prune(conn: "sqlite3.Connection") -> None:
-    """Drop the oldest rows beyond ``_MAX_ROWS`` (best effort)."""
+    """Drop the oldest rows beyond ``_MAX_ROWS`` (best effort).
+
+    B4 fix: a scheduled retry (60s/300s backoff) sits at
+    ``status='queued'`` with ``next_run_at`` set in the future. The
+    previous ordering by ``created DESC`` ignored ``next_run_at`` and
+    could prune a row whose retry had not fired yet, leaving the queue
+    silently short. Only prune rows that are not waiting on a backoff
+    (``COALESCE(next_run_at, 0) <= now``); rows with a future
+    ``next_run_at`` are preserved regardless of how old they are.
+    """
+    import time as _time
+    now = _time.time()
     conn.execute(
         "DELETE FROM jobs WHERE id IN ("
-        " SELECT id FROM jobs ORDER BY created DESC, id DESC"
-        " LIMIT -1 OFFSET ?)",
-        (_MAX_ROWS,),
+        " SELECT id FROM jobs"
+        "  WHERE COALESCE(next_run_at, 0) <= ?"
+        "  ORDER BY created DESC, id DESC"
+        "  LIMIT -1 OFFSET ?"
+        ")",
+        (now, _MAX_ROWS),
     )
 
 
@@ -407,11 +450,11 @@ def record_enqueue(job: dict[str, Any]) -> int:
     if explicit_id is None:
         cols = [c for c in _COLUMNS if c != "id"]
         placeholders = ", ".join("?" for _ in cols)
-        values = [job.get(c) for c in cols]
+        values = [_coerce_col(c, job.get(c)) for c in cols]
     else:
         cols = list(_COLUMNS)
         placeholders = ", ".join("?" for _ in cols)
-        values = [job.get(c) for c in cols]
+        values = [_coerce_col(c, job.get(c)) for c in cols]
     try:
         with _connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
@@ -682,16 +725,25 @@ def _coerce_since(value: Any) -> float | None:
 
 
 def stats() -> dict[str, Any]:
-    """Return ``{status: count, ..., total: N}`` over the full table.
+    """Return ``{status: count, ..., total: N, retries_total: R, retries_queued: Q}``.
 
-    C6: also surface retry visibility — ``retries_total`` (jobs that
-    had ``attempts > 0``) and ``retries_queued`` (queued jobs that
-    are waiting for their backoff window). The existing ``total`` and
-    per-status counts are unchanged, so the NC app does not need to
-    be aware of retries to keep rendering. Never raises — returns
-    ``{"total": 0, ...}`` on error.
+    Counts every row in ``jobs`` once, grouped by ``status``. Adds:
+
+      * ``retries_total``: number of rows whose ``attempts > 0``
+        (i.e. they represent a retry attempt — B2 audit contract:
+        ``_maybe_schedule_retry`` bumps ``attempts`` ONLY on the
+        queued retry row, never on the failed row that spawned the
+        retry, so this count never double-counts one retry as two).
+      * ``retries_queued``: the subset of ``retries_total`` whose
+        ``status='queued'`` (i.e. currently waiting on a backoff
+        window — the work the operator is most likely to be
+        triaging when a transient outage has just ended).
+
+    Never raises — returns ``{"total": 0, "retries_total": 0,
+    "retries_queued": 0}`` on error.
     """
-    out: dict[str, Any] = {"total": 0}
+    out: dict[str, Any] = {"total": 0, "retries_total": 0,
+                           "retries_queued": 0}
     if not _ready():
         return out
     try:
@@ -712,17 +764,94 @@ def stats() -> dict[str, Any]:
                 " WHERE status = 'queued'"
                 " AND COALESCE(attempts, 0) > 0"
             ).fetchone()
-        for r in rows:
-            out[r["status"] or "unknown"] = r["n"]
-            out["total"] += r["n"]
-        out["retries_total"] = (r_retry_total["n"]
-                               if r_retry_total is not None else 0)
-        out["retries_queued"] = (r_retry_queued["n"]
-                                if r_retry_queued is not None else 0)
+            for r in rows:
+                out[r["status"] or "unknown"] = r["n"]
+                out["total"] += r["n"]
+            out["retries_total"] = (r_retry_total["n"]
+                                    if r_retry_total is not None else 0)
+            out["retries_queued"] = (r_retry_queued["n"]
+                                     if r_retry_queued is not None else 0)
         return out
     except Exception as exc:  # noqa: BLE001
         log.warning("jobstore: stats failed (%s)", exc)
         return out
+
+
+def in_flight_job_for_path(nc_path: str) -> dict[str, Any] | None:
+    """The currently-queued-or-running job for ``nc_path``, else ``None``.
+
+    B1 fix helper: ``_enqueue`` checks this before inserting a fresh
+    row so a force=True caller cannot spawn a second concurrent job
+    for a path that is already being OCR'd (the original "double
+    Vision billing" defect). The check is path-only and status-only;
+    it does not consult ``force`` or ``attempts``.
+
+    Never raises — returns ``None`` on error or no-row.
+    """
+    if not _ready() or not nc_path:
+        return None
+    try:
+        with _connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM jobs WHERE path = ?"
+                " AND status IN ('queued', 'running')"
+                " ORDER BY created DESC, id DESC LIMIT 1",
+                (nc_path,),
+            ).fetchone()
+        return _row_to_dict(row) if row is not None else None
+    except Exception as exc:  # noqa: BLE001
+        log.warning("jobstore: in_flight_job_for_path failed (%s)", exc)
+        return None
+
+
+def record_retry(parent: dict[str, Any], *, next_run_at: float) -> int | None:
+    """Schedule one retry attempt for the path that just failed.
+
+    B2 fix: bump ``attempts`` on the *retry* row (not the failed one)
+    so ``retries_total`` counts retry attempts once. The failed row
+    stays at ``status='error'`` with ``attempts=0``; the retry row
+    is enqueued at ``status='queued'`` with ``attempts = max(1,
+    parent.get('attempts') or 0) + 1`` and ``next_run_at`` set so a
+    future ``_prune`` cannot evict it before the backoff fires.
+
+    Returns the new job id, or ``None`` on error. The thread is then
+    responsible for waking a worker via the existing ``_work_available``
+    signal when ``next_run_at`` falls due.
+    """
+    if not _ready():
+        return None
+    import time as _time
+
+    parent_id = parent.get("id")
+    parent_path = parent.get("path") or parent.get("nc_path")
+    parent_engine = parent.get("engine")
+    try:
+        retries_so_far = int(parent.get("attempts") or 0)
+    except (TypeError, ValueError):
+        retries_so_far = 0
+    new_retry = {
+        # id left unset → SQLite assigns
+        "path": parent_path,
+        "nc_path": parent_path,
+        "node_id": parent.get("node_id"),
+        "engine": parent_engine,
+        "force": 0,                   # a retry honours the original guard
+        "status": "queued",
+        "created": _time.time(),
+        "started": None,
+        "finished": None,
+        "result": None,
+        "error": None,
+        "reason": None,
+        "attempts": max(1, retries_so_far) + 1,
+        "next_run_at": next_run_at,
+    }
+    try:
+        return record_enqueue(new_retry)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("jobstore: record_retry failed for parent id=%s (%s)",
+                    parent_id, exc)
+        return None
 
 
 # --- Test-only helpers -----------------------------------------------------

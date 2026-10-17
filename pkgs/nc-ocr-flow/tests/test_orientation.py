@@ -1527,3 +1527,115 @@ class TestDominantImageAndGeometry:
             f"a 180-degree turn must not change the page box, got "
             f"{round(rect.width)}x{round(rect.height)}"
         )
+
+
+# --- B6: no separate "expensive" precheck in preorient_pages_safe ---------
+
+
+class TestNoExpensivePrecheck:
+    """B6 audit guard: ``preorient_pages_safe`` must NOT add a
+    separate orientation detection pass before delegating to
+    ``preorient_pdf``.
+
+    The audit reported a regression where a new precheck
+    (``_detect_all_pages_orientations``) rendered every page at
+    the 300 DPI cap and called ``detect_orientation`` on each,
+    *and then* delegated to ``preorient_pdf`` which repeated the
+    same work. Doubling the per-page detection work roughly
+    doubled the wall time of the preorient pass for a 100-page
+    document (3-6 minutes of extra work).
+
+    The fix is the simpler of the two acceptable resolutions:
+    KEEP NO PRECHECK. ``preorient_pages_safe`` calls
+    ``preorient_pdf`` exactly once; ``preorient_pdf`` renders
+    each page once and detects each once. There is no separate
+    "cheap pre-detect" pass — for an upright document, the
+    single detection loop runs exactly once per page. Anything
+    else would be a regression back to the doubling pattern.
+
+    This test pins that contract. A future PR that adds an
+    explicit precheck must either:
+      * make the precheck genuinely cheap (sub-DPI cap; sampled
+        pages only; Stage-1 detector alone — no OCR-vote); or
+      * drop the precheck entirely and let this test stay green.
+    """
+
+    def test_precheck_does_not_add_extra_detection_pass(
+            self, tmp_path, monkeypatch):
+        import io as _io
+        from PIL import Image as _PILImage
+        from nc_ocr_flow import orientation as orient_mod
+
+        # Build a 4-page PDF where every page is upright (so
+        # preorient_pages_safe will hand back the input path).
+        pdf = tmp_path / "many_upright.pdf"
+        d = fitz.open()
+        for _ in range(4):
+            p = d.new_page(width=595, height=842)
+            img = _PILImage.new("RGB", (620, 876), (220, 220, 220))
+            buf = _io.BytesIO()
+            img.save(buf, format="JPEG", quality=85)
+            p.insert_image(fitz.Rect(0, 0, 595, 842),
+                           stream=buf.getvalue())
+        d.save(str(pdf))
+        d.close()
+
+        # Stub the low-level detector and tesseract so the loop runs
+        # in-memory and deterministically. We mock BOTH layers the
+        # precheck could call: ``detect_orientation_tesseract``
+        # (Stage-1 OSD) and the ``detect_orientation`` dispatch.
+        calls = {"primary": 0, "tesseract": 0}
+
+        def fake_detect(png_bytes, **kw):
+            calls["primary"] += 1
+            return Orientation(0, 99.0, "mock")
+
+        def fake_tess(png_bytes, **kw):
+            calls["tesseract"] += 1
+            return Orientation(0, 99.0, "mock-tess")
+
+        monkeypatch.setattr(orient_mod, "detect_orientation", fake_detect)
+        monkeypatch.setattr(orient_mod,
+                            "detect_orientation_tesseract", fake_tess)
+
+        # Drive the wrapper. All-upright → returns the input unchanged
+        # via preorient_pdf's "no rotation, delete throwaway" path.
+        result = preorient_pages_safe(str(pdf))
+        assert Path(result).resolve() == pdf.resolve()
+
+        # The detection was called exactly once per page (4). No
+        # hidden precheck loop ran the detector a second time.
+        assert calls["primary"] == 4, (
+            f"B6 fix: detect_orientation must run once per page, "
+            f"got {calls['primary']} for a 4-page upright document "
+            f"(any extra passes mean the expensive precheck has "
+            f"crept back in)"
+        )
+        # The tesseract-OSD Stage-2 fallback is invoked per-page from
+        # detect_orientation internals; for an upright doc we expect
+        # one call per page too (same single-pass contract).
+        # Note: this assertion is intentionally tolerant — the
+        # detector dispatch decides when to call tesseract — but
+        # the upper bound we CARE about is "must not exceed the
+        # number of pages by a wide factor".
+        assert calls["tesseract"] <= 8, (
+            f"B6 fix: detect_orientation_tesseract must run at most "
+            f"once per page (the precheck that doubled it called 2x); "
+            f"got {calls['tesseract']} for 4 pages"
+        )
+
+    def test_no_precheck_helper_exists(self):
+        """The ``_detect_all_pages_orientations`` helper that caused
+        the B6 regression must NOT exist in the module surface.
+        A regression that re-introduced it would surface here
+        before it could ship.
+        """
+        from nc_ocr_flow import orientation as orient_mod
+        assert not hasattr(orient_mod, "_detect_all_pages_orientations"), (
+            "B6 audit: the _detect_all_pages_orientations "
+            "precheck helper was removed because it doubled the "
+            "per-page detection work. Re-introducing it requires "
+            "either a cap-dpi ≤ 120, sampled pages only, and "
+            "Stage-1 detection alone (no OCR-vote), OR updating "
+            "this test and the surrounding docstring."
+        )

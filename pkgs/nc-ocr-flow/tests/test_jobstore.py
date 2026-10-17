@@ -730,5 +730,140 @@ def main() -> int:
     return 0 if failed == 0 else 1
 
 
+# ---------------------------------------------------------------------------
+# B2 audit: retries_total / retries_queued counting
+# ---------------------------------------------------------------------------
+
+
+def test_stats_count_retries_without_double_counting(tmp_path: Path) -> None:
+    """B2 audit: ``stats()['retries_total']`` must count each retry
+    attempt exactly once, even when ``_maybe_schedule_retry`` queues
+    a follow-on retry after a failed run.
+
+    The old contract mirrored ``attempts`` onto the failed row, so
+    one retry attempt surfaced in *two* rows: the original error row
+    and the queued retry row. ``stats()`` then counted them twice.
+    The fix: bump ``attempts`` only on the retry row (the failed row
+    stays at ``attempts=0``). Counting then is the literal number of
+    queued-or-finished rows with ``attempts>0``.
+    """
+    mod = _isolated_jobstore(tmp_path, "stats_retries")
+    # Failed job, attempts=0 (the canonical "single attempt that
+    # failed" shape).
+    mod.record_update(_make_job(1, status="error"))
+    # A retry row that was queued and is now waiting on backoff.
+    mod.record_enqueue({
+        "id": 2, "path": "/admin/files/Documents/doc-0001.pdf",
+        "nc_path": "/admin/files/Documents/doc-0001.pdf", "node_id": 1001,
+        "engine": "google", "force": False, "status": "queued",
+        "created": time.time(), "started": None, "finished": None,
+        "result": None, "error": None, "reason": None,
+        "attempts": 1, "next_run_at": time.time() + 60,
+    })
+    # A second retry row that already finished as `done`.
+    mod.record_enqueue({
+        "id": 3, "path": "/admin/files/Documents/doc-0001.pdf",
+        "nc_path": "/admin/files/Documents/doc-0001.pdf", "node_id": 1001,
+        "engine": "google", "force": False, "status": "done",
+        "created": time.time() - 100, "started": time.time() - 99,
+        "finished": time.time() - 80, "result": None, "error": None,
+        "reason": None, "attempts": 1, "next_run_at": None,
+    })
+
+    s = mod.stats()
+    assert s.get("retries_total") == 2, (
+        f"two rows with attempts>0 must count to 2, got {s.get('retries_total')}"
+    )
+    assert s.get("retries_queued") == 1, (
+        f"only one row is queued+attempts>0, got {s.get('retries_queued')}"
+    )
+    # The error row MUST stay at attempts=0 — that's the contract
+    # that keeps the double-count from sneaking back in.
+    err_row = mod.get(1)
+    assert err_row is not None and err_row["status"] == "error"
+    assert err_row.get("attempts", 0) == 0, (
+        "B2 contract: the failed row must NOT carry attempts, only "
+        "the queued retry row bumps the counter"
+    )
+
+
+def test_in_flight_job_for_path_excludes_terminal_rows(tmp_path: Path) -> None:
+    """B1 helper: ``in_flight_job_for_path`` must return ``None`` for
+    a path whose last job has already finished (done / error /
+    skipped). Without this guard the post-fix gate would reject a
+    legitimate second enqueue for a file that already OCR'd once.
+    """
+    mod = _isolated_jobstore(tmp_path, "inflight_helper")
+    mod.record_update(_make_job(1, status="done"))
+    # Done rows are NOT in-flight, even when their attempts>0
+    # (the success-after-retry shape).
+    mod.record_enqueue({
+        "id": 2, "path": "/admin/files/Documents/doc-0001.pdf",
+        "nc_path": "/admin/files/Documents/doc-0001.pdf", "node_id": 1001,
+        "engine": "google", "force": False, "status": "done",
+        "created": time.time(), "started": time.time(),
+        "finished": time.time(), "result": None, "error": None,
+        "reason": None, "attempts": 1, "next_run_at": None,
+    })
+    assert mod.in_flight_job_for_path(
+        "/admin/files/Documents/doc-0001.pdf") is None, (
+        "a done row (even one with attempts>0) is terminal — no "
+        "in-flight job to dedupe against"
+    )
+
+    mod.record_update(_make_job(3, status="queued"))
+    assert mod.in_flight_job_for_path(
+        "/admin/files/Documents/doc-0003.pdf") is not None
+    running = mod.in_flight_job_for_path(
+        "/admin/files/Documents/doc-0003.pdf")
+    assert running is not None and running["status"] == "queued"
+
+
+# ---------------------------------------------------------------------------
+# B4 audit: _prune preserves retry rows waiting on backoff
+# ---------------------------------------------------------------------------
+
+
+def test_prune_skips_rows_waiting_on_backoff(tmp_path: Path,
+                                             monkeypatch) -> None:
+    """B4 audit: ``_prune`` must NOT delete a row whose ``next_run_at``
+    is in the future. The previous ORDER BY created DESC pruning
+    could evict a scheduled retry (60s/300s backoff) before it
+    fired, silently shrinking the queue.
+
+    We seed the table past the cap and verify the future-retries row
+    survives the sweep.
+    """
+    mod = _isolated_jobstore(tmp_path, "prune_pending")
+    monkeypatch.setattr(mod, "_MAX_ROWS", 5)
+    now = time.time()
+    # 5 plain rows that ARE eligible for pruning (old, no backoff).
+    for i in range(1, 6):
+        mod.record_enqueue(_make_job(1000 + i,
+                                     created=now - (10 + i)))
+    # One future-scheduled-retry row that must survive.
+    future_retry_path = "/admin/files/Documents/future-retry.pdf"
+    mod.record_enqueue({
+        "id": 1100, "path": future_retry_path,
+        "nc_path": future_retry_path, "node_id": 7,
+        "engine": "google", "force": False, "status": "queued",
+        "created": now - 1000,         # ancient row
+        "started": None, "finished": None,
+        "result": None, "error": None, "reason": None,
+        "attempts": 1, "next_run_at": now + 60,   # future backoff
+    })
+    # Trigger a prune by enqueuing one more row past the cap.
+    mod.record_enqueue(_make_job(2000, created=now))
+
+    # The future-retry row is still present — pruning skipped it
+    # because COALESCE(next_run_at, 0) > now.
+    rows = mod.query(limit=100)
+    paths = {r["path"] for r in rows}
+    assert future_retry_path in paths, (
+        "B4 fix: a row waiting on backoff (next_run_at > now) must "
+        "survive _prune regardless of how old it is"
+    )
+
+
 if __name__ == "__main__":
     sys.exit(main())

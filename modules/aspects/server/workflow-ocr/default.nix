@@ -41,6 +41,18 @@
       #      via /stats (see nc_ocr_flow.webhook_server).
       competingOcrApps = [ "workflow_ocr" ];
 
+      # ── OCS access for the webhook-registration oneshot ───────────────────
+      # Listeners are registered through the documented OCS API as a dedicated
+      # service account whose group holds only
+      # OCA\WebhookListeners\Settings\Admin. ``ocsBaseUrl`` MUST be an address
+      # Nextcloud's ``allowed_admin_ranges`` permits — here the Tailscale
+      # ranges — because the admin-action IP check runs AFTER authorisation and
+      # rejects loopback and the LAN address with AdminIpNotAllowed
+      # (SecurityMiddleware -> RemoteAddress::allowsAdminActions). See
+      # register-webhook.php for the full rationale.
+      ocsBaseUrl = "http://poweredge.oryx-galaxy.ts.net";
+      ocsServiceUser = "ocr-svc";
+
       ncRoot = config.services.nextcloud.finalPackage;
       ncPhp = config.services.phpfpm.pools.nextcloud.phpPackage;
 
@@ -383,10 +395,12 @@
             adminPass = config.sops.secrets."nextcloud/admin-password".path;
             resendKey = config.sops.secrets."resend/api-key".path;
             webhookSecret = config.sops.secrets."nextcloud/ocr-webhook-secret".path;
+            ocsAppPassword = config.sops.secrets."nextcloud/ocr-svc-app-password".path;
           in [
             "adminpass:${adminPass}"
             "mail_smtppassword:${resendKey}"
             "nc-ocr-webhook-secret:${webhookSecret}"
+            "ocr-svc-app-password:${ocsAppPassword}"
           ];
         };
 
@@ -397,10 +411,19 @@
         path = [ ncPhp ];
 
         script = ''
-          ${ncPhp}/bin/php ${registerWebhookPhp} ${ncRoot} "$CREDENTIALS_DIRECTORY/nc-ocr-webhook-secret"
+          # Register the file-event webhooks through the documented OCS API as
+          # the dedicated service account (register-webhook.php explains why the
+          # base URL has to be the Tailscale name).
+          if ! ${ncPhp}/bin/php ${registerWebhookPhp} \
+                 ${ocsBaseUrl} ${ocsServiceUser} \
+                 "$CREDENTIALS_DIRECTORY/ocr-svc-app-password" \
+                 "$CREDENTIALS_DIRECTORY/nc-ocr-webhook-secret"; then
+            echo "nc-ocr-register-webhook: webhook registration FAILED (see /tmp/ocr-webhook-register.log)" >&2
+          fi
           # Guard #3: make the single-owner invariant true of the running
           # instance, not just of the nix config (disables a competing OCR app
-          # that is still enabled and removes its leftover Flow rule).
+          # that is still enabled; reports, but does not delete, its leftover
+          # Flow rule).
           ${ncPhp}/bin/php ${enforceSingleOwnerPhp} ${ncRoot} ${lib.concatStringsSep " " competingOcrApps}
         '';
       };

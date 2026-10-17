@@ -143,15 +143,32 @@ CREATE INDEX IF NOT EXISTS idx_jobs_status  ON jobs(status);
 
 -- Per-file OCR state. Replaces the in-memory _ocr_index dict and the
 -- _ocrd_paths set, which grew with the number of files in the account.
+--
+-- ``foreign_rewrites`` is the G2-fingerprint-guard counter: bumped each
+-- time the live (size, etag) on WebDAV differs from the stored one at
+-- the moment we are about to SKIP the file as already-processed-by-us
+-- (i.e. another OCR writer on the same Nextcloud replaced our output
+-- after we stamped it). Reset to 0 the next time the live fingerprint
+-- matches what we left. After ``FOREIGN_REWRITE_LIMIT`` consecutive
+-- foreign rewrites the guard stops auto-re-OCRing and records
+-- ``reason='foreign_rewrite'`` instead — see ``webhook_server`` for
+-- the bound and the operator workflow. Added via the idempotent
+-- ``_migrate_add_foreign_rewrites_column`` so a fresh DB picks the
+-- column up from the schema and an upgraded DB picks it up from the
+-- migration. The PR #68 index-ordering lesson applies here too: any
+-- future index that depends on this column must be created inside
+-- ``_migrate_add_foreign_rewrites_column`` AFTER the ALTER, never
+-- in this schema script.
 CREATE TABLE IF NOT EXISTS files (
-    path     TEXT PRIMARY KEY,
-    status   TEXT,
-    engine   TEXT,
-    reason   TEXT,
-    node_id  INTEGER,
-    finished REAL,
-    size     INTEGER,
-    etag     TEXT
+    path            TEXT PRIMARY KEY,
+    status          TEXT,
+    engine          TEXT,
+    reason          TEXT,
+    node_id         INTEGER,
+    finished        REAL,
+    size            INTEGER,
+    etag            TEXT,
+    foreign_rewrites INTEGER DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_files_status ON files(status);
 CREATE INDEX IF NOT EXISTS idx_files_node   ON files(node_id);
@@ -203,6 +220,9 @@ def init() -> None:
             # the ALTERs (PR #68 fixed the ordering bug that put it
             # in the schema script).
             _migrate_add_retry_columns(conn)
+            # G2: add the foreign_rewrites counter (idempotent; see
+            # ``_migrate_add_foreign_rewrites_column``).
+            _migrate_add_foreign_rewrites_column(conn)
         _INITIALISED = True
         log.info("jobstore: schema ready at %s", db_path())
     except Exception as exc:  # noqa: BLE001 — spec: never raise
@@ -286,6 +306,47 @@ def _migrate_add_retry_columns(conn: "sqlite3.Connection") -> None:
         )
     except Exception as exc:  # noqa: BLE001
         log.warning("jobstore: CREATE INDEX idx_jobs_next_run failed (%s)", exc)
+
+
+def _migrate_add_foreign_rewrites_column(conn: "sqlite3.Connection") -> None:
+    """G2: idempotent additive migration for the foreign-rewrites counter.
+
+    The fingerprint-verified skip guard in ``webhook_server`` needs a
+    per-file counter for "consecutive foreign rewrites since our last
+    successful stamp" so a competing OCR writer on the same Nextcloud
+    cannot drive an infinite re-OCR / re-Vision-bill loop. The counter
+    lives on the ``files`` row (``foreign_rewrites INTEGER DEFAULT 0``).
+
+    Follows the same idempotent ``PRAGMA table_info`` + ``ALTER TABLE
+    ADD COLUMN ... DEFAULT 0`` pattern as C6's
+    :func:`_migrate_add_retry_columns` so a fresh DB (where the column
+    is part of the schema script) and an upgraded DB (where the column
+    has to be added to existing rows) are both safe. ``DEFAULT 0`` is
+    required — SQLite refuses ``NOT NULL`` defaults on ``ALTER ADD
+    COLUMN``, and we want every existing row to be readable as "0
+    rewrites so far" without a separate write.
+
+    No index is created on this column today (the guard reads by path
+    PK, never by counter value); if a future query needs to list rows
+    whose counter is at or above :data:`FOREIGN_REWRITE_LIMIT`, the
+    CREATE INDEX MUST live HERE after the ALTER — never in the schema
+    script (PR #68 lesson, same shape as ``idx_jobs_next_run``).
+    """
+    try:
+        cols = {row[1] for row in
+                conn.execute("PRAGMA table_info(files)").fetchall()}
+    except Exception:  # noqa: BLE001
+        return
+    if "foreign_rewrites" not in cols:
+        try:
+            conn.execute(
+                "ALTER TABLE files ADD COLUMN"
+                " foreign_rewrites INTEGER DEFAULT 0",
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "jobstore: ADD COLUMN foreign_rewrites failed (%s)", exc,
+            )
 
 
 def _row_from_dict(job: dict[str, Any]) -> tuple:
@@ -860,19 +921,43 @@ def record_retry(parent: dict[str, Any], *, next_run_at: float) -> int | None:
 
 
 def file_put(record: dict[str, Any]) -> None:
-    """Upsert one file's OCR state. Never raises."""
+    """Upsert one file's OCR state. Never raises.
+
+    ``foreign_rewrites`` (G2) is optional: callers that don't pass it
+    keep the existing column value (a bare ``UPDATE`` row would clobber
+    the guard counter, which is the opposite of what the guard wants).
+    The default is to leave the column alone, which makes ``file_put``
+    safe to call from the worker after a successful stamp — the stamp
+    path effectively resets the counter via an
+    :func:`file_reset_foreign_rewrites` call from the guard, not via
+    ``file_put``.
+    """
     if not _ready():
         return
+    path = record.get("path")
+    fr = record.get("foreign_rewrites")
     try:
         with _connect() as conn:
+            if fr is None:
+                # Keep the existing column value: read it first so the
+                # INSERT OR REPLACE below doesn't blank the guard
+                # counter that lives on the row.
+                existing = conn.execute(
+                    "SELECT foreign_rewrites FROM files WHERE path = ?",
+                    (path,),
+                ).fetchone()
+                fr_val = existing["foreign_rewrites"] if existing else 0
+            else:
+                fr_val = int(fr)
             conn.execute(
                 "INSERT OR REPLACE INTO files"
-                " (path, status, engine, reason, node_id, finished, size, etag)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (record.get("path"), record.get("status"),
-                 record.get("engine"), record.get("reason"),
-                 record.get("node_id"), record.get("finished"),
-                 record.get("size"), record.get("etag")),
+                " (path, status, engine, reason, node_id, finished,"
+                "  size, etag, foreign_rewrites)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (path, record.get("status"), record.get("engine"),
+                 record.get("reason"), record.get("node_id"),
+                 record.get("finished"), record.get("size"),
+                 record.get("etag"), fr_val),
             )
     except Exception as exc:  # noqa: BLE001
         log.warning("jobstore: file_put failed for %s (%s)",
@@ -891,6 +976,99 @@ def file_get(path: str) -> dict[str, Any] | None:
     except Exception as exc:  # noqa: BLE001
         log.warning("jobstore: file_get failed (%s)", exc)
         return None
+
+
+def file_bump_foreign_rewrites(path: str) -> int | None:
+    """G2: increment the foreign-rewrites counter for ``path`` by 1.
+
+    Creates the row at ``foreign_rewrites=1`` if it doesn't exist yet
+    (the skip guard can fire on a path we've never recorded before —
+    the stamp survives an out-of-band WebDAV PUT, the row never
+    reaches ``done``/``skipped`` in this build, and the guard still
+    needs a place to count). Returns the new counter value, or
+    ``None`` on DB fault.
+
+    Never raises.
+    """
+    if not _ready() or not path:
+        return None
+    try:
+        with _connect() as conn:
+            row = conn.execute(
+                "SELECT foreign_rewrites FROM files WHERE path = ?",
+                (path,),
+            ).fetchone()
+            if row is None:
+                conn.execute(
+                    "INSERT INTO files (path, status, foreign_rewrites)"
+                    " VALUES (?, ?, 1)",
+                    (path, "foreign_rewrite"),
+                )
+                return 1
+            cur = int(row["foreign_rewrites"] or 0)
+            new = cur + 1
+            conn.execute(
+                "UPDATE files SET foreign_rewrites = ? WHERE path = ?",
+                (new, path),
+            )
+            return new
+    except Exception as exc:  # noqa: BLE001
+        log.warning("jobstore: file_bump_foreign_rewrites(%s) failed (%s)",
+                    path, exc)
+        return None
+
+
+def file_reset_foreign_rewrites(path: str) -> None:
+    """G2: clear the foreign-rewrites counter for ``path``.
+
+    Called from the fingerprint guard when the live (size, etag)
+    matches the stored one — the file is back to our output, so the
+    guard has nothing to count. Also called from ``_index_record``
+    after a fresh stamp so a successful OCR run that we haven't yet
+    verified against a fresh PROPFIND still resets the counter for
+    the path (the next guard run will compare the freshly-recorded
+    fingerprint against whatever WebDAV has by then).
+
+    No-op when the row doesn't exist (a brand-new path whose first
+    skip matches has no counter to reset). Never raises.
+    """
+    if not _ready() or not path:
+        return
+    try:
+        with _connect() as conn:
+            conn.execute(
+                "UPDATE files SET foreign_rewrites = 0 WHERE path = ?",
+                (path,),
+            )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("jobstore: file_reset_foreign_rewrites(%s) failed (%s)",
+                    path, exc)
+
+
+def file_foreign_rewrites_total() -> int:
+    """G3: sum of ``foreign_rewrites`` across every file row.
+
+    Surfaced in :func:`/stats` so the Nextcloud panel can show how
+    many files have ever been touched by a foreign rewrite. The
+    counter is bumped and reset on each path independently, so this
+    number is cumulative — not a snapshot of currently-tainted
+    files. A path whose guard tripped three times and then matched
+    on the fourth attempt still contributes its peak count (3) here
+    until the row is reset via ``file_reset_foreign_rewrites`` on a
+    later match. Returns 0 on any DB fault.
+    """
+    if not _ready():
+        return 0
+    try:
+        with _connect() as conn:
+            row = conn.execute(
+                "SELECT COALESCE(SUM(foreign_rewrites), 0) AS total"
+                " FROM files"
+            ).fetchone()
+            return int(row["total"] or 0) if row else 0
+    except Exception as exc:  # noqa: BLE001
+        log.warning("jobstore: file_foreign_rewrites_total failed (%s)", exc)
+        return 0
 
 
 def file_done_paths() -> set[str]:
@@ -1044,8 +1222,9 @@ def file_import(mapping: dict[str, Any]) -> int:
         with _connect() as conn:
             conn.executemany(
                 "INSERT OR IGNORE INTO files"
-                " (path, status, engine, reason, node_id, finished, size, etag)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                " (path, status, engine, reason, node_id, finished,"
+                "  size, etag, foreign_rewrites)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)",
                 [(p, m.get("status"), m.get("engine"), m.get("reason"),
                   m.get("node_id"), m.get("finished"), m.get("size"),
                   m.get("etag")) for p, m in mapping.items()],

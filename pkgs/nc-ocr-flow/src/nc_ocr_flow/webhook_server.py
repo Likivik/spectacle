@@ -87,11 +87,33 @@ SKIP_REASON_TEXT_DENSITY_GUARD = "text_density_guard_low"
 SKIP_REASON_LEGACY             = "born_digital_or_stamped_good"
 
 #: Image-branch collision: a PDF already exists at the target path,
-#: so converting the image to that PDF would silently destroy the
-#: user's existing PDF. Surfaced as a distinct skip reason so the
-#: operator can resolve the conflict manually (rename, delete, or
+#: so an image-to-PDF conversion would silently overwrite the user's
+#: existing PDF. The image branch refuses and records this reason so
+#: an operator can resolve the conflict manually (rename, delete, or
 #: reroute the source image).
 SKIP_REASON_PDF_EXISTS         = "pdf_already_exists"
+
+#: G2: fingerprint-verified skip guard. After
+#: :data:`FOREIGN_REWRITE_LIMIT` consecutive foreign rewrites of the
+#: same NC path (i.e. another OCR writer on the same Nextcloud keeps
+#: replacing our output), the guard stops auto-re-OCRing and records
+#: this reason instead of the usual stamp skip. The file is left for
+#: the operator to triage (typically by removing the competing writer
+#: from the Nextcloud app store, or by /rescan with ``force=true``).
+REASON_FOREIGN_REWRITE = "foreign_rewrite"
+
+#: G2: the bound on consecutive foreign rewrites before the guard
+#: gives up auto-re-OCRing the same path. Three is enough that a
+#: transient storage-layer race (e.g. Nextcloud's async writer
+#: overwriting us twice in quick succession) does not trip the
+#: guard, but small enough that a permanently-installed competing
+#: writer (the production failure mode: the third-party
+#: ``workflow_ocr`` Nextcloud app rewriting us ~2 minutes after each
+#: upload) is caught before it bills Google three more times in a
+#: row. The trade-off is operator cost (manual triage) vs API cost
+#: (unbounded Vision re-billing); 3 wins for the production
+#: observed rate of one rewrite per ~2 min × per-file.
+FOREIGN_REWRITE_LIMIT = 3
 
 #: Current durable stamp version. Bumped from ``0.3`` to ``0.4``
 #: because the previous parser bug silently returned zero text on a
@@ -1061,8 +1083,111 @@ def _already_stamped_by_us(path: Path) -> bool:
         return False
 
 
+def _check_fingerprint_guard(
+    nc_path: str,
+) -> tuple[bool, str | None]:
+    """G1+G2: fingerprint-verified skip guard.
+
+    Returns ``(skip, reason)``:
+
+      * ``(True,  None)`` — stored fingerprint unknown (NULL row) or
+        PROPFIND failed. Fall back to the stamp-only skip; the caller
+        records whatever reason the rest of :func:`_needs_ocr_decision`
+        returns.
+      * ``(True,  SKIP_REASON_STAMPED_BY_US)`` — live file matches
+        what we left. Skip as today; reset the counter for good
+        measure (it was probably already at 0; the explicit reset is
+        the documented contract for the tests).
+      * ``(True,  REASON_FOREIGN_REWRITE)`` — live file differs and the
+        per-path ``foreign_rewrites`` counter is at or above
+        :data:`FOREIGN_REWRITE_LIMIT`. Stop auto-re-OCR for this path
+        until the operator clears the row.
+      * ``(False, None)`` — live file differs but the counter is still
+        below the limit. The caller should OCR the file (the bump will
+        be visible in :func:`/stats` as ``foreign_rewrites``).
+
+    PROPFIND cost is paid only on the stamp-skip branch, which is
+    rare in steady state. The single round-trip is the documented
+    cost of the guard.
+
+    Counter discipline
+    ------------------
+    The counter is bounded: once it has crossed
+    :data:`FOREIGN_REWRITE_LIMIT` the helper stops bumping and
+    returns ``(True, :data:`REASON_FOREIGN_REWRITE`)`` silently (no
+    WARNING, no ERROR). The ERROR that explains the loop is logged
+    exactly once, on the call that crosses the limit — subsequent
+    mismatches at the cap are silent so the operator's logs do not
+    drown in repeated copies. The counter resets to 0 the next time
+    a fingerprint check returns ``match`` (the file is back to our
+    output), at which point :data:`/stats` ``foreign_rewrites`` is
+    no longer inflated by the stuck path.
+    """
+    stored = jobstore.file_get(nc_path) or {}
+    stored_size = stored.get("size")
+    stored_etag = stored.get("etag")
+
+    if stored_size is None and stored_etag is None:
+        log.debug(
+            "fingerprint guard: %s has no stored fingerprint;"
+            " skipping the comparison (counter stays at whatever it was)",
+            nc_path,
+        )
+        return True, None  # fall back to stamp-only skip
+
+    try:
+        live_size, live_etag = _propfind_size_etag(nc_path)
+    except Exception as exc:  # noqa: BLE001 — PROPFIND never breaks the skip
+        log.warning(
+            "fingerprint guard: PROPFIND %s failed (%s);"
+            " falling back to stamp-only skip",
+            nc_path, exc,
+        )
+        return True, None  # fall back to stamp-only skip
+
+    if (live_size == stored_size and live_etag == stored_etag
+            and live_size is not None):
+        # Match — file still matches what we left. Reset counter.
+        jobstore.file_reset_foreign_rewrites(nc_path)
+        return True, SKIP_REASON_STAMPED_BY_US
+
+    # Mismatch — file was rewritten out from under us.
+    # Read the current counter BEFORE bumping so we can (a) detect the
+    # first crossing of FOREIGN_REWRITE_LIMIT for the one-time ERROR
+    # log and (b) cap the counter at the limit so /stats stays
+    # bounded (the bump helper is unconditional; the cap lives here
+    # in the guard so the jobstore has no opinion on application
+    # policy).
+    existing = jobstore.file_get(nc_path) or {}
+    prev_count = int(existing.get("foreign_rewrites") or 0)
+    if prev_count >= FOREIGN_REWRITE_LIMIT:
+        # Already at the cap from a prior crossing. Stay there;
+        # don't grow, don't repeat the ERROR log.
+        return True, REASON_FOREIGN_REWRITE
+    new_count = jobstore.file_bump_foreign_rewrites(nc_path) or 0
+    log.warning(
+        "fingerprint guard: %s was rewritten by a foreign writer."
+        " stored=(size=%r, etag=%r) live=(size=%r, etag=%r)."
+        " foreign_rewrites counter is now %d.",
+        nc_path, stored_size, stored_etag, live_size, live_etag,
+        new_count,
+    )
+    if new_count >= FOREIGN_REWRITE_LIMIT:
+        log.error(
+            "fingerprint guard: %s reached %d consecutive foreign"
+            " rewrites (limit=%d); stopping auto-re-OCR. The OCR"
+            " output cannot survive because another writer keeps"
+            " replacing it. Operator: remove the competing writer"
+            " from the Nextcloud app store, or POST /rescan with"
+            " force=true to clear the row.",
+            nc_path, new_count, FOREIGN_REWRITE_LIMIT,
+        )
+        return True, REASON_FOREIGN_REWRITE
+    return False, None
+
+
 def _needs_ocr_decision(
-    path: Path, force: bool
+    path: Path, force: bool, nc_path: str | None = None,
 ) -> tuple[bool, str | None]:
     """Decide whether ``path`` actually needs OCR, and report WHY if not.
 
@@ -1071,7 +1196,8 @@ def _needs_ocr_decision(
       * ``(False, reason)`` — skip; ``reason`` is one of
         :data:`SKIP_REASON_STAMPED_BY_US` /
         :data:`SKIP_REASON_BORN_DIGITAL` /
-        :data:`SKIP_REASON_TEXT_DENSITY_GUARD`.
+        :data:`SKIP_REASON_TEXT_DENSITY_GUARD` /
+        :data:`REASON_FOREIGN_REWRITE`.
 
     A skip is taken when ``force`` is False AND one of:
       - The file already carries a Google-engine stamp from us
@@ -1079,6 +1205,37 @@ def _needs_ocr_decision(
       - pdf-inspector (or the heuristic fallback) classifies it as
         text_based with no encoding issues
         → :data:`SKIP_REASON_BORN_DIGITAL`.
+
+    G1: fingerprint-verified stamp branch
+    -------------------------------------
+    When ``nc_path`` is provided (the production caller
+    :func:`_process_file` always passes it) and the stamp matches,
+    the guard looks up the stored ``(size, etag)`` for ``nc_path`` and
+    compares it to a fresh WebDAV ``Depth: 0`` PROPFIND. Three outcomes:
+
+      * **match** — skip as today; reset the per-path
+        ``foreign_rewrites`` counter (it was 0 anyway, but the
+        explicit reset is the documented contract for the test suite).
+      * **mismatch** — another writer replaced our output. Log a
+        WARNING naming the path and BOTH fingerprints, bump the
+        counter, and return ``(True, None)`` so the worker re-OCRs.
+        After :data:`FOREIGN_REWRITE_LIMIT` consecutive mismatches we
+        instead return ``(False, REASON_FOREIGN_REWRITE)`` and log an
+        ERROR once — no more auto-re-OCR for this path until the
+        operator removes the competing writer or runs ``/rescan`` with
+        ``force=true``.
+      * **unknown** (stored size/etag is ``NULL`` — the row ended in
+        ``error``/``gone``, or the path has never been recorded) —
+        skip as today, log at debug so the guard's existence is
+        visible without spamming WARNING on every freshly-error'd
+        row.
+
+    PROPFIND cost is paid only on the skip path; the rest of the
+    pipeline (force=True, needs_ocr=True from the classifier,
+    etc.) never touches WebDAV for this check. The PROPFIND is the
+    single new round-trip per skip; it is not batched because the
+    stamp branch is rare in steady state and a single PROPFIND takes
+    ~50–200ms over a tailnet.
 
     The Google-stamp check is fast (PyMuPDF metadata read) and avoids
     loading pdf-inspector on files we already OCR'd with our best
@@ -1093,6 +1250,19 @@ def _needs_ocr_decision(
         return True, None
 
     if _already_stamped_by_us(path):
+        if nc_path:
+            skip, reason = _check_fingerprint_guard(nc_path)
+            if skip:
+                # Match / unknown / hit-the-limit — the helper already
+                # decided what to record. ``reason`` is None for the
+                # unknown branch (the caller falls back to
+                # SKIP_REASON_STAMPED_BY_US), or one of
+                # SKIP_REASON_STAMPED_BY_US / REASON_FOREIGN_REWRITE.
+                if reason is None:
+                    return False, SKIP_REASON_STAMPED_BY_US
+                return False, reason
+            # Mismatch, still under the limit — re-OCR.
+            return True, None
         return False, SKIP_REASON_STAMPED_BY_US
 
     try:
@@ -1370,7 +1540,17 @@ def _process_file(nc_path: str, node_id: int, engine: str | None = None,
             # ``SKIP_REASON_*`` — recording the actual branch lets the
             # operator tell "stamped by us" apart from "classifier
             # thinks born-digital" without re-running the classifier.
-            needs_ocr, skip_reason = _needs_ocr_decision(local_file, force)
+            #
+            # G1: pass ``nc_path`` so the stamp branch can run the
+            # fingerprint-verified skip guard (PROPFIND vs stored
+            # ``(size, etag)``). When the live file differs from what
+            # we last left, the guard bumps ``foreign_rewrites`` and
+            # forces a re-OCR (or, after ``FOREIGN_REWRITE_LIMIT``
+            # consecutive foreign rewrites, records
+            # ``reason='foreign_rewrite'`` and skips without OCR'ing).
+            needs_ocr, skip_reason = _needs_ocr_decision(
+                local_file, force, nc_path=nc_path,
+            )
             if not needs_ocr:
                 log.info(
                     "skip %s: %s (force=%s)",
@@ -1953,6 +2133,16 @@ for _worker_idx in range(_WORKERS):
     threading.Thread(target=_ocr_worker, daemon=True,
                      name=f"ocr-worker-{_worker_idx}").start()
 log.info("started %d OCR worker(s) (NC_OCR_WORKERS)", _WORKERS)
+
+# G3: one-line announcement so an operator can tell at a glance whether
+# this build has the fingerprint-verified skip guard compiled in. The
+# line is unconditional (every build has it today) but keeps the
+# contract discoverable in logs without grepping for the constant.
+log.info(
+    "fingerprint-verified skip guard enabled (FOREIGN_REWRITE_LIMIT=%d);"
+    " PROPFIND is paid only on the stamp-skip path",
+    FOREIGN_REWRITE_LIMIT,
+)
 
 
 # --- Vision spend + rate quota ---------------------------------------------
@@ -2771,6 +2961,14 @@ async def stats(
     errors_attempts = int(js.get("error", 0))
     retries_total = int(js.get("retries_total") or 0)
     retries_queued = int(js.get("retries_queued") or 0)
+    # G3: cumulative count of foreign rewrites detected by the
+    # fingerprint-verified skip guard (sum of ``files.foreign_rewrites``
+    # across every row). The counter is bumped on every mismatch and
+    # reset to 0 on the next match — so this number reflects how many
+    # foreign rewrites have ever been observed, NOT the number of
+    # currently-tainted paths. Unknown to the NC app's StatsService →
+    # additive change, no schema coupling.
+    foreign_rewrites = jobstore.file_foreign_rewrites_total()
 
     return {
         "service": "nc-ocr-flow",
@@ -2792,6 +2990,10 @@ async def stats(
         # itself behind ``if (!empty(...))``.
         "retries_total": retries_total,
         "retries_queued": retries_queued,
+        # G3: fingerprint-verified skip guard total. See
+        # ``_check_fingerprint_guard`` for the per-path counter and
+        # ``FOREIGN_REWRITE_LIMIT`` for the bound.
+        "foreign_rewrites": foreign_rewrites,
         # Spend and rate-limit visibility for the panel (see _vision_summary).
         "vision": _vision_summary(),
         "usage": jobstore.usage_summary(7),

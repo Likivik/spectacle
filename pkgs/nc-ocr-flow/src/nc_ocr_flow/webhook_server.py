@@ -591,18 +591,34 @@ def _webdav_exists(nc_path: str, timeout: int = 10) -> bool:
     treated as "unknown, do not mark" so the reconciler is safe to
     re-run: the row is still in the index, just not flipped to
     ``gone`` this pass.
+
+    B3 audit: Nextcloud returns ``410 Gone`` for a file that has
+    been permanently removed out-of-band (vs ``404 Not Found`` for
+    a missing path). Both signals mean "the path is gone for good
+    from our perspective"; we treat them the same so the
+    reconciler can mark the row ``gone``. ``HEAD`` on a folder in
+    Nextcloud sometimes returns ``405 Method Not Allowed`` even
+    when the folder exists, so any non-4xx-and-not-410 status
+    keeps the row.
+
+    Note: we call ``requests.request("HEAD", ...)`` rather than
+    ``requests.head(...)`` so the standard test pattern of
+    monkeypatching ``ws.requests.request`` actually intercepts the
+    call (``requests.head`` captures ``request`` at import time and
+    bypasses attribute lookup on the parent module).
     """
     url = _webdav_url(nc_path)
     try:
-        r = requests.head(
-            url, auth=(NC_USER, NC_PASSWORD), timeout=timeout,
+        r = requests.request(
+            "HEAD", url, auth=(NC_USER, NC_PASSWORD), timeout=timeout,
         )
     except (requests.RequestException, TimeoutError, OSError) as exc:
         log.debug("HEAD %s failed: %s", url, exc)
         return True  # unknown — keep the row
-    # 404 = gone. Any 2xx/3xx = present. 5xx and 401/403 = we
-    # cannot tell, keep the row (transient or auth issue).
-    return r.status_code != 404
+    # 404 Not Found AND 410 Gone both mean "permanently removed".
+    # 2xx/3xx = present. 5xx, 401/403, 405 = we cannot tell, keep
+    # the row (transient, auth, or folder-edge quirk).
+    return r.status_code not in (404, 410)
 
 
 # --- Stale-row reconciler (C5) ---------------------------------------------
@@ -1755,6 +1771,11 @@ def _run_job(job: dict) -> None:
         # upsert-by-id and never raises into the caller — the OCR
         # pipeline must not break because the history DB is down.
         jobstore.record_update(job)
+        # C6 retry scheduling is handled in the ``except`` blocks above
+        # (HTTPError / transport failures), which know whether the
+        # failure is transient and how to encode it. A blanket
+        # ``_maybe_schedule_retry(job)`` here would double-schedule
+        # for the same failure path and re-trigger the B2 audit.
         node_id = item["node_id"]
         force = item.get("force", False)
         # ``force`` re-OCRs skip the recently_processed guard so the
@@ -2146,6 +2167,62 @@ except Exception as exc:  # noqa: BLE001
 jobstore.init()
 
 
+# B1 + B5 fix: per-path enqueue lock + bounded cache.
+#
+# Why a separate per-path lock instead of relying solely on the SQLite
+# UNIQUE check: two concurrent enqueues (e.g. a /rescan racing a
+# webhook, or the NC app's "Re-OCR anyway" double-clicked) can both
+# pass the in-flight check before either has inserted its row, and
+# SQLite has no UNIQUE on (path, status) — so without this lock they
+# would each insert a queued job, producing two concurrent OCR runs
+# and a double Vision billing. The lock serialises the gate-and-insert
+# pair per path; everything else stays concurrent.
+#
+# B5 bound: a module-level dict keyed by nc_path would grow without
+# bound across a long-running service (one entry per distinct path
+# ever seen). ``_GC_ENQUEUE_LOCKS`` sweeps on insert, evicting entries
+# unused for more than ``_ENQUEUE_LOCK_TTL_S`` seconds, so memory
+# usage stays proportional to the active working set.
+import threading as _th
+_ENQUEUE_LOCKS: "dict[str, _th.Lock]" = {}
+_ENQUEUE_LOCKS_LAST_USED: "dict[str, float]" = {}
+_ENQUEUE_LOCK_TTL_S = 3600.0  # 1 hour idle ⇒ evicted on next insert
+_ENQUEUE_LOCKS_LOCK = _th.Lock()
+
+
+def _enqueue_path_lock(nc_path: str) -> _th.Lock:
+    """Return the per-path enqueue lock, evicting idle entries first.
+
+    B5 leak fix: never returns a stale lock from ``_ENQUEUE_LOCKS``
+    without sweeping the table first. ``_ENQUEUE_LOCKS`` is keyed by
+    ``nc_path``; on a long-running service a tail of one-shot paths
+    (PNGs uploaded, OCR'd, then deleted from the box) would otherwise
+    accumulate forever. We bound memory by:
+      - deleting any entry whose ``_ENQUEUE_LOCKS_LAST_USED`` is
+        older than ``_ENQUEUE_LOCK_TTL_S`` (default 1h, generous
+        slack for repeated enqueues on a hot folder);
+      - keeping the lock for the path we are about to hand back.
+
+    Thread-safe under simultaneous webhook / rescan / scan-all callers.
+    """
+    now = time.time()
+    with _ENQUEUE_LOCKS_LOCK:
+        # Sweep first (cheap; even at 100k entries this is one linear
+        # walk). The lock here is the only mutator on the caches.
+        cutoff = now - _ENQUEUE_LOCK_TTL_S
+        stale = [k for k, t in _ENQUEUE_LOCKS_LAST_USED.items()
+                 if t < cutoff]
+        for k in stale:
+            _ENQUEUE_LOCKS.pop(k, None)
+            _ENQUEUE_LOCKS_LAST_USED.pop(k, None)
+        lock = _ENQUEUE_LOCKS.get(nc_path)
+        if lock is None:
+            lock = _th.Lock()
+            _ENQUEUE_LOCKS[nc_path] = lock
+        _ENQUEUE_LOCKS_LAST_USED[nc_path] = now
+        return lock
+
+
 def _enqueue(nc_path: str, node_id: int, engine: str | None = None,
              force: bool = False) -> dict:
     """Create a job record and enqueue for processing.
@@ -2155,6 +2232,17 @@ def _enqueue(nc_path: str, node_id: int, engine: str | None = None,
     the recently-processed guard. The NC app's "Re-OCR anyway" action
     sends this so the user can deliberately re-OCR a file we previously
     classified or stamped.
+
+    B1 fix: an in-flight job for this path is **never** bypassed by
+    ``force``. Two concurrent callers (a /rescan racing the webhook,
+    or "Re-OCR anyway" double-clicked) used to produce two jobs rows
+    for the same path and bill Vision twice. Now we hold the per-path
+    enqueue lock and re-check ``in_flight_job_for_path`` once inside
+    it; if a job is already queued or running for this path we return
+    that existing job with ``status='already_running'`` and the
+    caller's ``force`` bit is ignored at the in-flight gate (it still
+    applies to the born-digital / stamp / TTL guards inside
+    ``_process_file``).
 
     The ``id`` is **assigned by SQLite**, not by an in-process counter
     — that means the row's primary key survives a service restart and
@@ -2196,6 +2284,25 @@ def _enqueue(nc_path: str, node_id: int, engine: str | None = None,
     wraps both writes in a single ``BEGIN IMMEDIATE`` transaction
     to fully close the race — described in the report.
     """
+    # Serialise the in-flight-check + insert pair per path. Without
+    # this lock two concurrent callers can both pass
+    # ``in_flight_job_for_path == None`` and each spawn a job.
+    path_lock = _enqueue_path_lock(nc_path)
+    with path_lock:
+        # Inside the lock: in-flight is final. force must NOT bypass
+        # this — see B1 audit. The existing force semantics still
+        # apply to the born-digital/stamp/TTL guards downstream in
+        # _process_file.
+        existing = jobstore.in_flight_job_for_path(nc_path)
+        if existing is not None and existing.get("status") in (
+                "queued", "running"):
+            existing = dict(existing)
+            existing["status"] = "already_running"
+            # Don't claim a fresh engine — the existing job is the
+            # source of truth on what is actually running.
+            existing["engine"] = existing.get("engine") or engine
+            existing["force"] = bool(existing.get("force") or force)
+            return existing
     job = {
         # id intentionally unset — let SQLite's rowid alias assign.
         "path": nc_path,
@@ -2210,6 +2317,8 @@ def _enqueue(nc_path: str, node_id: int, engine: str | None = None,
         "result": None,
         "error": None,
         "reason": None,
+        "attempts": 0,
+        "next_run_at": None,
     }
     # Step 1: take the per-path lock. Two concurrent _enqueue calls
     # for the same path serialise here, so the read-modify-write
@@ -2655,9 +2764,13 @@ async def stats(
 
     # Mirror the jobs-table error count so /stats and /jobs/stats
     # agree on attempts. ``jobstore.stats()`` is keyed by status
-    # already (see :func:`jobstore.stats`).
+    # already (see :func:`jobstore.stats`); B2 audit also pulls the
+    # retry counters (``retries_total`` / ``retries_queued``) from
+    # the same call so the panel sees them on the wire.
     js = jobstore.stats()
     errors_attempts = int(js.get("error", 0))
+    retries_total = int(js.get("retries_total") or 0)
+    retries_queued = int(js.get("retries_queued") or 0)
 
     return {
         "service": "nc-ocr-flow",
@@ -2672,6 +2785,13 @@ async def stats(
         "errors_attempts": errors_attempts,
         "by_engine": by_engine,
         "skip_reasons": skip_reasons,
+        # B2 fix: spread the retry counters so the NC app's
+        # StatsService sees them. Before this they were computed
+        # but only kept on the jobstore stats() side; the wire
+        # returned ``{}`` for these keys and the panel row hid
+        # itself behind ``if (!empty(...))``.
+        "retries_total": retries_total,
+        "retries_queued": retries_queued,
         # Spend and rate-limit visibility for the panel (see _vision_summary).
         "vision": _vision_summary(),
         "usage": jobstore.usage_summary(7),

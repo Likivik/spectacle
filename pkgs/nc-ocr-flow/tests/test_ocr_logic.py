@@ -223,21 +223,21 @@ def _make_reocr_fixture() -> Path:
     return out_path
 
 
-def test_reocr_replaces_text_even_when_engine_returns_zero_blocks():
-    """Regression: re-OCR with engine that returns 0 blocks must still
-    remove the pre-existing text layer.
+def test_reocr_zero_blocks_preserves_pre_existing_text():
+    """Per-page invariant (A1): a re-OCR whose engine returns 0 blocks
+    for a page must NOT strip that page's pre-existing text layer.
 
-    Before the fix, ``_embed_ocr_text`` was the sole place where the
-    redact-and-apply step ran; it was only invoked when the engine
-    returned non-empty ``blocks`` for the page. Engines occasionally
-    return an empty ``OcrResult`` for a page (Vision timeout,
-    structured-output parse failure, genuinely blank page); the
-    previous code skipped the embed entirely for such pages and
-    ``saveIncr`` happily wrote a new revision containing the legacy
-    text layer. The practical consequence was that re-OCR'ing a PDF
-    that already carried a (possibly broken) text layer silently
-    achieved nothing on every page the engine skipped — even though
-    the user got a brand-new file revision with our metadata stamp.
+    Before the per-page fix, the orchestrator called
+    ``_strip_existing_text(doc)`` once up front, which scrubbed
+    **every** page. An engine that returned no blocks for a page
+    (Vision timeout, parse failure, genuinely blank page) would
+    therefore silently destroy the prior (good) text on that page
+    even though the user got a brand-new file revision stamped with
+    our metadata. The new invariant is per-page: pages without
+    blocks keep whatever text layer they already had. Pages
+    **with** blocks continue to have their old text stripped and
+    the new one embedded (see ``test_reocr_replaces_with_engine_blocks``
+    and ``test_reocr_per_page_skips_strip_on_no_blocks_page``).
     """
     import fitz
     from nc_ocr_flow.engines import google_engine as _ge2
@@ -247,9 +247,11 @@ def test_reocr_replaces_text_even_when_engine_returns_zero_blocks():
     out = Path(tempfile.mkstemp(suffix=".pdf")[1])
 
     # Mock engine: zero blocks (the failure mode the user hit).
+    # The engine contract is ``list[(source_page_idx, OcrResult)]``;
+    # page 0 of a 1-page source is ``(0, OcrResult(...))``.
     _orig = _ge2._ocr_pdf
     _ge2._ocr_pdf = lambda pdf_path: [
-        OcrResult(blocks=[], page_width=595, page_height=842),
+        (0, OcrResult(blocks=[], page_width=595, page_height=842)),
     ]
     try:
         result = process_pdf(src, out, engine="google")
@@ -259,13 +261,139 @@ def test_reocr_replaces_text_even_when_engine_returns_zero_blocks():
     # The orchestrator must have run cleanly.
     assert result.engine_used == "google"
 
-    # And the output must NOT contain the pre-existing text.
+    # And the pre-existing text must STILL be on the page (NOT
+    # stripped). Under the old "strip-then-embed" behaviour this
+    # test used to assert the OPPOSITE — and was the test pinning
+    # the silent-data-loss bug; the A1 fix inverts it deliberately.
     post = fitz.open(str(out))
-    text = post[0].get_text()
-    post.close()
-    assert "TESSERACT GARBAGE" not in text, (
-        f"re-OCR failed to replace the pre-existing text layer: {text!r}"
+    try:
+        text = post[0].get_text()
+    finally:
+        post.close()
+    assert "TESSERACT GARBAGE" in text, (
+        "A1: page 1 had no engine blocks; its pre-existing text "
+        "layer must be PRESERVED, not silently stripped. Got: "
+        f"{text!r}"
     )
+
+
+def test_reocr_per_page_skips_strip_on_no_blocks_page():
+    """A1 spec test: multi-page PDF whose page 2 already has a text
+    layer; engine returns blocks only for page 1. After ``process_pdf``
+    page 1 carries the new OCR output and page 2 still extracts its
+    original text verbatim (the old whole-doc strip wiped it).
+
+    This is the silent-data-loss mode the audit caught: a 3-page scan
+    is re-OCR'd, Vision returns blocks for page 0 only (page 1 timed
+    out, page 2 hit a parse error) → page 1 and page 2 used to lose
+    their previously-good Tesseract layer even though we did nothing
+    to those pages. Webhook/billing records show "re-OCR ran" so
+    nothing on the user side signals the loss.
+    """
+    import fitz
+    from nc_ocr_flow.engines import google_engine as _ge2
+    from nc_ocr_flow.ocr_models import OcrBlock, OcrResult
+
+    # Build a 2-page PDF; each page carries its OWN distinct
+    # pre-existing text layer (render_mode=3 invisible, exactly the
+    # shape a Tesseract/ocrmypdf pass produces).
+    doc = fitz.open()
+    p0 = doc.new_page(width=595, height=842)
+    p0.insert_text((50, 50),
+                   "PAGE ZERO PRE-EXISTING TEXT",
+                   fontsize=12, fontname="helv", render_mode=3)
+    p1 = doc.new_page(width=595, height=842)
+    p1.insert_text((50, 50),
+                   "PAGE ONE ORIGINAL TEXT KEEPER",
+                   fontsize=12, fontname="helv", render_mode=3)
+
+    src = Path(tempfile.mkstemp(suffix=".pdf")[1])
+    doc.save(str(src))
+    doc.close()
+
+    out = Path(tempfile.mkstemp(suffix=".pdf")[1])
+
+    # Engine returns blocks only for page 0 (page 1 is a "blank /
+    # engine-failed" page). Engine contract is
+    # ``list[(source_page_idx, OcrResult)]``: each tuple pairs the
+    # real source page index with the engine output for it.
+    new_block = OcrBlock(
+        bbox=(50, 50, 545, 200),
+        text="FRESH ENGINE OUTPUT FOR PAGE ZERO",
+        confidence=0.95,
+        label="google-block",
+    )
+    _orig = _ge2._ocr_pdf
+    _ge2._ocr_pdf = lambda pdf_path: [
+        (0, OcrResult(blocks=[new_block], page_width=595, page_height=842)),  # page 0
+        (1, OcrResult(blocks=[], page_width=595, page_height=842)),         # page 1
+    ]
+    try:
+        result = process_pdf(src, out, engine="google")
+    finally:
+        _ge2._ocr_pdf = _orig
+
+    assert result.engine_used == "google"
+
+    post = fitz.open(str(out))
+    try:
+        p0_text = post[0].get_text()
+        p1_text = post[1].get_text()
+    finally:
+        post.close()
+
+    # Page 0: engine returned blocks → old text GONE, new text IN.
+    assert "PAGE ZERO PRE-EXISTING" not in p0_text, (
+        f"A1 fix ineffective: page 0 should have its old text "
+        f"stripped and replaced, got {p0_text!r}"
+    )
+    assert "FRESH ENGINE OUTPUT FOR PAGE ZERO" in p0_text, (
+        f"A1 fix ineffective: new block was not embedded on page 0, "
+        f"got {p0_text!r}"
+    )
+
+    # Page 1: engine returned no blocks → old text MUST be preserved
+    # (NOT silently stripped). This is the regression assertion that
+    # inverts under the fix: under the old whole-doc strip, this
+    # text was lost.
+    assert "PAGE ONE ORIGINAL TEXT KEEPER" in p1_text, (
+        f"A1 silent-data-loss: page 1 had no engine blocks, so its "
+        f"pre-existing text layer must be preserved verbatim, got "
+        f"{p1_text!r}"
+    )
+
+
+def test_strip_existing_text_per_page_only_touches_target():
+    """``_strip_existing_text(doc, page_idx=k)`` must redact only page
+    k, leaving sibling pages' text layers untouched.
+
+    Pins the per-page branch of the helper directly (as opposed to
+    via the orchestrator) so a future refactor that re-merges the
+    loops over ``doc`` is caught by this test rather than regressing
+    silently through ``process_pdf``.
+    """
+    import fitz
+
+    doc = fitz.open()
+    p0 = doc.new_page(width=595, height=842)
+    p0.insert_text((50, 50), "PAGE ZERO TEXT", fontsize=12, render_mode=3)
+    p1 = doc.new_page(width=595, height=842)
+    p1.insert_text((50, 50), "PAGE ONE TEXT", fontsize=12, render_mode=3)
+    p2 = doc.new_page(width=595, height=842)
+    p2.insert_text((50, 50), "PAGE TWO TEXT", fontsize=12, render_mode=3)
+
+    _strip_existing_text(doc, page_idx=1)
+
+    try:
+        t0 = doc[0].get_text()
+        t1 = doc[1].get_text()
+        t2 = doc[2].get_text()
+    finally:
+        doc.close()
+
+    assert "PAGE ZERO" in t0, f"page 0 should be untouched: {t0!r}"
+    assert t1.strip() == "", f"page 1 must be stripped: {t1!r}"
+    assert "PAGE TWO" in t2, f"page 2 should be untouched: {t2!r}"
 
 
 def test_reocr_replaces_with_engine_blocks():
@@ -288,7 +416,7 @@ def test_reocr_replaces_with_engine_blocks():
 
     _orig = _ge2._ocr_pdf
     _ge2._ocr_pdf = lambda pdf_path: [
-        OcrResult(blocks=[block], page_width=595, page_height=842),
+        (0, OcrResult(blocks=[block], page_width=595, page_height=842)),
     ]
     try:
         result = process_pdf(src, out, engine="google")

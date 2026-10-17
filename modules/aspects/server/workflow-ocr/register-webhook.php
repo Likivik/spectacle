@@ -47,9 +47,24 @@ use OCP\IDBConnection;
 /** @var IDBConnection $db */
 $db = \OCP\Server::get(IDBConnection::class);
 
+// Registered by writing the row directly rather than through the
+// webhook_listeners app's own OCS API: that API is ExApp-scoped (it authorises
+// on an `ex-app-id` header set by the app_api layer,
+// apps/webhook_listeners/lib/Controller/WebhooksController.php), which a plain
+// PHP bootstrap script has no way to present. Everything else here is
+// idempotent and re-run on every activation.
 $webhookUri = 'http://127.0.0.1:8095/webhook';
 $userId = 'admin';
-$appId = 'workflow_ocr';
+// The owning app id should belong to an app that stays installed. This was
+// 'workflow_ocr' — the third-party OCR app that has now been removed — which
+// left these listeners owned by an app that no longer exists. Nextcloud does
+// NOT clean them up automatically in that case (verified against 34.0.4:
+// WebhookListenerMapper::deleteByAppId is only called by the OCS DELETE
+// endpoint and by app_api's ExApp uninstall; AppManager::disableApp and
+// Installer::removeApp never touch webhook_listeners), so the rows would have
+// lingered, owned by a ghost app. 'ocrflow' is our own app and is here to stay.
+// This script re-homes existing rows (see the update branch below).
+$appId = 'ocrflow';
 $headers = json_encode(['X-Webhook-Secret' => $webhookSecret]);
 $eventFilter = json_encode(['event.node.path' => '/^\/.*\/files\//']);
 
@@ -65,7 +80,7 @@ $listeners = [
 foreach ($listeners as $listener) {
     // Look up an existing listener for this uri+event+user (idempotent)
     $qb = $db->getQueryBuilder();
-    $qb->select('id', 'headers')
+    $qb->select('id', 'headers', 'app_id')
         ->from('webhook_listeners')
         ->where($qb->expr()->eq('uri', $qb->createNamedParameter($webhookUri)))
         ->andWhere($qb->expr()->eq('event', $qb->createNamedParameter($listener['event'])))
@@ -83,16 +98,23 @@ foreach ($listeners as $listener) {
         $id = (int) $row['id'];
         $stored = json_decode((string) $row['headers'], true);
         $want = json_decode($headers, true);
+        $storedAppId = (string) ($row['app_id'] ?? '');
 
-        if ($stored !== $want) {
+        // Refresh the headers on a rotated secret, and re-home the row when it
+        // was registered under an app id that may be removed (see $appId above).
+        if ($stored !== $want || $storedAppId !== $appId) {
             $qb = $db->getQueryBuilder();
             $qb->update('webhook_listeners')
                 ->set('headers', $qb->createNamedParameter($headers))
+                ->set('app_id', $qb->createNamedParameter($appId))
                 ->where($qb->expr()->eq('id', $qb->createNamedParameter($id)));
             $qb->executeStatement();
             file_put_contents(
                 $logFile,
-                "Refreshed stale headers for {$listener['event']} (id=$id) — secret rotated\n",
+                "Refreshed listener for {$listener['event']} (id=$id)"
+                . ($stored !== $want ? " — secret rotated" : '')
+                . ($storedAppId !== $appId ? " — app_id $storedAppId -> $appId" : '')
+                . "\n",
                 FILE_APPEND
             );
         } else {

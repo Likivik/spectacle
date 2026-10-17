@@ -4,10 +4,14 @@
       den.aspects.server.core
       den.aspects.server.sops
       den.aspects.server.nextcloud
-      # nc-ocr disabled — superseded by workflow_ocr app (R0Wi-DEV) +
-      # ocrmypdf in systemPackages. Module kept on disk for history;
-      # can be deleted after workflow-ocr is verified.
-      # den.aspects.server.nc-ocr
+      # Single OCR owner: den.aspects.server.workflow-ocr runs nc-ocr-flow
+      # (Google Vision) via webhooks, plus our own `ocrflow` Nextcloud app.
+      # The third-party `workflow_ocr` app (R0Wi-DEV) that used to sit next to
+      # it was removed 2026-10-17 — it was a second OCR writer on the same
+      # postCreate/postWrite events and overwrote this service's text layer on
+      # every file it saw. The aspect now asserts the two are never configured
+      # together. (The old `den.aspects.server.nc-ocr` module no longer exists;
+      # this comment used to claim otherwise.)
       den.aspects.server.workflow-ocr
       den.aspects.server.immich
       # immich-nc-bridge disabled — requires Extism WASM rewrite + real npm deps hash.

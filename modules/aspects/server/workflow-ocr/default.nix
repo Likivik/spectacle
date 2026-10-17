@@ -5,17 +5,44 @@
     nixos = { config, lib, pkgs, ... }:
 
     let
-      workflowOcr = pkgs.fetchNextcloudApp {
-        appName = "workflow_ocr";
-        appVersion = "1.34.0";
-        license = "agpl3Plus";
-        url = "https://github.com/R0Wi-DEV/workflow_ocr/releases/download/v1.34.0/workflow_ocr.tar.gz";
-        sha512 = "sha512-sD1KqC7Fp1sRx7td5QFXJNHDknk2ueKd7CsCcGEp473O+oJhBOxXhzG/3MEhxX/qT2tBo5Z3h4QQJXdhSLJA1w==";
-      };
+      # ── Single-owner invariant ────────────────────────────────────────────
+      # Exactly ONE OCR pipeline may own PDFs in this Nextcloud.
+      #
+      # A second writer that OCRs on the same postCreate/postWrite events does
+      # not "add" anything: it overwrites the first one's text layer a couple
+      # of minutes later, silently, and the XMP stamp survives the rewrite — so
+      # the victim's own skip logic still records the file as
+      # ``stamped_good_by_us`` and its results are lost while its API spend is
+      # already paid. That is not hypothetical: the third-party ``workflow_ocr``
+      # app (R0Wi-DEV) was installed here alongside this service and did exactly
+      # that on every file it saw (measured 2026-10-17: our 7,671,434-byte
+      # Google layer replaced by a 6,354,148-byte OCRmyPDF one that extracts
+      # 0 Cyrillic / 4,069 orphan combining marks).
+      #
+      # Guards, in order of defence:
+      #   1. The ``throw`` guard below — fails EVALUATION (nix eval, nix build,
+      #      nixos-rebuild, the CI eval job) if a known competing OCR app is
+      #      configured again. Deliberately a throw and not a NixOS
+      #      ``assertions`` entry, which only fails once the system is really
+      #      built. Curated list: extend ``competingOcrApps`` when another OCR
+      #      app is found.
+      #   2. ``appstoreEnable = lib.mkForce false`` further down — the app store
+      #      is the only way a rival could appear at runtime (the throw can only
+      #      see what nix configures).
+      #   3. ``enforce-single-owner.php``, run from the nc-ocr-register-webhook
+      #      oneshot: disables a competing app that is still enabled and deletes
+      #      its leftover Flow rule. Covers an app enabled by hand, and the
+      #      transition itself — nixpkgs never disables an app dropped from
+      #      ``extraApps`` (nextcloud.nix only ever runs ``app:enable``), and
+      #      Nextcloud's Updater only disables apps whose files vanished when it
+      #      actually runs an upgrade, so neither can be relied on here.
+      #   4. Runtime, in the service itself: it re-checks the file fingerprint
+      #      it wrote before trusting its stamp and reports foreign rewrites
+      #      via /stats (see nc_ocr_flow.webhook_server).
+      competingOcrApps = [ "workflow_ocr" ];
 
       ncRoot = config.services.nextcloud.finalPackage;
       ncPhp = config.services.phpfpm.pools.nextcloud.phpPackage;
-      setupFlowPhp = ./setup-flow.php;
 
       # nc-ocr-flow source — Python deps installed via uv venv
       ncOcrFlowSrc = ../../../../pkgs/nc-ocr-flow;
@@ -91,12 +118,50 @@
 
       # PHP script to register webhook listeners via NC internal API (idempotent)
       registerWebhookPhp = ./register-webhook.php;
+      # PHP script enforcing the single-OCR-owner invariant (guard #3 above)
+      enforceSingleOwnerPhp = ./enforce-single-owner.php;
     in {
+      # ── Guard #1: single-owner block (eval-time) ──────────────────────────
+      # Deliberately a ``throw`` and NOT a NixOS ``assertions`` entry: assertions
+      # are folded into the baseSystem derivation by ``lib.asserts.checkAssertWarn``
+      # (nixpkgs nixos/modules/system/activation/top-level.nix), so a false
+      # assertion does NOT fail ``nix eval`` or ``nix build --dry-run`` — it only
+      # fails once the system is really built. Verified 2026-10-17: with a
+      # competing app configured, the toplevel still evaluated to the same
+      # drvPath and the dry-run happily listed 36 derivations. Too late and too
+      # quiet for a "never run two OCR writers" invariant.
+      #
+      # It is attached to an option VALUE rather than computed in the module's
+      # ``let``: referencing ``config`` at the top level of a module body is
+      # infinite recursion, because the module argument depends on this module's
+      # own definitions (that is what an earlier version of this guard did).
+      # Inside an option value it is forced only once all definitions have been
+      # collected — the same reason the ``config.sops.secrets`` references below
+      # are safe.
       environment.systemPackages = [
         pkgs.ocrmypdf
         pkgs.tesseract5
         pkgs.poppler-utils
-      ];
+      ] ++ lib.optionals
+        (lib.any (app: config.services.nextcloud.extraApps ? ${app}) competingOcrApps)
+        (throw ''
+          Two OCR pipelines are configured for the same Nextcloud.
+
+          den.aspects.server.workflow-ocr runs nc-ocr-flow (Google Vision) as the single
+          OCR owner, but these competing OCR apps are also configured:
+            ${lib.concatStringsSep ", " (lib.filter (app: config.services.nextcloud.extraApps ? ${app}) competingOcrApps)}
+
+          A second OCR writer reacts to the same postCreate/postWrite events and overwrites
+          the first one's text layer minutes later, while leaving its XMP stamp in place.
+          The other pipeline therefore keeps recording those files as already-processed and
+          its results are silently lost, with its API spend already paid.
+
+          Fix it one of two ways:
+            * drop the competing app from services.nextcloud.extraApps, or
+            * stop including den.aspects.server.workflow-ocr and let the other pipeline
+              own PDFs.
+          Do not run both.
+        '');
 
       # Tesseract language data
       environment.etc."tessdata".source = "${pkgs.tesseract5}/share/tessdata";
@@ -135,26 +200,26 @@
           sha256 = "sha256-2FsxhQda/KGoMVf3PqwuUrWY1y6dR90ZzEovNgXiPj8=";
         };
 
-      systemd.services.nextcloud-cron.path = lib.mkAfter [
-        pkgs.ocrmypdf
-        pkgs.tesseract5
-      ];
-
-      systemd.services.nextcloud-setup.path = lib.mkAfter [
-        pkgs.ocrmypdf
-        pkgs.tesseract5
-      ];
+      # NOTE: ``nextcloud-cron.path`` / ``nextcloud-setup.path`` used to get
+      # ocrmypdf + tesseract injected here. That existed only for the
+      # third-party ``workflow_ocr`` app, which ran OCRmyPDF from the Nextcloud
+      # cron context; this service carries its own PATH on its own unit, so the
+      # injections went away with the app (2026-10-17).
 
       # --- OCR Flow app: context-menu action → nc-ocr-flow webhook ---
       # Install as a raw app directory (nix-built, no fetchNextcloudApp —
       # the app is ours, built from this repo).
       services.nextcloud.extraApps = {
-        workflow_ocr = workflowOcr;
         # Nix-built app dir (appinfo/info.xml at store root — same shape as
-        # fetchNextcloudApp output)
+        # fetchNextcloudApp output). This is OUR app: the context-menu action
+        # and status panel, which talk to the local nc-ocr-flow service. It
+        # does no OCR itself.
         ocrflow = pkgs.callPackage ../../../../pkgs/ocrflow-ncapp { };
       };
       services.nextcloud.extraAppsEnable = true;
+      # Guard #2: keep the app store off. It is the only route by which a
+      # competing OCR app could appear at runtime — the build-time assertion
+      # can only see what nix configures.
       services.nextcloud.appstoreEnable = lib.mkForce false;
 
       # Wire the webhook secret into the app's system config so the PHP
@@ -333,40 +398,20 @@
 
         script = ''
           ${ncPhp}/bin/php ${registerWebhookPhp} ${ncRoot} "$CREDENTIALS_DIRECTORY/nc-ocr-webhook-secret"
+          # Guard #3: make the single-owner invariant true of the running
+          # instance, not just of the nix config (disables a competing OCR app
+          # that is still enabled and removes its leftover Flow rule).
+          ${ncPhp}/bin/php ${enforceSingleOwnerPhp} ${ncRoot} ${lib.concatStringsSep " " competingOcrApps}
         '';
       };
 
-      # Declarative flow rule: idempotently insert OCR workflow rule after setup.
-      systemd.services.nextcloud-ocr-flow = {
-        description = "Create declarative OCR workflow rule";
-        after = [ "nextcloud-setup.service" ];
-        wants = [ "nextcloud-setup.service" ];
-        wantedBy = [ "multi-user.target" ];
-
-        serviceConfig = {
-          Type = "oneshot";
-          User = "nextcloud";
-          Group = "nextcloud";
-          RemainAfterExit = true;
-          LoadCredential = let
-            adminPass = config.sops.secrets."nextcloud/admin-password".path;
-            resendKey = config.sops.secrets."resend/api-key".path;
-          in [
-            "adminpass:${adminPass}"
-            "mail_smtppassword:${resendKey}"
-          ];
-        };
-
-        environment = {
-          NEXTCLOUD_CONFIG_DIR = lib.mkForce "/tank/nextcloud/config";
-        };
-
-        path = [ ncPhp ];
-
-        script = ''
-          ${ncPhp}/bin/php ${setupFlowPhp} ${ncRoot}
-        '';
-      };
+      # NOTE: the third-party ``workflow_ocr`` Flow rule that used to be
+      # created here (``systemd.services.nextcloud-ocr-flow`` + the now-deleted
+      # ``setup-flow.php``) was removed on 2026-10-17. It fired on
+      # \OCP\Files::postCreate and \OCP\Files::postWrite — the same events this
+      # service listens on — and overwrote this service's text layer on every
+      # file. Do not reintroduce a second OCR writer here; see the
+      # single-owner note at the top of this module.
     };
   };
 }

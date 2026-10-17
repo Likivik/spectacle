@@ -57,3 +57,29 @@ Open sub-questions:
 - Should the CI job run inside the same closure as the deployed service (e.g.
   `nix build` the service env and run pytest against it) instead of a host venv?
 - Which tests are credential-gated and therefore never exercised in CI?
+
+## Findings from the 2026-10-17 quality/security pass
+
+- **`occ admin-delegation:show` does not list our delegation**, although it is
+  in effect. `Show.php` only walks the sections returned by
+  `IAdminSettings::getAdminSections()`, and the Webhooks page declares its own
+  section (`webhook_listeners-admin`), which that call never returns — so
+  delegated *app* settings are invisible to it. Audit the delegation instead in
+  `oc_authorized_groups` (ours is `1|ocr-webhooks|OCA\WebhookListeners\Settings\Admin`,
+  written by `IAuthorizedGroupService::create()`), in the admin UI, or simply by
+  the fact that `nc-ocr-register-webhook` fails loudly if the delegation is gone.
+- **Nextcloud writes the full request headers of a FAILED webhook call into
+  `nextcloud.log`, including `X-Webhook-Secret`.** Nothing we control suppresses
+  it. Treat the secret as compromised whenever a dispatch failure is
+  investigated, rotate it, and scrub the log.
+- **`nextcloud/admin-password` (sops) is stale.** It only feeds the installer's
+  `adminpassFile`, which is inert after the first install. The OCR units no
+  longer load it as a systemd credential either — `occ status` succeeds with
+  only `mail_smtppassword` present, so `adminpass` was provably unread and was
+  dropped (least privilege). Refresh it deliberately or delete it; do not reach
+  for it as a working credential.
+- **`config.php` holds the SMTP credential in plaintext** (mode 0640,
+  `nextcloud:nextcloud`). Verified NOT present in the nix store, the system
+  profile, the repo, or any log — this is how Nextcloud config works (it has no
+  credential indirection), not a leak. Worth knowing before copying that file
+  anywhere.

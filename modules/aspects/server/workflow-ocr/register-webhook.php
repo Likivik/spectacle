@@ -8,6 +8,13 @@ declare(strict_types=1);
  * Usage:
  *   php register-webhook.php <ocs-base-url> <service-user> <app-password-file> <webhook-secret-file>
  *
+ * Logging goes to STDERR, i.e. the systemd journal (`journalctl -u
+ * nc-ocr-register-webhook`). Deliberately not a file: a /tmp log is not
+ * rotated, is world-readable unless the unit sets a umask, and — worst — a
+ * manual root-run of this script leaves a root-owned file the unit (running as
+ * `nextcloud`) can then no longer write, so it fails with a warning only while
+ * the log you are reading is stale.
+ *
  * <ocs-base-url> MUST be an address Nextcloud's admin-action IP policy accepts
  * (config.php `allowed_admin_ranges`). On this host that list is
  * ["100.64.0.0/10", "fd7a:115c:a1e0::/48"] — the Tailscale ranges — so the
@@ -45,17 +52,14 @@ declare(strict_types=1);
  * service stays healthy and only uploads silently stop being processed.
  */
 
-$logFile = '/tmp/ocr-webhook-register.log';
-
 function log_line(string $message): void
 {
-    global $logFile;
-    file_put_contents($logFile, $message . "\n", FILE_APPEND);
+    fwrite(STDERR, $message . "\n");
 }
 
 /**
- * Strip the webhook secret out of anything we are about to write to the log.
- * An OCS error body can echo the submitted payload, and this log is in /tmp.
+ * Strip the webhook secret out of anything we are about to log: an OCS error
+ * body can echo the submitted payload.
  */
 function redact(string $text): string
 {
@@ -63,7 +67,7 @@ function redact(string $text): string
     return $webhookSecret === '' ? $text : str_replace($webhookSecret, '[REDACTED]', $text);
 }
 
-file_put_contents($logFile, "Starting webhook registration (OCS API)\n");
+log_line('Starting webhook registration (OCS API)');
 
 $baseUrl = rtrim((string) ($argv[1] ?? ''), '/');
 $serviceUser = (string) ($argv[2] ?? '');

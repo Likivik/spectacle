@@ -223,6 +223,13 @@ def init() -> None:
             # G2: add the foreign_rewrites counter (idempotent; see
             # ``_migrate_add_foreign_rewrites_column``).
             _migrate_add_foreign_rewrites_column(conn)
+            # B1 backstop: enforce at-most-one queued/running row per
+            # path at the DB layer (idempotent; dedupes first). MUST
+            # run after every column-add it depends on. See
+            # ``_migrate_inflight_unique_index`` and PR #68's
+            # retry-index ordering lesson — a failing migration here
+            # leaves ``_ready() == False`` and the queue as a no-op.
+            _migrate_inflight_unique_index(conn)
         _INITIALISED = True
         log.info("jobstore: schema ready at %s", db_path())
     except Exception as exc:  # noqa: BLE001 — spec: never raise
@@ -347,6 +354,98 @@ def _migrate_add_foreign_rewrites_column(conn: "sqlite3.Connection") -> None:
             log.warning(
                 "jobstore: ADD COLUMN foreign_rewrites failed (%s)", exc,
             )
+
+
+def _migrate_inflight_unique_index(conn: "sqlite3.Connection") -> None:
+    """B1 backstop: at-most-one queued/running row per ``jobs.path``.
+
+    The in-process per-path lock that :func:`webhook_server._enqueue`
+    holds only protects threads within ONE process. A multi-worker
+    deployment (one uvicorn per host × N workers, each a separate
+    process) cannot rely on it; two workers can both pass the
+    in-flight check and both ``record_enqueue`` a row. The DB is the
+    only thing they share, so the "one queued-or-running row per path"
+    invariant has to be enforced at the DB layer.
+
+    We do that with a ``UNIQUE PARTIAL INDEX`` on
+    ``jobs(path) WHERE status IN ('queued', 'running')``. SQLite
+    supports partial indexes and applies the WHERE filter only to the
+    index entries — ``status='done'`` and ``status='error'`` rows are
+    free to repeat (the history legitimately keeps many of those per
+    path). The ``uq_jobs_inflight`` name is what shows up in
+    ``IntegrityError`` messages so callers (and the test suite) can
+    tell the constraint apart from an explicit-id collision.
+
+    The migration must be ordered LAST (after every column-add it
+    references is present) and must dedupe any pre-existing duplicate
+    queued/running rows for the same path BEFORE creating the index:
+    ``CREATE UNIQUE INDEX`` fails on a non-empty duplicate set and
+    aborts ``init()`` — which leaves ``_ready() == False`` and every
+    ``record_enqueue`` a silent no-op. That is the exact failure mode
+    PR #68 fixed for the retry index; the same discipline applies
+    here. Dedup keeps ``status='running'`` rows over ``status='queued'``
+    (so a worker mid-flight is not orphaned) and the lowest-id queued
+    row over later ones (matching ``claim_next``'s ordering).
+
+    Idempotent (``CREATE UNIQUE INDEX IF NOT EXISTS``). A fresh DB
+    that never accumulated duplicates picks the index up at first
+    init; an upgraded production DB sees duplicates, dedupes them,
+    and then creates the index. Both paths leave exactly one
+    queued/running row per path.
+    """
+    # 1. Dedupe any pre-existing duplicate queued/running rows for the
+    #    same path. Wrap in a savepoint so a failure on a pathological
+    #    DB does not leak half-applied state. ROW_NUMBER keeps the
+    #    ``status='running'`` row if any (worker mid-flight), else the
+    #    lowest-id queued row — same priority as ``claim_next``'s
+    #    ORDER BY next_run_at ASC, id ASC.
+    try:
+        with conn:  # implicit transaction; savepoint-style on errors
+            conn.execute(
+                """
+                DELETE FROM jobs
+                WHERE id IN (
+                    SELECT id FROM (
+                        SELECT id, ROW_NUMBER() OVER (
+                            PARTITION BY path
+                            ORDER BY
+                                CASE WHEN status = 'running' THEN 0
+                                     ELSE 1 END ASC,
+                                id ASC
+                        ) AS rn
+                        FROM jobs
+                        WHERE status IN ('queued', 'running')
+                    ) WHERE rn > 1
+                )
+                """
+            )
+    except Exception as exc:  # noqa: BLE001
+        log.warning(
+            "jobstore: dedupe in-flight rows before uq_jobs_inflight "
+            "failed (%s) — index creation will skip", exc,
+        )
+        return
+
+    # 2. Create the partial unique index. IF NOT EXISTS keeps the
+    #    migration idempotent on re-init; the dedupe above guarantees
+    #    the constraint is satisfiable.
+    try:
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_jobs_inflight"
+            " ON jobs(path) WHERE status IN ('queued', 'running')"
+        )
+    except Exception as exc:  # noqa: BLE001
+        # Same shape as the other migration warnings: log, do not
+        # raise. A failed CREATE UNIQUE INDEX leaves ``_ready()`` True
+        # (the surrounding ``init()`` try/except swallows it) so the
+        # in-process lock remains the only line of defence. Better
+        # than taking the service down at startup — the audit
+        # explicitly cites this trade-off.
+        log.warning(
+            "jobstore: CREATE UNIQUE INDEX uq_jobs_inflight failed (%s) "
+            "— the in-process _enqueue_path_lock is the sole "
+            "in-flight gate until the next successful init", exc,
+        )
 
 
 def _row_from_dict(job: dict[str, Any]) -> tuple:
@@ -531,14 +630,50 @@ def record_enqueue(job: dict[str, Any]) -> int:
             conn.execute("COMMIT")
             _prune(conn)
     except sqlite3.IntegrityError as exc:
-        # Explicit-id collision. Loud: silent no-op is the bug.
-        raise RuntimeError(
-            f"jobstore: id collision on enqueue (id={explicit_id!r}); "
-            f"refusing to silently discard the new job. Did the "
-            f"in-memory job-id counter restart on a service boot "
-            f"while persisted rows are still at the same id? "
-            f"({exc})"
-        ) from exc
+        # Two distinct collisions are conflated under IntegrityError:
+        # (a) an explicit ``id`` already exists (the legacy raise),
+        # (b) ``uq_jobs_inflight`` — the partial unique index on
+        #     ``jobs(path) WHERE status IN ('queued', 'running')``
+        #     added by ``_migrate_inflight_unique_index`` — blocks the
+        #     insert because another row for this path is already
+        #     queued or running (cross-process B1 backstop; the
+        #     in-process ``_enqueue_path_lock`` only protects threads
+        #     in one process).
+        #
+        # Distinguish them by checking the explicit id first; if the
+        # caller's id is already present in the table, it is case
+        # (a) and we still raise the existing loud error — silent
+        # ``INSERT OR IGNORE`` was the original bug. Otherwise it is
+        # case (b): the path is in flight, return ``None`` so the
+        # caller (``_enqueue``, ``enqueue_retry``, ``record_retry``)
+        # can hand back / skip the duplicate without raising into
+        # the worker.
+        if explicit_id is not None:
+            try:
+                with _connect() as _check:
+                    _existing = _check.execute(
+                        "SELECT 1 FROM jobs WHERE id = ? LIMIT 1",
+                        (explicit_id,),
+                    ).fetchone()
+            except Exception:  # noqa: BLE001 — never raise from here
+                _existing = None
+            if _existing is not None:
+                raise RuntimeError(
+                    f"jobstore: id collision on enqueue (id={explicit_id!r}); "
+                    f"refusing to silently discard the new job. Did the "
+                    f"in-memory job-id counter restart on a service boot "
+                    f"while persisted rows are still at the same id? "
+                    f"({exc})"
+                ) from exc
+        # Path-collision: the uq_jobs_inflight index refused the row.
+        # Caller treats ``None`` as "already running" — see ``_enqueue``
+        # for the existing-row handoff and ``enqueue_retry`` /
+        # ``record_retry`` for the skip-and-log shape.
+        log.info(
+            "jobstore: insert skipped, path already in flight: %s (%s)",
+            job.get("path"), exc,
+        )
+        return None
     except sqlite3.Error as exc:  # noqa: BLE001
         # DB-level fault — preserve the design rule (OCR pipeline must
         # not break because the history DB is unavailable) and just
@@ -908,11 +1043,39 @@ def record_retry(parent: dict[str, Any], *, next_run_at: float) -> int | None:
         "next_run_at": next_run_at,
     }
     try:
-        return record_enqueue(new_retry)
+        new_id = record_enqueue(new_retry)
     except Exception as exc:  # noqa: BLE001
-        log.warning("jobstore: record_retry failed for parent id=%s (%s)",
-                    parent_id, exc)
+        # Pre-migration shape: ``record_enqueue`` raised only on
+        # explicit-id collision. With ``uq_jobs_inflight`` installed,
+        # ``record_enqueue`` returns ``None`` for the path-collision
+        # case without raising (the call site owns the "already
+        # running" handling). This ``except`` therefore fires only
+        # for DB-level faults or the (loud) id-collision case — log
+        # and skip rather than raising into the worker, which would
+        # tear down the retry loop and lose the failed-job history.
+        log.warning(
+            "jobstore: record_retry failed for parent id=%s (%s);"
+            " skipping scheduled retry",
+            parent_id, exc,
+        )
         return None
+    if new_id is None:
+        # Path-collision via ``uq_jobs_inflight``: the file already
+        # has a queued/running row, so the retry would create a
+        # duplicate jobs row for one file (the same double-billing
+        # bug as the racy ``_enqueue`` from before this migration).
+        # Skip the retry — the in-flight row will OCR this file,
+        # and ``record_retry`` is a best-effort "schedule one more
+        # attempt" path, not a hard guarantee. Surface the skip
+        # clearly so an operator looking at logs can tell it apart
+        # from a DB-down fault.
+        log.info(
+            "jobstore: record_retry skipped, path already in flight: "
+            "%s (parent id=%s)",
+            parent_path, parent_id,
+        )
+        return None
+    return new_id
 
 
 # --- Test-only helpers -----------------------------------------------------

@@ -109,3 +109,25 @@ Open sub-questions:
   the stale literal does leave a copy of the (possibly old) key in that file, so
   do not copy it anywhere. Verified: the key is NOT in the nix store, the system
   profile, the repo, or any log.
+
+## Open work on the OCR pipeline (recorded 2026-10-18)
+
+- **Uploads during a service restart are never OCR'd — there is no automatic
+  sweep.** `webhook_server.py` has no startup hook (`on_event`/`lifespan`
+  matches: 0) and Nextcloud does not retry a failed webhook dispatch, so a file
+  that arrives while the unit restarts (every deploy that changes the source
+  rebuilds the venv, ~1-2 min) is skipped forever and silently. A manual
+  `POST /scan-all` already exists (line 3065) and is cheap on this instance
+  (~67 indexed files); running it once at startup would make the box self-heal.
+  Two live end-to-end attempts were lost this way on 2026-10-18.
+- **The two PHP scripts have no automated tests.**
+  `register-webhook.php` (`WebhookRegistrar`) and `enforce-single-owner.php`
+  (`SingleOwnerEnforcer`) were deliberately made testable — `ocsRequest()` is
+  `protected` so a stub OCS server can be injected — but nothing exercises them
+  and CI has no PHP step. Coverage today is live runs only (idempotent
+  registration, poison/self-heal rotation, disable + post-condition check).
+- **Nextcloud rate-limits the service's WebDAV reads** — 429 on the `localhost`
+  request stream under bursty traffic; clears within minutes. Since the retry
+  ordering fix (#84) that now leaves a queued retry with backoff instead of
+  losing the file, so it is no longer data loss, but a large first-time batch
+  can still stall. Do not upload in a loop while testing.

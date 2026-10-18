@@ -71,6 +71,16 @@ jobs:
           curl -fsSL -o /tmp/pp_lcnet_x1_0_doc_ori.onnx "$ORI_MODEL_URL"
           echo "$ORI_MODEL_SHA256  /tmp/pp_lcnet_x1_0_doc_ori.onnx" | sha256sum -c -
 
+      - name: Install the font the service uses for the text layer
+        # dev==prod for fonts. The unit sets NC_OCR_FONT_PATH to a Cyrillic TTF
+        # and ocr.py treats an explicitly configured path as authoritative, so
+        # without this step the suite would silently exercise the Latin-only
+        # Helvetica fallback and prove nothing about Cyrillic text layers.
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fonts-dejavu-core
+          test -f /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
+
       - name: Run the test suite
         working-directory: pkgs/nc-ocr-flow
         env:
@@ -79,6 +89,8 @@ jobs:
           # with "No module named 'nc_ocr_flow'".
           PYTHONPATH: src
           NC_OCR_ORIENTATION_MODEL: /tmp/pp_lcnet_x1_0_doc_ori.onnx
+          # Same variable, same meaning, as the deployed unit.
+          NC_OCR_FONT_PATH: /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
         run: python -m pytest tests/ -q
 
   nix-eval:

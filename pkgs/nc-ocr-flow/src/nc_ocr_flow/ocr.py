@@ -42,11 +42,26 @@ log = logging.getLogger(__name__)
 PER_PAGE_CONF_FLOOR = 70.0
 PER_PAGE_MIN_CHARS = 40
 
-# Font for invisible text layer (must support Cyrillic)
-FONT_PATH = os.environ.get(
-    "NC_OCR_FONT_PATH",
-    "/run/current-system/sw/share/X11/fonts/DejaVuSans.ttf",
+# Font for the invisible text layer. It MUST cover Cyrillic: this font becomes
+# the searchable text of every processed page while the visible layer stays the
+# original raster, so a Latin-only font yields documents that look perfect and
+# cannot be searched or copied.
+#
+# ``NC_OCR_FONT_PATH`` is authoritative and is what the deployed unit sets
+# (modules/aspects/server/workflow-ocr/default.nix points it at a derivation
+# that asserts the file at build time). The rest are dev conveniences; note the
+# NixOS profile path needs ``fonts.fontDir.enable``, which is why it is not a
+# safe default.
+FONT_PATH_ENV = "NC_OCR_FONT_PATH"
+DEFAULT_FONT_PATH = "/run/current-system/sw/share/X11/fonts/DejaVuSans.ttf"
+FALLBACK_FONT_PATHS = (
+    DEFAULT_FONT_PATH,
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",  # Debian/Ubuntu
+    "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+    "/nix/var/nix/profiles/default/share/fonts/dejavu/DejaVuSans.ttf",
 )
+# Kept for callers that already import it.
+FONT_PATH = os.environ.get(FONT_PATH_ENV, DEFAULT_FONT_PATH)
 
 
 # --- Public dataclasses ----------------------------------------------------
@@ -446,19 +461,39 @@ def _parse_tsv(tsv_path: Path | str) -> dict[int, PageMeta]:
 
 
 def _get_font():
-    """Get a Unicode font for invisible text (supports Cyrillic)."""
+    """Get a Cyrillic-capable font for the invisible text layer.
+
+    Read at call time (not import time) so tests can point the env var at a
+    temp path.
+
+    A font that cannot encode the OCR text is worse than no OCR at all here:
+    the page still looks correct because the visible layer is the original
+    raster, so the breakage is invisible until somebody searches or copies the
+    text. Hence the two rules below.
+    """
     import fitz
-    if Path(FONT_PATH).exists():
-        return fitz.Font(fontfile=FONT_PATH)
-    # Fallback: try system fonts
-    for path in [
-        "/usr/share/fonts/dejavu/DejaVuSans.ttf",
-        "/nix/var/nix/profiles/default/share/fonts/dejavu/DejaVuSans.ttf",
-    ]:
+
+    configured = os.environ.get(FONT_PATH_ENV)
+    if configured:
+        # Explicit configuration must never degrade silently: a set-but-missing
+        # path is an operator error, not a licence to substitute Helvetica.
+        if not Path(configured).exists():
+            raise RuntimeError(
+                f"{FONT_PATH_ENV}={configured!r} does not exist; refusing to "
+                "write the text layer with a Latin-only font"
+            )
+        return fitz.Font(fontfile=configured)
+
+    for path in FALLBACK_FONT_PATHS:
         if Path(path).exists():
             return fitz.Font(fontfile=path)
-    # Last resort: built-in Helvetica (Latin only, no Cyrillic)
-    log.warning("No Cyrillic font found; falling back to Helvetica")
+
+    # Last resort: built-in Helvetica (Latin only, no Cyrillic).
+    log.warning(
+        "No Cyrillic font found (set %s); falling back to Helvetica, so the "
+        "text layer of Cyrillic documents will be unusable",
+        FONT_PATH_ENV,
+    )
     return fitz.Font("helv")
 
 

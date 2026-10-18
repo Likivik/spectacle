@@ -103,14 +103,22 @@ def _make_rotated_pdf(out_pdf: Path, *, page_w: float, page_h: float,
 
 
 def _find_dejavu_font() -> str:
-    """Locate a TTF font for tests; skip OSD-related tests if none.
+    """Locate a TTF font for tests, honouring the same env var as the service.
 
-    Looks under common NixOS paths for ``DejaVuSans.ttf``. Returns
-    a path or skips the calling test.
+    ``NC_OCR_FONT_PATH`` is what the deployed unit sets, so when it is present
+    the test must use it and must FAIL if it is broken: skipping would hide a
+    misconfiguration, which is precisely how these OSD tests stopped running -
+    the first candidate below was a hardcoded /nix/store path with a hash that
+    no longer exists, so every candidate missed and the tests skipped silently.
     """
     import os
+    explicit = os.environ.get("NC_OCR_FONT_PATH")
+    if explicit:
+        if not os.path.exists(explicit):
+            pytest.fail(f"NC_OCR_FONT_PATH={explicit} does not exist")
+        return explicit
     candidates = [
-        "/nix/store/zqhby0xidpi0xsafsbl4l7dc72imqqq6-dejavu-fonts-minimal-2.37/share/fonts/truetype/DejaVuSans.ttf",
+        "/run/current-system/sw/share/X11/fonts/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/dejavu/DejaVuSans.ttf",
         "/System/Library/Fonts/Supplemental/Arial.ttf",
@@ -123,7 +131,7 @@ def _find_dejavu_font() -> str:
     matches = glob.glob("/nix/store/*/share/fonts/truetype/DejaVuSans.ttf")
     if matches:
         return matches[0]
-    pytest.skip("No TTF font available — skipping OSD-related test")
+    pytest.skip("No TTF font available and NC_OCR_FONT_PATH unset")
 
 
 # --- parse_osd_output ------------------------------------------------------

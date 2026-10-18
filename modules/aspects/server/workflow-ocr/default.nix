@@ -139,6 +139,28 @@
       registerWebhookPhp = ./register-webhook.php;
       # PHP script disabling a still-enabled competing OCR app (guard #3 above)
       enforceSingleOwnerPhp = ./enforce-single-owner.php;
+      # ── Assets the pipeline needs, asserted at BUILD time ────────────────
+      # Pointing an env var at "${pkgs.dejavu_fonts}/..." is a guess about a
+      # package's internal layout, and a miss is silent. The code's own
+      # hardcoded default (/run/current-system/sw/share/X11/fonts/
+      # DejaVuSans.ttf) is already dead on this host - it needs
+      # fonts.fontDir.enable - and ocr.py would then write the invisible text
+      # layer with Latin-only Helvetica: the document still looks perfect
+      # (the visible layer is the original raster) and is unsearchable, which
+      # is the exact failure this pipeline exists to prevent.
+      #
+      # So the two files are linked into one tiny derivation and asserted
+      # here. Symlinks, not copies, so tessdata's ~200 languages are not
+      # duplicated into a second store path.
+      ocrAssets = pkgs.runCommand "nc-ocr-assets" { } ''
+        mkdir -p $out
+        ln -s ${pkgs.dejavu_fonts}/share/fonts/truetype/DejaVuSans.ttf $out/DejaVuSans.ttf
+        ln -s ${pkgs.tesseract5}/share/tessdata $out/tessdata
+        test -s $out/DejaVuSans.ttf
+        test -s $out/tessdata/rus.traineddata
+        test -s $out/tessdata/eng.traineddata
+      '';
+
     in {
       # ── Guard #1: single-owner block (eval-time) ──────────────────────────
       # Deliberately a ``throw`` and NOT a NixOS ``assertions`` entry: assertions
@@ -290,8 +312,10 @@
           NC_OCR_GOOGLE_BATCH_TIMEOUT = "1800";
           NC_OCR_LISTEN_HOST = "127.0.0.1";
           NC_OCR_LISTEN_PORT = "8095";
-          NC_OCR_FONT_PATH = "${pkgs.dejavu_fonts}/share/fonts/truetype/DejaVuSans.ttf";
-          TESSDATA_PREFIX = "${pkgs.tesseract5}/share/tessdata";
+          # Both point into ocrAssets, which asserts these files exist at
+          # build time (see the comment on that derivation).
+          NC_OCR_FONT_PATH = "${ocrAssets}/DejaVuSans.ttf";
+          TESSDATA_PREFIX = "${ocrAssets}/tessdata";
           # Doc/photo gate: fp32 MobileNetV3-Small (see environment.etc."nc-ocr/...").
           NC_OCR_MOBILENET_MODEL = "/etc/static/nc-ocr/mobilenet_v3_small_fp32.onnx";
           # Stage-1 page-orientation classifier: PP-LCNet_x1_0_doc_ori.
@@ -312,6 +336,13 @@
           StateDirectory = "nc-ocr";
           StateDirectoryMode = "0755";
           TimeoutStartSec = "5min";  # first venv creation + pip install
+          # Last line of defence, and deliberately a hard failure: a service
+          # that cannot write a Cyrillic text layer produces documents that
+          # look perfect and cannot be searched, so refusing to start is the
+          # lesser evil. Only the FONT is checked here - tessdata is only
+          # needed by the tesseract fallback engine, and gating the whole unit
+          # on an asset the default engine never touches would be wrong.
+          ExecStartPre = "${pkgs.coreutils}/bin/test -s ${ocrAssets}/DejaVuSans.ttf";
           LoadCredential = let
             webdavPass = config.sops.secrets."nextcloud/ocr-webdav-password".path;
             webhookSecret = config.sops.secrets."nextcloud/ocr-webhook-secret".path;

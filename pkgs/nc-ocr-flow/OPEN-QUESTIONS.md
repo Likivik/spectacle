@@ -93,8 +93,19 @@ Open sub-questions:
   is resolved through `nix_read_secret` and rendered into `config.php` (mode
   0640, `nextcloud:nextcloud`) instead. Verified absent from the nix store, the
   system profile, the repo and every log.
-- **`config.php` holds the SMTP credential in plaintext** (mode 0640,
-  `nextcloud:nextcloud`). Verified NOT present in the nix store, the system
-  profile, the repo, or any log — this is how Nextcloud config works (it has no
-  credential indirection), not a leak. Worth knowing before copying that file
-  anywhere.
+- **The SMTP secret is read per PHP request, and a stale literal in `config.php`
+  is a decoy.** Two files are in play:
+  - `override.config.php` (rendered by the module, linked by tmpfiles) holds
+    `'mail_smtppassword' => nix_read_secret('mail_smtppassword')` — an
+    expression, evaluated from `$CREDENTIALS_DIRECTORY` on every request. This
+    is the value in use, so **a rotation takes effect without a restart** and no
+    `restartUnits` is needed.
+  - `config.php` (mode 0640, `nextcloud:nextcloud`) holds a stale **literal**,
+    because Nextcloud serialises its merged config whenever it persists config
+    (`nextcloud-setup` runs `occ upgrade` and
+    `occ config:system:delete trusted_domains`). It is shadowed:
+    `override.config.php` is applied last via `array_replace_recursive`.
+  Do not conclude from the literal that a rotation needs a re-render — and note
+  the stale literal does leave a copy of the (possibly old) key in that file, so
+  do not copy it anywhere. Verified: the key is NOT in the nix store, the system
+  profile, the repo, or any log.

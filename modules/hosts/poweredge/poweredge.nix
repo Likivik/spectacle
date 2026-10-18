@@ -127,11 +127,23 @@
         owner = "nextcloud";
         group = "nextcloud";
         mode = "0600";
-        # No restartUnits, deliberately. The four workflow-ocr units bind this as a
-        # LoadCredential but their scripts never read it — verified: zero references
-        # to $CREDENTIALS_DIRECTORY/mail_smtppassword in any of them. The real
-        # consumer is Nextcloud's own mail, which reads the secret per PHP request
-        # via nix_read_secret, so a rotation takes effect without a restart.
+        # No restartUnits, deliberately: the secret is read per PHP request, so a
+        # rotation takes effect without a restart. Mechanism recorded here
+        # because grepping config.php suggests the opposite:
+        #   - the module renders override.config.php (a tmpfiles `L+` link) with
+        #     `'mail_smtppassword' => nix_read_secret('mail_smtppassword')`, i.e.
+        #     an expression evaluated from $CREDENTIALS_DIRECTORY at request time;
+        #   - Nextcloud ALSO materialises a stale literal into its own config.php
+        #     whenever it persists config (nextcloud-setup runs `occ upgrade` and
+        #     `occ config:system:delete trusted_domains`). That copy is shadowed,
+        #     because override.config.php is applied last via
+        #     array_replace_recursive.
+        # So the literal in config.php is not the value in use — do not "fix" a
+        # rotation by re-rendering it.
+        # The four workflow-ocr units bind this as a LoadCredential but their
+        # scripts never read it — verified: zero references to
+        # $CREDENTIALS_DIRECTORY/mail_smtppassword in any of them. The real
+        # consumer is Nextcloud's own mail.
       };
 
       sops.secrets."tailscale/auth-key" = {

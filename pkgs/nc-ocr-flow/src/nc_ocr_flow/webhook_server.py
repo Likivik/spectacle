@@ -1691,9 +1691,10 @@ def _maybe_schedule_retry(job: dict, exc: BaseException,
         " (attempts %d → %d)",
         job["id"], exc, new_id, backoff, attempts, attempts + 1,
     )
-    # Mirror the attempt count on the *current* (failing) row so the
-    # /stats retries_total counter and the panel both see it.
-    job["attempts"] = attempts + 1
+    # Do NOT mirror ``attempts`` onto this (failing) row. The caller records it
+    # as the failure that triggered the retry, and ``stats()['retries_total']``
+    # counts rows with attempts > 0 — mirroring would count one attempt twice
+    # (B2 audit). Only the retry row carries the bumped counter.
     return True
 
 
@@ -1867,27 +1868,33 @@ def _run_job(job: dict) -> None:
             )
         else:
             # C6: 5xx / 408 / 429 may clear up; other 4xx will not.
-            # ``_maybe_schedule_retry`` returns True iff a retry was
-            # enqueued, in which case we keep the *current* row as a
-            # record of the failure (status stays "error" so the
-            # panel still shows it) but do not re-record it as the
-            # terminal state — the retry will overwrite.
+            #
+            # Record the terminal row BEFORE scheduling the retry. At this
+            # point the row is still ``running`` (the ``finally`` below writes
+            # it), and ``uq_jobs_inflight`` is UNIQUE on
+            # ``jobs(path) WHERE status IN ('queued','running')`` — so a retry
+            # inserted first is rejected, ``enqueue_retry`` returns None, and a
+            # transient 429/5xx silently becomes a permanent error. Observed
+            # live on poweredge, in this order:
+            #   jobstore: insert skipped, path already in flight
+            #     (UNIQUE constraint failed: jobs.path)
+            #   worker: job 124 failed (429)
+            job["status"] = "error"
+            job["error"] = str(exc)
+            jobstore.record_update(job)
             if _maybe_schedule_retry(job, exc, status_code):
-                # Mark this row as the failed attempt that triggered
-                # the retry. The panel reads the latest row, so the
-                # next claim will surface in /jobs/{new_id} on the
-                # next refresh.
-                job["status"] = "error"
+                # Keep the failure visible — the panel reads this row — and
+                # say a retry is queued. ``attempts`` deliberately stays 0:
+                # only the retry row carries the counter (B2 audit).
                 job["error"] = (
                     f"transient {status_code} (retry scheduled): {exc}"
                 )
+                jobstore.record_update(job)
                 log.warning(
                     "worker: job %d: HTTP %s — transient, retry scheduled",
                     job["id"], status_code,
                 )
             else:
-                job["status"] = "error"
-                job["error"] = str(exc)
                 log.error(
                     "worker: job %d failed (%s): %s — %s",
                     job["id"], status_code, job["path"], exc,
@@ -1898,16 +1905,19 @@ def _run_job(job: dict) -> None:
         # case — a packet drop or a daemon hiccup should not stick
         # the file in the error column forever. Schedule a retry
         # the same way HTTP 5xx does.
+        # Same ordering rule as the HTTPError branch above: write the terminal
+        # row first, or the retry insert collides with uq_jobs_inflight.
+        job["status"] = "error"
+        job["error"] = str(exc)
+        jobstore.record_update(job)
         if _maybe_schedule_retry(job, exc, None):
-            job["status"] = "error"
             job["error"] = f"transient transport error: {exc}"
+            jobstore.record_update(job)
             log.warning(
                 "worker: job %d: %s — transient, retry scheduled",
                 job["id"], exc,
             )
         else:
-            job["status"] = "error"
-            job["error"] = str(exc)
             log.error(
                 "worker: job %d failed: %s — %s", job["id"], job["path"], exc,
             )

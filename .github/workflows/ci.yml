@@ -132,6 +132,32 @@ jobs:
             exit 1
           fi
 
+  php-tests:
+    name: php tests (workflow-ocr)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # No third-party action on purpose: this repo allows only
+      # GitHub-owned actions plus DeterminateSystems/nix-installer-action
+      # (repos/.../actions/permissions/selected-actions). Any other
+      # `uses:` kills the whole workflow at startup — not the job, the
+      # run — so the PHP toolchain comes from the runner image and a
+      # pinned phar instead.
+      - name: Install PHP + PHPUnit
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq php-cli php-xml
+          php -v
+          curl -fsSL -o "$RUNNER_TEMP/phpunit.phar" \
+            https://phar.phpunit.de/phpunit-12.phar
+          php "$RUNNER_TEMP/phpunit.phar" --version
+
+      - name: Run PHPUnit
+        working-directory: modules/aspects/server/workflow-ocr/tests
+        run: php "$RUNNER_TEMP/phpunit.phar"
+
   nix-checks:
     name: nix checks
     runs-on: ubuntu-24.04

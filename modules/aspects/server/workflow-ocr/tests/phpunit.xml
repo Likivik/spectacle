@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/13.3/phpunit.xsd"
+         bootstrap="bootstrap.php"
+         colors="true"
+         displayDetailsOnTestsThatTriggerWarnings="true"
+         displayDetailsOnTestsThatTriggerNotices="true"
+         displayDetailsOnTestsThatTriggerErrors="true">
+    <testsuites>
+        <testsuite name="workflow-ocr">
+            <directory>.</directory>
+            <exclude>bootstrap.php</exclude>
+            <exclude>_stubs/</exclude>
+        </testsuite>
+    </testsuites>
+</phpunit>

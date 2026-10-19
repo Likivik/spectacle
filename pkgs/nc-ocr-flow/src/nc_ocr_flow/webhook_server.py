@@ -28,7 +28,7 @@ from pydantic import BaseModel
 
 from urllib.parse import quote, unquote
 
-from .classifier import classify
+from .classifier import ClassifierUnavailable, classify
 from .ocr import process_pdf
 from .pdf_classify import classify_pdf
 from . import jobstore
@@ -94,6 +94,10 @@ SKIP_REASON_LEGACY             = "born_digital_or_stamped_good"
 #: an operator can resolve the conflict manually (rename, delete, or
 #: reroute the source image).
 SKIP_REASON_PDF_EXISTS         = "pdf_already_exists"
+#: Converted and uploaded, source image deliberately left in place
+#: (NC_OCR_KEEP_SOURCE_IMAGE=1). Not an error and not a skip of the OCR —
+#: the status is still ``done``; the reason marks the two-file outcome.
+SKIP_REASON_SOURCE_KEPT        = "source_image_kept"
 
 #: G2: fingerprint-verified skip guard. After
 #: :data:`FOREIGN_REWRITE_LIMIT` consecutive foreign rewrites of the
@@ -746,6 +750,69 @@ def _image_to_pdf(image_path: Path) -> Path:
     return target
 
 
+#: How many "name (N).pdf" candidates to try before giving up.
+_FREE_PDF_TRIES = 50
+
+#: ``NC_OCR_KEEP_SOURCE_IMAGE=1`` leaves the source image next to the PDF it
+#: produced. Off by default because the folder then holds two entries per
+#: image; on for folders where the original matters (EXIF, camera metadata,
+#: the file the user actually took). Either way the image is recoverable from
+#: the PDF with ``nc-ocr-extract`` — the bytes are stored untouched.
+_KEEP_SOURCE_IMAGE = os.environ.get(
+    "NC_OCR_KEEP_SOURCE_IMAGE", "0"
+).strip().lower() not in ("0", "false", "no", "")
+
+_classifier_shouted = False
+
+
+def _shout_classifier_unavailable(exc: BaseException) -> None:
+    """Log the classifier failure at ERROR once per process.
+
+    The per-job exception already stops that file; this makes a *systemic*
+    failure (missing model, broken ONNX) impossible to miss in the journal
+    instead of showing up as N identical job errors.
+    """
+    global _classifier_shouted
+    if _classifier_shouted:
+        return
+    _classifier_shouted = True
+    log.error(
+        "image classifier is UNAVAILABLE (%s). Every image job will now fail "
+        "instead of converting-and-deleting originals. Fix the model "
+        "(_MOBILENET_MODEL / NC_OCR_MOBILENET_MODEL) and restart the unit.",
+        exc,
+    )
+
+
+def _free_pdf_nc_path(nc_path: str) -> str | None:
+    """First free PDF path next to ``nc_path``: ``a.pdf``, ``a (1).pdf``, …
+
+    Returns ``None`` when even the last candidate is taken, or when a PROPFIND
+    cannot be answered — in both cases the caller skips rather than risk
+    overwriting a file it could not see.
+    """
+    base = Path(nc_path)
+    stem, parent = base.stem, str(base.parent)
+    for i in range(_FREE_PDF_TRIES):
+        name = f"{stem}.pdf" if i == 0 else f"{stem} ({i}).pdf"
+        candidate = f"{parent}/{name}"
+        try:
+            size, _ = _propfind_size_etag(candidate)
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "image branch: PROPFIND %s failed (%s); refusing upload to be safe",
+                candidate, exc,
+            )
+            return None
+        if not size:
+            return candidate
+    log.warning(
+        "image branch: %d candidate names taken for %s; skipping",
+        _FREE_PDF_TRIES, nc_path,
+    )
+    return None
+
+
 def _stamp_metadata(
     pdf_path: Path,
     engine: str,
@@ -1395,46 +1462,39 @@ def _process_file(nc_path: str, node_id: int, engine: str | None = None,
 
         if ext in IMAGE_EXTS:
             log.info("classifying image: %s", nc_path)
-            cls = classify(local_file)
+            try:
+                cls = classify(local_file)
+            except ClassifierUnavailable as exc:
+                # Fail closed. Treating "the model is broken" as "probably a
+                # document" would convert and delete every image in every
+                # folder on the next /scan-all, unattended. Stop and say why.
+                _shout_classifier_unavailable(exc)
+                raise RuntimeError(
+                    f"image classifier unavailable, refusing to convert "
+                    f"{nc_path!r}: {exc}"
+                ) from exc
             log.info("classify: is_document=%s reason=%s", cls.is_document, cls.reason)
 
             if not cls.is_document:
                 log.info("skipping photo: %s", nc_path)
                 return {"path": nc_path, "skipped": True, "reason": cls.reason}
 
-            # Collision check FIRST: if the target PDF path already has a
-            # file on it, refuse to overwrite — converting the image
-            # here would silently destroy the user's existing PDF (and
-            # would also bill a Vision round-trip for nothing). The
-            # skip reason, the file-row semantics, and the "source
-            # image left in place" invariant are preserved exactly.
-            pdf_nc_path = str(Path(nc_path).with_suffix(".pdf"))
-            try:
-                existing_size, _ = _propfind_size_etag(pdf_nc_path)
-            except Exception as exc:  # noqa: BLE001
-                log.warning(
-                    "image branch: PROPFIND %s failed (%s);"
-                    " refusing upload to be safe",
-                    pdf_nc_path, exc,
-                )
-                existing_size = None
-            if existing_size is not None and existing_size > 0:
-                log.warning(
-                    "image branch collision: %s already exists (%d bytes);"
-                    " refusing to overwrite. Source image %s is left in place.",
-                    pdf_nc_path, existing_size, nc_path,
-                )
-                # Do NOT upload, do NOT delete the source image. The
-                # file row is updated to "skipped" so /stats shows the
-                # reason and /scan-all won't keep re-enqueueing it
-                # (until the operator resolves the collision).
+            # Name collision: if the target PDF path is already taken, do NOT
+            # overwrite it (that would destroy the user's PDF and still bill a
+            # Vision round-trip). Use the next free "name (1).pdf" instead —
+            # the operator asked for an OCR of this image, not for a decision
+            # about somebody else's file.
+            pdf_nc_path = _free_pdf_nc_path(nc_path)
+            if pdf_nc_path is None:
                 return {
-                    "path": nc_path,
-                    "skipped": True,
+                    "path": nc_path, "skipped": True,
                     "reason": SKIP_REASON_PDF_EXISTS,
-                    "existing_pdf": pdf_nc_path,
                 }
-
+            if pdf_nc_path != str(Path(nc_path).with_suffix(".pdf")):
+                log.info(
+                    "image branch collision: %s exists; using %s",
+                    str(Path(nc_path).with_suffix(".pdf")), pdf_nc_path,
+                )
             # Document image: convert to PDF, OCR
             pdf_path = _image_to_pdf(local_file)
             result = process_pdf(pdf_path, engine=engine)
@@ -1476,19 +1536,40 @@ def _process_file(nc_path: str, node_id: int, engine: str | None = None,
             # the leftover image is a cleanup problem, not a failed
             # job.
             _webdav_upload(pdf_nc_path, Path(result.output_pdf))
-            try:
-                _webdav_delete(nc_path)
-                delete_failed = False
-                delete_error = None
-            except Exception as exc:  # noqa: BLE001
-                delete_failed = True
-                delete_error = exc
-                log.warning(
-                    "image branch: OCR + upload of %s succeeded, but"
-                    " delete of source image %s failed after retries (%s);"
-                    " keeping both files",
-                    pdf_nc_path, nc_path, exc,
+            kept_source = False
+            delete_failed = False
+            delete_error = None
+            if _KEEP_SOURCE_IMAGE:
+                # Deliberate: the operator asked to keep originals (EXIF,
+                # camera metadata, the file the user actually took). The image
+                # is still recoverable from the PDF byte-for-byte, this is
+                # about the folder looking the way the user expects.
+                kept_source = True
+                log.info(
+                    "image branch: keeping source image %s beside %s"
+                    " (NC_OCR_KEEP_SOURCE_IMAGE=1)",
+                    nc_path, pdf_nc_path,
                 )
+            else:
+                try:
+                    _webdav_delete(nc_path)
+                except Exception as exc:  # noqa: BLE001
+                    delete_failed = True
+                    delete_error = exc
+                    log.warning(
+                        "image branch: OCR + upload of %s succeeded, but"
+                        " delete of source image %s failed after retries (%s);"
+                        " keeping both files",
+                        pdf_nc_path, nc_path, exc,
+                    )
+            if kept_source:
+                return {
+                    "path": nc_path, "output": pdf_nc_path,
+                    "engine": result.engine_used,
+                    "vlm_pages": result.vlm_pages,
+                    "kept_source": True,
+                    "reason": SKIP_REASON_SOURCE_KEPT,
+                }
 
             if delete_failed:
                 return {

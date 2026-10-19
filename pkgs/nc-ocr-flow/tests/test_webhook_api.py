@@ -1366,11 +1366,11 @@ def test_admin_reconcile_endpoint(client):
 
 # --- image branch PDF collision ---------------------------------------------
 
-def test_image_branch_refuses_to_overwrite_existing_pdf(monkeypatch, tmp_path):
+def test_image_branch_uses_next_free_name_on_collision(monkeypatch, tmp_path):
     """The image branch must NOT silently replace an existing PDF with
-    the freshly-OCR'd image-to-PDF. If the target path already has a
-    PDF, we must skip with a distinct reason and leave the source
-    image in place.
+    the freshly-OCR'd image-to-PDF. If the target path is taken, it
+    uploads as "name (1).pdf" instead — the user asked for an OCR of
+    this image, not for a decision about somebody else's existing PDF.
     """
     # Source: a real image on disk (we use the existing _image_to_pdf
     # path to write an actual PDF); Target: a pre-existing PDF on NC.
@@ -1382,8 +1382,9 @@ def test_image_branch_refuses_to_overwrite_existing_pdf(monkeypatch, tmp_path):
     nc_path = f"/{ws.NC_USER}/files/Work/photo.jpg"
     pdf_nc_path = f"/{ws.NC_USER}/files/Work/photo.pdf"
 
+    # photo.pdf is taken; photo (1).pdf is free.
     monkeypatch.setattr(ws, "_propfind_size_etag",
-                        lambda _p: (1234, "etag-mock"))
+                        lambda p, attempts=3: (1234, "etag-mock") if p == pdf_nc_path else (None, None))
 
     calls = {"upload": [], "delete": []}
 
@@ -1439,12 +1440,10 @@ def test_image_branch_refuses_to_overwrite_existing_pdf(monkeypatch, tmp_path):
     monkeypatch.setattr(ws, "process_pdf", lambda *a, **k: fake_result)
 
     res = ws._process_file(nc_path, node_id=42, engine="google", force=False)
-    assert res.get("skipped") is True, res
-    assert res["reason"] == ws.SKIP_REASON_PDF_EXISTS, res
-    assert res["existing_pdf"] == pdf_nc_path
-    # Crucially: we did NOT upload or delete the source image.
-    assert calls["upload"] == [], calls
-    assert calls["delete"] == [], calls
+    assert res.get("skipped") is not True, res
+    # Uploaded to the next free name; the pre-existing photo.pdf is untouched.
+    assert calls["upload"] == [f"/{ws.NC_USER}/files/Work/photo (1).pdf"], calls
+    assert calls["delete"] == [nc_path], calls
 
 
 def test_image_branch_proceeds_when_no_collision(monkeypatch, tmp_path):

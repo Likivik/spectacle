@@ -156,3 +156,20 @@ Open sub-questions:
   can own its own throwaway Nextcloud (container + `occ` bootstrap) and treat
   the outage drill as a first-class test instead of a manual ritual.
   The manual procedure and the 150 s figure are the specification for it.
+- **Image branch behaviour (settled 2026-10-19).** A folder of images is NOT
+  converted blindly: `classify()` (MobileNetV3-Small) gates document vs photo,
+  and 12/12 WhatsApp photos in a render folder came back `photo` → skipped,
+  untouched. Three decisions after that review:
+  1. **The classifier now fails closed.** It used to default to `is_document=True`
+     on any error, which meant a missing/broken ONNX model would convert and
+     delete every image in every folder on the next `/scan-all`. Now it raises
+     `ClassifierUnavailable` → the job errors with the reason and NOTHING is
+     converted or deleted. Fix `NC_OCR_MOBILENET_MODEL` and restart.
+  2. **Name collisions no longer skip.** If `name.pdf` exists, the OCR'd image
+     uploads as `name (1).pdf` (up to 50), and the pre-existing PDF is never
+     touched. Skip only if every candidate is taken or PROPFIND fails.
+  3. **`NC_OCR_KEEP_SOURCE_IMAGE=1`** keeps the source image beside the PDF
+     (marked `source_image_kept`); off by default. Conversion is lossless anyway
+     — see `nc-ocr-extract` — so this is about folder shape, not data safety.
+  Screenshots still count as documents (correct: the Vodokanal screenshot
+  converted), and the image's own EXIF survives inside the PDF either way.

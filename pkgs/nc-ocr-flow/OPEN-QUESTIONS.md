@@ -130,14 +130,29 @@ Open sub-questions:
   fresh install and does nothing. `NC_OCR_CATCHUP=0` disables it. Never the
   full walk `/scan-all` would have done, and it cannot double-bill: candidates
   go through the same `_path_in_flight` guard as the webhook.
-- **The two PHP scripts have no automated tests.**
-  `register-webhook.php` (`WebhookRegistrar`) and `enforce-single-owner.php`
-  (`SingleOwnerEnforcer`) were deliberately made testable — `ocsRequest()` is
-  `protected` so a stub OCS server can be injected — but nothing exercises them
-  and CI has no PHP step. Coverage today is live runs only (idempotent
-  registration, poison/self-heal rotation, disable + post-condition check).
+- **The two PHP scripts: DONE** (#88). 10 PHPUnit tests / 60 assertions under
+  `modules/aspects/server/workflow-ocr/tests/`, running as the
+  `php tests (workflow-ocr)` CI job. Note for whoever adds the next CI job: the
+  repo allows only GitHub-owned actions plus `DeterminateSystems/nix-installer-action`,
+  and an unlisted `uses:` fails the entire run at startup, not just the job.
+  Both scripts were written to be testable — `ocsRequest()` is `protected` so a
+  stub OCS server can be injected — and the suite now exercises idempotent
+  registration, secret rotation, poison/self-heal, disable + post-condition and
+  mixed-failure aggregation.
 - **Nextcloud rate-limits the service's WebDAV reads** — 429 on the `localhost`
   request stream under bursty traffic; clears within minutes. Since the retry
   ordering fix (#84) that now leaves a queued retry with backoff instead of
   losing the file, so it is no longer data loss, but a large first-time batch
   can still stall. Do not upload in a loop while testing.
+- **TODO (deferred by decision, not by doubt): make the restart-gap drill a
+  repeatable gate.** The catch-up pass (#87 + #90) is proven by hand: stop
+  `nc-ocr-webhook`, upload one PDF via WebDAV with the service credentials,
+  hold the unit down ~150 s (shorter windows prove nothing — NC dispatches via
+  a background job that simply runs after the restart), start the unit, require
+  `checked=N enqueued=1` and exactly one new `jobs` row. Deliberately NOT wired
+  into CI now: the hosted runner cannot reach a live Nextcloud, and a local
+  version adds several minutes to every iteration while the app is still moving
+  fast. **Do it when nc-ocr-flow moves to its own repository**, where the suite
+  can own its own throwaway Nextcloud (container + `occ` bootstrap) and treat
+  the outage drill as a first-class test instead of a manual ritual.
+  The manual procedure and the 150 s figure are the specification for it.

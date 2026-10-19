@@ -124,7 +124,7 @@ Open sub-questions:
   Fix (`catch_up_missed_files`, run once at startup in a daemon thread, plus
   `POST /catch-up`): keep a watermark of the last webhook actually received
   (settings key `_last_webhook_at`, advanced at the top of `/webhook`), then
-  PROPFIND the root with `getlastmod` and enqueue only entries modified after
+  PROPFIND the root with `getlastmodified` and enqueue only entries modified after
   it. Bounded by `NC_OCR_CATCHUP_MAX` (default 200, newest first), clamped to
   `NC_OCR_CATCHUP_MAX_AGE` (default 7 days), and a missing watermark means a
   fresh install and does nothing. `NC_OCR_CATCHUP=0` disables it. Never the

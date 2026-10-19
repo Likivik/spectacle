@@ -2109,7 +2109,7 @@ def reconcile_orphans() -> dict:
 # on *every* restart, with the WebDAV 429 exposure that brings.
 #
 # So we keep a watermark — the wall clock of the last webhook we actually
-# received — and at startup PROPFIND ``getlastmod``, enqueueing only the
+# received — and at startup PROPFIND ``getlastmodified``, enqueueing only the
 # entries modified after it. Bounded by ``NC_OCR_CATCHUP_MAX``; a missing
 # watermark means a fresh install, which must never trigger a mass scan.
 _CATCHUP_WATERMARK_KEY = "_last_webhook_at"
@@ -2125,7 +2125,12 @@ _CATCHUP_MAX_AGE = _int_env_nonneg("NC_OCR_CATCHUP_MAX_AGE", 7 * 24 * 3600)
 _CATCHUP_PROPFIND_BODY = (
     '<?xml version="1.0"?>'
     '<d:propfind xmlns:d="DAV:"><d:prop>'
-    "<d:resourcetype/><d:getcontenttype/><d:getlastmod/>"
+    # ``getlastmodified`` (DAV:) — NOT ``getlastmod``. Nextcloud answers a
+    # request for ``getlastmod`` with a 404 propstat and no value at all,
+    # which silently turned this pass into a no-op until it was caught
+    # against a live Nextcloud. ``getlastmod`` is still parsed if some
+    # server sends it anyway.
+    "<d:resourcetype/><d:getcontenttype/><d:getlastmodified/>"
     "</d:prop></d:propfind>"
 )
 
@@ -2142,7 +2147,7 @@ def _parse_propfind_lastmods(xml_text: str) -> list[tuple[str, float | None]]:
 
     Paths come back relative to the WebDAV root
     (``remote.php/dav/files/<user>/``); ``mtime`` is a unix epoch or
-    ``None`` when the server sent no ``getlastmod``. No XML parser is
+    ``None`` when the server sent no ``getlastmodified``. No XML parser is
     used because Nextcloud's prefix varies between ``d:``, ``D:``,
     ``DAV:`` and no prefix at all, and ``/scan-all`` already learned that
     hard-coding one of them silently drops every entry.
@@ -2155,7 +2160,11 @@ def _parse_propfind_lastmods(xml_text: str) -> list[tuple[str, float | None]]:
         if not href:
             continue
         path = unquote(href.group(1)).split(marker, 1)[-1]
-        stamp = re.search(r"<(?:[A-Za-z0-9_]*:)?getlastmod>([^<]*)</", block)
+        stamp = re.search(
+            r"<(?:[A-Za-z0-9_]*:)?getlastmodified>([^<]*)</", block
+        ) or re.search(
+            r"<(?:[A-Za-z0-9_]*:)?getlastmod>([^<]*)</", block
+        )
         mtime: float | None = None
         if stamp:
             try:
@@ -2241,15 +2250,32 @@ def catch_up_missed_files(now: float | None = None) -> dict:
     result["checked"] = len(entries)
 
     candidates: list[tuple[float, str]] = []
+    undated = 0
     for rel, mtime in entries:
         if not rel or Path(rel).suffix.lower() not in PROCESSABLE_EXTS:
             continue
-        if mtime is None or mtime < since:
+        if mtime is None:
+            # A server that returns no mtime at all would make every pass a
+            # silent no-op — exactly what a wrong property name did once
+            # against a live Nextcloud. Count it and shout below.
+            undated += 1
+            continue
+        if mtime < since:
             continue
         nc_path = f"/{NC_USER}/files/{rel}"
         if _is_foreign_user(nc_path):
             continue
         candidates.append((mtime, nc_path))
+
+    result["undated"] = undated
+    if undated:
+        log.warning(
+            "catch-up: %d processable entr(ies) came back without a "
+            "last-modified timestamp and cannot be proven new; they are "
+            "skipped. If this is every entry, the PROPFIND is asking for "
+            "the wrong property (need DAV:getlastmodified)",
+            undated,
+        )
 
     # Newest first, so a truncated pass still catches what the user is
     # most likely to be looking at.

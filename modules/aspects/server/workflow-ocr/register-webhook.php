@@ -55,7 +55,7 @@ declare(strict_types=1);
  * else - the service stays healthy and only uploads silently stop.
  */
 
-final class WebhookRegistrar
+class WebhookRegistrar
 {
 	private const WEBHOOK_URI = 'http://127.0.0.1:8095/webhook';
 	private const EVENT_FILTER = ['event.node.path' => '/^\/.*\/files\//'];
@@ -352,9 +352,16 @@ final class WebhookRegistrar
 	}
 }
 
-$registrar = WebhookRegistrar::fromArgv($argv);
+$registrar = WebhookRegistrar::fromArgv($argv ?? []);
 if ($registrar === null) {
+	if (defined('WORKFLOW_OCR_TEST_MODE')) {
+		// Test bootstrap: class loaded, do not run nor exit.
+		return;
+	}
 	WebhookRegistrar::usage();
 	exit(1);
+}
+if (defined('WORKFLOW_OCR_TEST_MODE')) {
+	return;
 }
 exit($registrar->run());

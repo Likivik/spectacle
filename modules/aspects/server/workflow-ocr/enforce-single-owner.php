@@ -36,7 +36,7 @@ use OCP\Server;
  * Exits non-zero if an app could not actually be disabled.
  */
 
-final class SingleOwnerEnforcer
+class SingleOwnerEnforcer
 {
 	/**
 	 * @param string[] $apps
@@ -61,7 +61,7 @@ final class SingleOwnerEnforcer
 		if (!$this->bootstrap()) {
 			return 1;
 		}
-		$appManager = Server::get(IAppManager::class);
+		$appManager = $this->appManager();
 
 		$failed = false;
 		foreach ($this->apps as $app) {
@@ -82,9 +82,11 @@ final class SingleOwnerEnforcer
 
 	/**
 	 * Full Nextcloud bootstrap, the same way occ does it. Must happen
-	 * before any OCP class is used.
+	 * before any OCP class is used. Exposed as `protected` so a test
+	 * subclass can stub it - the real one tries to chdir() into $ncRoot
+	 * and require $ncRoot/lib/base.php, which fail in unit tests.
 	 */
-	private function bootstrap(): bool
+	protected function bootstrap(): bool
 	{
 		define('OC_CONSOLE', 1);
 		chdir($this->ncRoot);
@@ -98,6 +100,16 @@ final class SingleOwnerEnforcer
 			return false;
 		}
 		return true;
+	}
+
+	/**
+	 * Resolves the IAppManager the enforcer runs against. Production uses the
+	 * real OCP server container; tests subclass this to inject a fake so the
+	 * script can be exercised without a Nextcloud bootstrap.
+	 */
+	protected function appManager(): IAppManager
+	{
+		return Server::get(IAppManager::class);
 	}
 
 	/**
@@ -131,9 +143,16 @@ final class SingleOwnerEnforcer
 	}
 }
 
-$enforcer = SingleOwnerEnforcer::fromArgv($argv);
+$enforcer = SingleOwnerEnforcer::fromArgv($argv ?? []);
 if ($enforcer === null) {
+	if (defined('WORKFLOW_OCR_TEST_MODE')) {
+		// Test bootstrap: class loaded, do not run nor exit.
+		return;
+	}
 	fwrite(STDERR, "ERROR: missing nc-root argument\n");
 	exit(1);
+}
+if (defined('WORKFLOW_OCR_TEST_MODE')) {
+	return;
 }
 exit($enforcer->run());

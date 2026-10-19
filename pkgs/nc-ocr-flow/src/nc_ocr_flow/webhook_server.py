@@ -13,10 +13,12 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import secrets
 import tempfile
 import threading
 import time
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 
 import requests
@@ -24,7 +26,7 @@ from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 from .classifier import classify
 from .ocr import process_pdf
@@ -2092,6 +2094,207 @@ def reconcile_orphans() -> dict:
     }
 
 
+# --- Startup catch-up: files uploaded while the service was down ------------
+#
+# Nextcloud dispatches a webhook on NodeCreated/NodeWritten. If we are
+# restarting (every source change rebuilds the venv — 1-2 minutes) the
+# dispatch is lost and *nothing records the file*: neither reconciler can
+# see it, because ``reconcile_orphans`` only looks at rows that exist and
+# ``reconcile_stale_files`` only at rows that vanished. The upload is
+# skipped forever.
+#
+# ``/scan-all`` would cover it and is the wrong tool: it walks the whole
+# tree and takes every enqueue decision (in-flight check, done check) for
+# every file, so a large library pays a deep PROPFIND plus per-file work
+# on *every* restart, with the WebDAV 429 exposure that brings.
+#
+# So we keep a watermark — the wall clock of the last webhook we actually
+# received — and at startup PROPFIND ``getlastmod``, enqueueing only the
+# entries modified after it. Bounded by ``NC_OCR_CATCHUP_MAX``; a missing
+# watermark means a fresh install, which must never trigger a mass scan.
+_CATCHUP_WATERMARK_KEY = "_last_webhook_at"
+_CATCHUP_ENABLED = os.environ.get("NC_OCR_CATCHUP", "1").strip().lower() not in (
+    "0", "false", "no", "off", "",
+)
+_CATCHUP_MAX = _int_env_nonneg("NC_OCR_CATCHUP_MAX", 200)
+_CATCHUP_TIMEOUT = _int_env_nonneg("NC_OCR_CATCHUP_TIMEOUT", 120)
+#: Refuse to look further back than this even if the watermark is older.
+#: A week-long outage should be an explicit /scan-all, not a surprise.
+_CATCHUP_MAX_AGE = _int_env_nonneg("NC_OCR_CATCHUP_MAX_AGE", 7 * 24 * 3600)
+
+_CATCHUP_PROPFIND_BODY = (
+    '<?xml version="1.0"?>'
+    '<d:propfind xmlns:d="DAV:"><d:prop>'
+    "<d:resourcetype/><d:getcontenttype/><d:getlastmod/>"
+    "</d:prop></d:propfind>"
+)
+
+#: One ``<x:response>`` block, whatever namespace prefix the server uses.
+_RESPONSE_RE = re.compile(
+    r"<(?P<p>[A-Za-z0-9_]*:)?response\b[^>]*>(?P<body>.*?)"
+    r"</(?P=p)?response>",
+    re.DOTALL,
+)
+
+
+def _parse_propfind_lastmods(xml_text: str) -> list[tuple[str, float | None]]:
+    """Extract ``(path, mtime)`` pairs from a DAV multistatus body.
+
+    Paths come back relative to the WebDAV root
+    (``remote.php/dav/files/<user>/``); ``mtime`` is a unix epoch or
+    ``None`` when the server sent no ``getlastmod``. No XML parser is
+    used because Nextcloud's prefix varies between ``d:``, ``D:``,
+    ``DAV:`` and no prefix at all, and ``/scan-all`` already learned that
+    hard-coding one of them silently drops every entry.
+    """
+    out: list[tuple[str, float | None]] = []
+    marker = f"/remote.php/dav/files/{NC_USER}/"
+    for match in _RESPONSE_RE.finditer(xml_text):
+        block = match.group("body")
+        href = re.search(r"<(?:[A-Za-z0-9_]*:)?href>([^<]*)</", block)
+        if not href:
+            continue
+        path = unquote(href.group(1)).split(marker, 1)[-1]
+        stamp = re.search(r"<(?:[A-Za-z0-9_]*:)?getlastmod>([^<]*)</", block)
+        mtime: float | None = None
+        if stamp:
+            try:
+                mtime = parsedate_to_datetime(stamp.group(1).strip()).timestamp()
+            except (TypeError, ValueError):
+                mtime = None
+        out.append((path, mtime))
+    return out
+
+
+def _catchup_watermark() -> float | None:
+    raw = jobstore.settings_all().get(_CATCHUP_WATERMARK_KEY)
+    if not raw:
+        return None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _mark_webhook_received(at: float | None = None) -> None:
+    """Advance the catch-up watermark. Cheap: one settings row update."""
+    stamp = time.time() if at is None else at
+    try:
+        jobstore.setting_put(_CATCHUP_WATERMARK_KEY, repr(float(stamp)))
+    except Exception as exc:  # noqa: BLE001 - never fail a webhook over this
+        log.warning("catch-up: could not persist watermark (%s)", exc)
+
+
+def catch_up_missed_files(now: float | None = None) -> dict:
+    """Enqueue files whose webhook never arrived (restart window).
+
+    Idempotent and safe to run concurrently with live webhooks: every
+    candidate goes through the same ``_path_in_flight`` guard the webhook
+    and ``/scan-all`` use, so an overlapping delivery is not billed twice.
+    The watermark only advances when the listing succeeded — a failed
+    PROPFIND leaves it untouched so the next restart retries.
+    """
+    result: dict = {
+        "checked": 0, "enqueued": 0, "skipped_in_flight": 0,
+        "skipped_ocrd": 0, "truncated": 0, "errors": 0, "reason": "",
+    }
+    if not _CATCHUP_ENABLED:
+        result["reason"] = "disabled"
+        return result
+    if _CATCHUP_MAX <= 0:
+        result["reason"] = "cap_disabled"
+        return result
+
+    now = time.time() if now is None else now
+    watermark = _catchup_watermark()
+    if watermark is None:
+        result["reason"] = "no_watermark"
+        log.info(
+            "catch-up: no watermark yet (fresh install, or no webhook has "
+            "landed since this build); skipping"
+        )
+        return result
+
+    since = max(watermark, now - _CATCHUP_MAX_AGE)
+    result["since"] = since
+    if watermark < now - _CATCHUP_MAX_AGE:
+        log.warning(
+            "catch-up: watermark is %.0fs old, clamping the scan window to %ds",
+            now - watermark, _CATCHUP_MAX_AGE,
+        )
+
+    dav_path = f"/remote.php/dav/files/{NC_USER}/"
+    try:
+        resp = requests.request(
+            "PROPFIND", NC_URL + dav_path,
+            auth=(NC_USER, NC_PASSWORD),
+            headers={"Depth": "infinity", "Content-Type": "application/xml"},
+            data=_CATCHUP_PROPFIND_BODY, timeout=_CATCHUP_TIMEOUT,
+        )
+        resp.raise_for_status()
+    except Exception as exc:  # noqa: BLE001
+        result["reason"] = f"propfind_failed: {exc}"
+        log.warning("catch-up: PROPFIND failed (%s); watermark kept", exc)
+        return result
+
+    entries = _parse_propfind_lastmods(resp.text)
+    result["checked"] = len(entries)
+
+    candidates: list[tuple[float, str]] = []
+    for rel, mtime in entries:
+        if not rel or Path(rel).suffix.lower() not in PROCESSABLE_EXTS:
+            continue
+        if mtime is None or mtime < since:
+            continue
+        nc_path = f"/{NC_USER}/files/{rel}"
+        if _is_foreign_user(nc_path):
+            continue
+        candidates.append((mtime, nc_path))
+
+    # Newest first, so a truncated pass still catches what the user is
+    # most likely to be looking at.
+    candidates.sort(reverse=True)
+    if len(candidates) > _CATCHUP_MAX:
+        result["truncated"] = len(candidates) - _CATCHUP_MAX
+        log.warning(
+            "catch-up: %d candidate(s) but cap is %d; enqueueing the newest "
+            "and leaving the rest for /scan-all",
+            len(candidates), _CATCHUP_MAX,
+        )
+        candidates = candidates[:_CATCHUP_MAX]
+
+    for _mtime, nc_path in candidates:
+        rec = jobstore.file_get(nc_path)
+        if rec and rec.get("status") == "done":
+            result["skipped_ocrd"] += 1
+            continue
+        if _path_in_flight(nc_path):
+            result["skipped_in_flight"] += 1
+            continue
+        try:
+            _enqueue(nc_path, 0)
+            result["enqueued"] += 1
+        except Exception as exc:  # noqa: BLE001
+            result["errors"] += 1
+            log.error("catch-up: enqueue %s failed (%s)", nc_path, exc)
+
+    # Only now is it safe to say "we are caught up to here".
+    _mark_webhook_received(now)
+    log.info(
+        "catch-up: checked=%d enqueued=%d in_flight=%d ocrd=%d truncated=%d",
+        result["checked"], result["enqueued"], result["skipped_in_flight"],
+        result["skipped_ocrd"], result["truncated"],
+    )
+    return result
+
+
+def _catchup_on_startup() -> None:
+    try:
+        catch_up_missed_files()
+    except Exception as exc:  # noqa: BLE001 - startup must never die here
+        log.error("catch-up: startup pass failed (%s)", exc)
+
+
 # Run the reconciler once at startup so an operator does not have to
 # call the endpoint manually after every restart. The function is
 # idempotent and never raises, so this is safe even when the queue is
@@ -2118,6 +2321,13 @@ for _worker_idx in range(_WORKERS):
     threading.Thread(target=_ocr_worker, daemon=True,
                      name=f"ocr-worker-{_worker_idx}").start()
 log.info("started %d OCR worker(s) (NC_OCR_WORKERS)", _WORKERS)
+
+# Catch-up runs in its own thread: it does one WebDAV PROPFIND and must
+# never delay readiness. Workers are already up, so anything it enqueues
+# is picked up immediately.
+threading.Thread(
+    target=_catchup_on_startup, daemon=True, name="ocr-catchup-startup"
+).start()
 
 # G3: one-line announcement so an operator can tell at a glance whether
 # this build has the fingerprint-verified skip guard compiled in. The
@@ -2579,9 +2789,19 @@ async def handle_webhook(
     """Handle NC webhook for file events. Enqueues job, returns immediately."""
     _check_secret(x_webhook_secret)
 
-    # Catch malformed JSON: a 500 here used to retry-storm a healthy
-    # backend (Nextcloud's dispatcher retries every 5xx indefinitely).
-    # A bad body is a 400, not a server fault.
+    # Catch-up watermark: this is the last moment we know we were alive and
+    # reachable. A restart-catch-up pass uses it to find uploads whose
+    # dispatch died with the service. Written before any early return so
+    # ignored events prove liveness too.
+    _mark_webhook_received()
+
+    # Catch malformed JSON: a bad body is a 400, not a server fault.
+    # (This used to say NC's dispatcher retries every 5xx indefinitely.
+    # It does not: WebhookCall is a QueuedJob that logs and *drops* any
+    # non-2xx, plus transport failures rescheduled 12h out. See
+    # docs/nextcloud-webhook-retry-verdict.md. Answering 200 once we
+    # have accepted the work is still correct — there is no retry to
+    # invite, and a 4xx/5xx just loses the event without a trace.)
     try:
         body = await request.json()
     except Exception as exc:
@@ -2654,6 +2874,25 @@ async def handle_webhook(
     # Return 200 immediately — NC won't retry, worker processes async
     return {"status": "queued", "job_id": job["id"], "path": nc_path,
             "force": force}
+
+
+@app.post("/catch-up")
+async def catch_up(
+    x_webhook_secret: str | None = Header(None, alias="X-Webhook-Secret"),
+):
+    """Manually run the missed-webhook catch-up pass.
+
+    Covers the restart window: files uploaded while the service was down
+    have no index row, so neither reconciler can see them. Runs
+    automatically once at startup; this endpoint is the operator lever
+    for "it was down longer than I thought" and for testing.
+
+    Only enqueues files modified after the last webhook we received (and
+    never more than ``NC_OCR_CATCHUP_MAX`` of them), so it is cheap and
+    never a mass re-scan. Use ``/scan-all`` for that.
+    """
+    _check_secret(x_webhook_secret)
+    return catch_up_missed_files()
 
 
 @app.get("/status")

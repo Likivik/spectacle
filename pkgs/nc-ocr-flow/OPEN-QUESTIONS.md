@@ -112,14 +112,24 @@ Open sub-questions:
 
 ## Open work on the OCR pipeline (recorded 2026-10-18)
 
-- **Uploads during a service restart are never OCR'd — there is no automatic
-  sweep.** `webhook_server.py` has no startup hook (`on_event`/`lifespan`
-  matches: 0) and Nextcloud does not retry a failed webhook dispatch, so a file
-  that arrives while the unit restarts (every deploy that changes the source
-  rebuilds the venv, ~1-2 min) is skipped forever and silently. A manual
-  `POST /scan-all` already exists (line 3065) and is cheap on this instance
-  (~67 indexed files); running it once at startup would make the box self-heal.
-  Two live end-to-end attempts were lost this way on 2026-10-18.
+- **Uploads during a service restart: FIXED by the startup catch-up pass.**
+  The gap was real — a file that arrives while the unit restarts (every deploy
+  that changes the source rebuilds the venv, ~1-2 min) never reaches us, and
+  nothing recorded it. Two live end-to-end attempts were lost this way on
+  2026-10-18.
+  Note the original wording was wrong on one point: `webhook_server.py` *does*
+  reconcile at import (`_reconcile_startup` / `_reconcile_stale_startup`), it
+  just cannot help here — both only look at index rows, and a file whose
+  webhook died has no row at all.
+  Fix (`catch_up_missed_files`, run once at startup in a daemon thread, plus
+  `POST /catch-up`): keep a watermark of the last webhook actually received
+  (settings key `_last_webhook_at`, advanced at the top of `/webhook`), then
+  PROPFIND the root with `getlastmod` and enqueue only entries modified after
+  it. Bounded by `NC_OCR_CATCHUP_MAX` (default 200, newest first), clamped to
+  `NC_OCR_CATCHUP_MAX_AGE` (default 7 days), and a missing watermark means a
+  fresh install and does nothing. `NC_OCR_CATCHUP=0` disables it. Never the
+  full walk `/scan-all` would have done, and it cannot double-bill: candidates
+  go through the same `_path_in_flight` guard as the webhook.
 - **The two PHP scripts have no automated tests.**
   `register-webhook.php` (`WebhookRegistrar`) and `enforce-single-owner.php`
   (`SingleOwnerEnforcer`) were deliberately made testable — `ocsRequest()` is

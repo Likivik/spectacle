@@ -55,7 +55,7 @@ def _repin_state_dir(monkeypatch):
 
 
 def _xml(entries: list[tuple[str, str | None]]) -> str:
-    """Build a DAV multistatus with the given (path, getlastmod) pairs."""
+    """Build a DAV multistatus with the given (path, last-modified) pairs."""
     parts = ['<?xml version="1.0"?><d:multistatus xmlns:d="DAV:">']
     for path, lastmod in entries:
         parts.append(
@@ -63,7 +63,7 @@ def _xml(entries: list[tuple[str, str | None]]) -> str:
             f"<d:href>/remote.php/dav/files/likivik/{path}</d:href>"
             "<d:propstat><d:prop>"
             "<d:resourcetype/><d:getcontenttype>application/pdf</d:getcontenttype>"
-            + (f"<d:getlastmod>{lastmod}</d:getlastmod>" if lastmod else "")
+            + (f"<d:getlastmodified>{lastmod}</d:getlastmodified>" if lastmod else "")
             + "</d:prop></d:propstat></d:response>"
         )
     parts.append("</d:multistatus>")
@@ -152,7 +152,7 @@ def test_enqueues_only_files_newer_than_watermark(monkeypatch):
 
 
 def test_missing_lastmod_is_not_enqueued(monkeypatch):
-    """A server that omits getlastmod gives us no proof the file is new."""
+    """A server that omits the last-modified stamp gives no proof the file is new."""
     ws._mark_webhook_received(NOW - 600)
     _stub_propfind(monkeypatch, _xml([("Work/no-mtime.pdf", None)]))
 
@@ -236,7 +236,7 @@ def test_parse_handles_prefixes_and_percent_encoding():
     xml = (
         '<?xml version="1.0"?><D:multistatus xmlns:D="DAV:">'
         "<D:response><D:href>/remote.php/dav/files/likivik/Work/a%20b.pdf</D:href>"
-        f"<D:propstat><D:prop><D:getlastmod>{_http_date(NOW)}</D:getlastmod>"
+        f"<D:propstat><D:prop><D:getlastmodified>{_http_date(NOW)}</D:getlastmodified>"
         "</D:prop></D:propstat></D:response>"
         "</D:multistatus>"
     )
@@ -245,6 +245,56 @@ def test_parse_handles_prefixes_and_percent_encoding():
     path, mtime = entries[0]
     assert path == "Work/a b.pdf"
     assert mtime == pytest.approx(NOW)
+
+
+#: Exactly what Nextcloud sends: the property we want in a 200 propstat,
+#: plus a 404 propstat for ``getlastmod`` (the CalDAV name). Asking for
+#: ``getlastmod`` alone yields only the 404 block and no value — that mistake
+#: shipped once and made every catch-up pass a silent no-op.
+_NC_REAL_SHAPE = (
+    '<?xml version="1.0"?><d:multistatus xmlns:d="DAV:">'
+    "<d:response>"
+    "<d:href>/remote.php/dav/files/likivik/Work/real.pdf</d:href>"
+    "<d:propstat><d:prop><d:getlastmodified>"
+    + _http_date(NOW)
+    + "</d:getlastmodified><d:resourcetype/></d:prop>"
+    "<d:status>HTTP/1.1 200 OK</d:status></d:propstat>"
+    "<d:propstat><d:prop><d:getlastmod/></d:prop>"
+    "<d:status>HTTP/1.1 404 Not Found</d:status></d:propstat>"
+    "</d:response></d:multistatus>"
+)
+
+
+def test_parses_the_real_nextcloud_response_shape():
+    entries = ws._parse_propfind_lastmods(_NC_REAL_SHAPE)
+    assert len(entries) == 1
+    path, mtime = entries[0]
+    assert path == "Work/real.pdf"
+    assert mtime == pytest.approx(NOW)
+
+
+def test_real_shape_file_is_enqueued(monkeypatch):
+    ws._mark_webhook_received(NOW - 600)
+    _stub_propfind(monkeypatch, _NC_REAL_SHAPE)
+
+    with patch.object(ws, "_enqueue", return_value={"id": 1}) as enq:
+        out = ws.catch_up_missed_files(now=NOW)
+
+    assert out["enqueued"] == 1, out
+    assert [c.args[0] for c in enq.call_args_list] == ["/likivik/files/Work/real.pdf"]
+
+
+def test_undated_entries_are_counted(monkeypatch):
+    """A pass where every entry lacks a stamp must be visible, not silent."""
+    ws._mark_webhook_received(NOW - 600)
+    _stub_propfind(monkeypatch, _xml([("Work/x.pdf", None), ("Work/y.pdf", None)]))
+
+    with patch.object(ws, "_enqueue", return_value={"id": 1}) as enq:
+        out = ws.catch_up_missed_files(now=NOW)
+
+    assert out["enqueued"] == 0
+    assert out["undated"] == 2, out
+    enq.assert_not_called()
 
 
 # --- endpoint --------------------------------------------------------------

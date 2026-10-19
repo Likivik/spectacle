@@ -166,8 +166,15 @@ Open sub-questions:
      `ClassifierUnavailable` → the job errors with the reason and NOTHING is
      converted or deleted. Fix `NC_OCR_MOBILENET_MODEL` and restart.
   2. **Name collisions no longer skip.** If `name.pdf` exists, the OCR'd image
-     uploads as `name (1).pdf` (up to 50), and the pre-existing PDF is never
-     touched. Skip only if every candidate is taken or PROPFIND fails.
+     uploads as `name(1).pdf`, `name(2).pdf`… and the pre-existing PDF is never
+     touched. The naming matches Nextcloud's own: since NC 34 the conflict
+     rename lives in the client (`@nextcloud/files` `getUniqueName`,
+     `lib/utils/filename.ts`) — `(n)` suffix, no space, counter from 1 — and it
+     works off a pre-fetched array of names instead of probing one by one. We
+     do the same: ONE `Depth: 1` PROPFIND of the parent, then pick locally, so
+     there is no practical cap (the earlier 50 was an artefact of
+     per-candidate PROPFINDs, ~50 x 50-200 ms). Skip only when the listing
+     cannot be read.
   3. **`NC_OCR_KEEP_SOURCE_IMAGE=1`** keeps the source image beside the PDF
      (marked `source_image_kept`); off by default. Conversion is lossless anyway
      — see `nc-ocr-extract` — so this is about folder shape, not data safety.

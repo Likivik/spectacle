@@ -750,8 +750,10 @@ def _image_to_pdf(image_path: Path) -> Path:
     return target
 
 
-#: How many "name (N).pdf" candidates to try before giving up.
-_FREE_PDF_TRIES = 50
+#: Sanity cap only. The name search is local (one directory listing), so the
+#: real limit is memory, not round trips; this guards against an absurd
+#: directory. Nextcloud's own loop is unbounded in practice.
+_FREE_PDF_TRIES = 10_000
 
 #: ``NC_OCR_KEEP_SOURCE_IMAGE=1`` leaves the source image next to the PDF it
 #: produced. Off by default because the folder then holds two entries per
@@ -784,28 +786,69 @@ def _shout_classifier_unavailable(exc: BaseException) -> None:
     )
 
 
-def _free_pdf_nc_path(nc_path: str) -> str | None:
-    """First free PDF path next to ``nc_path``: ``a.pdf``, ``a (1).pdf``, …
+def _list_dir_names(dir_nc_path: str) -> set[str] | None:
+    """Basenames inside ``dir_nc_path``, from ONE ``Depth: 1`` PROPFIND.
 
-    Returns ``None`` when even the last candidate is taken, or when a PROPFIND
-    cannot be answered — in both cases the caller skips rather than risk
-    overwriting a file it could not see.
+    Returns ``None`` when the listing cannot be read, so callers refuse to
+    act rather than guess a free name. This is the point of the listing:
+    Nextcloud's own ``getUniqueName`` works off a pre-fetched array of names
+    (``@nextcloud/files``, ``lib/utils/filename.ts``), never one request per
+    candidate.
+    """
+    # Index paths are "/<user>/files/<rest>"; the DAV root already carries
+    # "<user>/", so the prefix must be stripped or the URL doubles it.
+    prefix = f"/{NC_USER}/files"
+    rel = dir_nc_path
+    if rel.startswith(prefix):
+        rel = rel[len(prefix):]
+    dav = "/remote.php/dav/files/" + NC_USER + "/" + "/".join(
+        quote(p, safe="") for p in rel.strip("/").split("/") if p
+    )
+    body = (
+        '<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop>'
+        "<d:resourcetype/></d:prop></d:propfind>"
+    )
+    try:
+        resp = requests.request(
+            "PROPFIND", NC_URL + dav + "/",
+            auth=(NC_USER, NC_PASSWORD),
+            headers={"Depth": "1", "Content-Type": "application/xml"},
+            data=body, timeout=_CATCHUP_TIMEOUT,
+        )
+        resp.raise_for_status()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("image branch: listing %s failed (%s)", dir_nc_path, exc)
+        return None
+    names: set[str] = set()
+    for match in _RESPONSE_RE.finditer(resp.text):
+        href = re.search(r"<(?:[A-Za-z0-9_]*:)?href>([^<]*)</", match.group("body"))
+        if not href:
+            continue
+        rel_name = unquote(href.group(1)).rstrip("/")
+        if rel_name:
+            names.add(rel_name.rsplit("/", 1)[-1])
+    return names
+
+
+def _free_pdf_nc_path(nc_path: str) -> str | None:
+    """First free PDF path beside ``nc_path``, in Nextcloud's own shape.
+
+    ``photo.pdf``, then ``photo(1).pdf``, ``photo(2).pdf`` … — ``(n)`` with no
+    space and the counter starting at 1, exactly what ``getUniqueName`` from
+    ``@nextcloud/files`` produces in the web UI. One directory listing, then
+    the search is local; ``None`` when the listing fails (skip rather than
+    risk overwriting a file we could not see).
     """
     base = Path(nc_path)
-    stem, parent = base.stem, str(base.parent)
+    stem = base.stem
+    parent = str(base.parent) or "/"
+    names = _list_dir_names(parent)
+    if names is None:
+        return None
     for i in range(_FREE_PDF_TRIES):
-        name = f"{stem}.pdf" if i == 0 else f"{stem} ({i}).pdf"
-        candidate = f"{parent}/{name}"
-        try:
-            size, _ = _propfind_size_etag(candidate)
-        except Exception as exc:  # noqa: BLE001
-            log.warning(
-                "image branch: PROPFIND %s failed (%s); refusing upload to be safe",
-                candidate, exc,
-            )
-            return None
-        if not size:
-            return candidate
+        candidate = f"{stem}.pdf" if i == 0 else f"{stem}({i}).pdf"
+        if candidate not in names:
+            return f"{parent}/{candidate}"
     log.warning(
         "image branch: %d candidate names taken for %s; skipping",
         _FREE_PDF_TRIES, nc_path,

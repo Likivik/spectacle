@@ -51,7 +51,7 @@ def image_job(tmp_path, monkeypatch):
     monkeypatch.setattr(ws, "_webdav_delete", lambda p: calls["delete"].append(p))
     monkeypatch.setattr(ws, "classify", lambda p: ClassifyResult(is_document=True, reason="mobilenet"))
     # no name collisions by default
-    monkeypatch.setattr(ws, "_propfind_size_etag", lambda p, attempts=3: (None, None))
+    monkeypatch.setattr(ws, "_list_dir_names", lambda d: set())
     monkeypatch.setattr(ws, "_KEEP_SOURCE_IMAGE", False)
     return calls
 
@@ -86,17 +86,35 @@ def test_classifier_failure_shouts_once(monkeypatch):
 # --- 2. collision gets "name (N).pdf" --------------------------------------
 
 
-def test_free_pdf_path_uses_first_free_suffix(monkeypatch):
-    taken = {"/likivik/files/a.pdf": (100, "e1"), "/likivik/files/a (1).pdf": (200, "e2")}
-    monkeypatch.setattr(ws, "_propfind_size_etag", lambda p, attempts=3: taken.get(p, (None, None)))
-    assert ws._free_pdf_nc_path("/likivik/files/a.png") == "/likivik/files/a (2).pdf"
+def test_free_pdf_path_matches_nextcloud_naming(monkeypatch):
+    """One listing, then Nextcloud's own shape: a.pdf, a(1).pdf, a(2).pdf …
+
+    No space before the parenthesis and the counter starts at 1 — that is
+    what ``@nextcloud/files`` getUniqueName produces in the web UI.
+    """
+    monkeypatch.setattr(ws, "_list_dir_names", lambda d: {"a.pdf", "a(1).pdf"})
+    assert ws._free_pdf_nc_path("/likivik/files/a.png") == "/likivik/files/a(2).pdf"
 
 
-def test_free_pdf_path_none_when_propfind_fails(monkeypatch):
-    def boom(p, attempts=3):
-        raise RuntimeError("webdav down")
+def test_free_pdf_path_starts_at_one(monkeypatch):
+    monkeypatch.setattr(ws, "_list_dir_names", lambda d: {"a.pdf"})
+    assert ws._free_pdf_nc_path("/likivik/files/a.png") == "/likivik/files/a(1).pdf"
 
-    monkeypatch.setattr(ws, "_propfind_size_etag", boom)
+
+def test_free_pdf_path_lists_the_parent_once(monkeypatch):
+    seen = []
+
+    def listing(d):
+        seen.append(d)
+        return {"a.pdf", "a(1).pdf", "a(2).pdf"}
+
+    monkeypatch.setattr(ws, "_list_dir_names", listing)
+    assert ws._free_pdf_nc_path("/likivik/files/Work/a.png") == "/likivik/files/Work/a(3).pdf"
+    assert seen == ["/likivik/files/Work"], "exactly one directory listing"
+
+
+def test_free_pdf_path_none_when_listing_fails(monkeypatch):
+    monkeypatch.setattr(ws, "_list_dir_names", lambda d: None)
     assert ws._free_pdf_nc_path("/likivik/files/a.png") is None
 
 
@@ -138,3 +156,37 @@ def test_photo_still_skipped(image_job, monkeypatch):
     res = ws._process_file("/likivik/files/photo.png", 1)
     assert res.get("skipped") is True
     assert image_job["upload"] == [] and image_job["delete"] == []
+
+
+# --- the directory listing itself -----------------------------------------
+
+
+def test_list_dir_names_url_is_not_double_prefixed(monkeypatch):
+    """"/<user>/files/Work" must become one "/files/<user>/Work" DAV path.
+
+    The first cut pasted the index path onto the DAV root and asked for
+    /files/likivik/likivik/files/ — a 404 on every collision check.
+    """
+    seen = {}
+
+    class _Resp:
+        text = (
+            '<?xml version="1.0"?><d:multistatus xmlns:d="DAV:">'
+            "<d:response><d:href>/remote.php/dav/files/likivik/Work/</d:href></d:response>"
+            "<d:response><d:href>/remote.php/dav/files/likivik/Work/a.pdf</d:href></d:response>"
+            "</d:multistatus>"
+        )
+
+        def raise_for_status(self):
+            pass
+
+    def fake_request(method, url, **kw):
+        seen["url"] = url
+        seen["depth"] = kw["headers"]["Depth"]
+        return _Resp()
+
+    monkeypatch.setattr(ws.requests, "request", fake_request)
+    names = ws._list_dir_names("/likivik/files/Work")
+    assert seen["url"] == "http://localhost/remote.php/dav/files/likivik/Work/", seen["url"]
+    assert seen["depth"] == "1"
+    assert names == {"Work", "a.pdf"}

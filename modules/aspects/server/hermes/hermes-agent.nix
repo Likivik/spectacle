@@ -367,6 +367,31 @@
               "HERMES_OPTIONAL_MCPS=${hermes-pkg}/share/hermes-agent/optional-mcps"
               "HERMES_LAZY_INSTALL_TARGET=/var/lib/hermes/.hermes/lazy-packages"
             ];
+            # Swap in a pre-built compact DB (if staged) before opening it:
+            # ExecStartPre runs with no live writers, so no service juggling.
+            ExecStartPre = pkgs.writeShellScript "hermes-db-swap" ''
+              set -euo pipefail
+              DB=/var/lib/hermes/.hermes/state.db
+              NEW=/var/lib/hermes/.hermes/state.db.new
+              OLD=/var/lib/hermes/.hermes/state.db.pre-vacuum
+              [ -s "$NEW" ] || exit 0
+              check() {
+                ${pkgs.python3}/bin/python3 - "$1" <<'PY'
+              import sqlite3, sys
+              con = sqlite3.connect("file:" + sys.argv[1] + "?mode=ro", uri=True)
+              print(con.execute("PRAGMA quick_check").fetchone()[0])
+              PY
+              }
+              res=$(check "$NEW")
+              [ "$res" = "ok" ] || { echo "staged db failed quick_check: $res"; exit 1; }
+              mv -f "$DB" "$OLD"
+              mv -f "$NEW" "$DB"
+              rm -f "$DB-wal" "$DB-shm"
+              res=$(check "$DB")
+              [ "$res" = "ok" ] || { echo "swapped db failed quick_check: $res"; mv -f "$OLD" "$DB"; exit 1; }
+              rm -f "$OLD"
+              echo "swapped; db bytes=$(stat -c %s "$DB")"
+            '';
             ExecStart = "${hermes-pkg}/bin/hermes gateway run";
             EnvironmentFile = [
               "/run/secrets/hermes/env"

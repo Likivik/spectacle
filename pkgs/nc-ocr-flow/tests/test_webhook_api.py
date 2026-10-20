@@ -910,6 +910,7 @@ def test_process_file_zero_block_image_branch_also_gates(monkeypatch, tmp_path):
     img_path = tmp_path / "page.png"
     Image.new("RGB", (100, 100), "white").save(img_path)
 
+    monkeypatch.setattr(ws, "_list_dir_names", lambda _d: set())
     calls = {"upload": [], "stamp": [], "delete": []}
 
     monkeypatch.setattr(
@@ -1382,9 +1383,8 @@ def test_image_branch_uses_next_free_name_on_collision(monkeypatch, tmp_path):
     nc_path = f"/{ws.NC_USER}/files/Work/photo.jpg"
     pdf_nc_path = f"/{ws.NC_USER}/files/Work/photo.pdf"
 
-    # photo.pdf is taken; photo (1).pdf is free.
-    monkeypatch.setattr(ws, "_propfind_size_etag",
-                        lambda p, attempts=3: (1234, "etag-mock") if p == pdf_nc_path else (None, None))
+    # photo.pdf is taken; photo(1).pdf is free.
+    monkeypatch.setattr(ws, "_list_dir_names", lambda d: {"photo.pdf"})
 
     calls = {"upload": [], "delete": []}
 
@@ -1442,7 +1442,7 @@ def test_image_branch_uses_next_free_name_on_collision(monkeypatch, tmp_path):
     res = ws._process_file(nc_path, node_id=42, engine="google", force=False)
     assert res.get("skipped") is not True, res
     # Uploaded to the next free name; the pre-existing photo.pdf is untouched.
-    assert calls["upload"] == [f"/{ws.NC_USER}/files/Work/photo (1).pdf"], calls
+    assert calls["upload"] == [f"/{ws.NC_USER}/files/Work/photo(1).pdf"], calls
     assert calls["delete"] == [nc_path], calls
 
 
@@ -1461,6 +1461,7 @@ def test_image_branch_proceeds_when_no_collision(monkeypatch, tmp_path):
     # PROPFIND says no target PDF exists.
     monkeypatch.setattr(ws, "_propfind_size_etag",
                         lambda _p: (None, None))
+    monkeypatch.setattr(ws, "_list_dir_names", lambda _d: set())
 
     calls = {"upload": [], "delete": []}
 
@@ -2185,6 +2186,7 @@ def test_c2_image_branch_delete_failed_records_reason(monkeypatch, tmp_path):
     def fake_propfind(*a, **k):
         return (None, None)
     monkeypatch.setattr(ws, "_propfind_size_etag", fake_propfind)
+    monkeypatch.setattr(ws, "_list_dir_names", lambda _d: set())
     # The image classifier must say "this is a document image"
     # or the branch returns early as "not a document".
     monkeypatch.setattr(ws, "classify",

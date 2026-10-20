@@ -15,6 +15,9 @@ dependencies = [
   "pydantic>=2.0",
 ]
 
+[project.scripts]
+nc-ocr-extract = "nc_ocr_flow.extract:main"
+
 [project.optional-dependencies]
 google = [
   "google-cloud-vision>=3.7",

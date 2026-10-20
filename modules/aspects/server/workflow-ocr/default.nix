@@ -318,6 +318,11 @@
           TESSDATA_PREFIX = "${ocrAssets}/tessdata";
           # Doc/photo gate: fp32 MobileNetV3-Small (see environment.etc."nc-ocr/...").
           NC_OCR_MOBILENET_MODEL = "/etc/static/nc-ocr/mobilenet_v3_small_fp32.onnx";
+          # Image branch: converted images become PDFs and the source image is
+          # deleted. Set to "1" to keep the original beside the PDF (two entries
+          # per image; the bytes are recoverable from the PDF either way via
+          # nc-ocr-extract). Off unless a folder needs originals on disk.
+          # NC_OCR_KEEP_SOURCE_IMAGE = "1";
           # Stage-1 page-orientation classifier: PP-LCNet_x1_0_doc_ori.
           # Used by nc_ocr_flow.doc_ori; falls back to the 4-rotation
           # OCR vote when the margin is < 0.15 (see orientation.DOC_ORI_MARGIN_THRESHOLD).

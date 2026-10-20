@@ -47,13 +47,25 @@ def _get_session():
     return _MOBILENET_SESSION
 
 
+class ClassifierUnavailable(RuntimeError):
+    """The image classifier cannot run (model missing, ONNX broken, …).
+
+    Deliberately NOT a skip reason. Failing open to ``is_document=True``
+    means one broken model quietly converts every image in every folder to
+    a PDF and deletes the sources — a mass mutation nobody asked for, with
+    a Vision bill attached. Failing closed stops the image pipeline and
+    surfaces the reason instead; documents keep their original images
+    until the model is fixed.
+    """
+
+
 def classify(image_path: str | Path) -> ClassifyResult:
     """Classify image as document or photo.
 
-    Failures default to DOCUMENT (OCR it). The previous default (photo/skip)
-    meant a missing or broken model silently discarded every image's text
-    forever; wrongly OCR-ing a photo costs a bit of search noise, losing a
-    document costs the document.
+    Raises :class:`ClassifierUnavailable` when the classifier itself cannot
+    run. A *successful* run whose verdict happens to be wrong is a
+    different (and much cheaper) problem: photos get skipped, documents get
+    OCR'd, and neither destroys data.
     """
     path = Path(image_path)
     try:
@@ -73,8 +85,11 @@ def classify(image_path: str | Path) -> ClassifyResult:
         return ClassifyResult(is_document=is_doc, reason="mobilenet")
 
     except Exception as exc:
-        log.warning("classifier failed: %s; defaulting to document (OCR it)", exc)
-        return ClassifyResult(is_document=True, reason=f"error:{type(exc).__name__}")
+        raise ClassifierUnavailable(
+            f"image classifier unavailable ({type(exc).__name__}: {exc}); "
+            "refusing to guess document-vs-photo. Fix the model "
+            "(_MOBILENET_MODEL / NC_OCR_MOBILENET_MODEL) and re-run."
+        ) from exc
 
 
-__all__ = ["ClassifyResult", "classify", "DOC", "PHOTO"]
+__all__ = ["ClassifyResult", "ClassifierUnavailable", "classify", "DOC", "PHOTO"]

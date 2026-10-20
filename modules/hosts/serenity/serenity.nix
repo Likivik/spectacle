@@ -350,20 +350,13 @@
         # are explicit: dry-build -> serenity-smoke -> detached nixos-rebuild.
         # (Traversal still autopulls its own checkout.)
 
-        # KRDP — KDE Remote Desktop (RDP server, Wayland-native)
-        systemd.user.services.krdp = {
-          description = "KDE Remote Desktop (RDP) Server";
-          after = [ "graphical-session.target" ];
-          wants = [ "graphical-session.target" ];
-          wantedBy = [ "default.target" ];
-
-          serviceConfig = {
-            Type = "simple";
-            ExecStart = "${pkgs.kdePackages.krdp}/bin/krdpserver";
-            Restart = "on-failure";
-            RestartSec = 5;
-          };
-        };
+        # KRDP (KDE Remote Desktop / krdpserver) was removed 2026-10-20: its
+        # user unit crash-looped — 80,295 SIGABRT dumps in one boot — and the
+        # `Restart = on-failure` + `RestartSec = 5` policy never tripped
+        # systemd's start limiter, so it restarted forever. The drkonqi
+        # symbolication it triggered (88 failed units, 63k journal error
+        # lines/day) is what drove four global OOM kills. Re-add only with a
+        # bounded StartLimitBurst and a verified-working krdpserver.
       };
 
   };

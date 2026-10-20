@@ -334,7 +334,11 @@
           blacklistedKernelModules = [
             "nouveau"
           ];
-          kernelParams = [ "nvidia_drm.modeset=1" ];
+          # zswap sits *in front of* zram and would intercept the pages zram
+          # is meant to hold (ArchWiki zram), so it has to stay off. It is
+          # already `N` on this host; pinned here so a future kernel/config
+          # default flip cannot silently neutralise the zram swap below.
+          kernelParams = [ "nvidia_drm.modeset=1" "zswap.enabled=0" ];
         };
 
         # Remote desktop: rustdesk dropped 2026-09-07 — no Hydra cache (job
@@ -357,6 +361,50 @@
         # symbolication it triggered (88 failed units, 63k journal error
         # lines/day) is what drove four global OOM kills. Re-add only with a
         # bounded StartLimitBurst and a verified-working krdpserver.
+
+        # ── Memory hardening (2026-10-21) ────────────────────────────────────
+        # 15 GiB box, 8.8 GiB disk swap, no cgroup memory bounds at all: a
+        # runaway build or a crash-looping coredump symboliser drove five
+        # *global* kernel OOM kills in one week (2026-10-16 .. 10-20), i.e. the
+        # kernel picked victims box-wide with no reclaim fallback. Two levers,
+        # neither of them lethal:
+        #
+        # 1. zram — compressed swap held in RAM, given a higher priority than
+        #    the disk partition, so a spike is absorbed with no disk thrash.
+        #    NixOS `memoryPercent` is the *uncompressed* zram capacity; 50% of
+        #    15 GiB ≈ the min(ram/2, 16G) that zram-generator ships as default.
+        #    Serenity is not hibernated (zram cannot back hibernation), and
+        #    swapon order is by priority, so /dev/sdb3 stays the slow fallback.
+        zramSwap.enable = true;
+        zramSwap.memoryPercent = 50;
+
+        # 2. oomd — kill inside a cgroup *before* the kernel thrash-locks the
+        #    whole box. systemd slices, as on erebus.
+        systemd.oomd = {
+          enable = true;
+          enableRootSlice = true;
+          enableSystemSlice = true;
+          enableUserSlices = true;
+        };
+        systemd.slices."system".sliceConfig.ManagedOOMMemoryPressureLimit = "60%";
+        # user.slice holds the hermes gateway *and* whatever build a session
+        # runs (2026-10-21: a Gradle/KMP build held 4.5 GiB, 3.4 GiB of it in
+        # swap). The default 60% pressure cull there would take the agent down
+        # together with the build, so raise the threshold and mark the things
+        # the box cannot lose kill-last — oomd then picks the build scope in
+        # the same slice instead.
+        systemd.slices."user".sliceConfig.ManagedOOMMemoryPressureLimit = "80%";
+        systemd.user.services.hermes-gateway.serviceConfig.ManagedOOMPreference = "avoid";
+        systemd.services.sshd.serviceConfig.ManagedOOMPreference = "avoid";
+        systemd.services.tailscaled.serviceConfig.ManagedOOMPreference = "avoid";
+        systemd.services.nix-daemon.serviceConfig.ManagedOOMPreference = "avoid";
+        # The upstream swap-based rule assumes a slow disk swap; a zram device
+        # reaches 90%-used far sooner and would cull healthy cgroups. Raise the
+        # bar so PSI (the pressure limits above) is what decides.
+        environment.etc."systemd/oomd.conf.d/10-serenity.conf".text = ''
+          [OOM]
+          SwapUsedLimit = 95%
+        '';
       };
 
   };

@@ -273,6 +273,10 @@
           fsType = "zfs";
         };
 
+        # Belt for the same failure mode: a slow SATA link must not drop the box
+        # into rescue. The import script polls for up to this long.
+        systemd.services."zfs-import-gitpool".serviceConfig.TimeoutStartSec = "180";
+
         # CI build caches, same pool: they must not live on the ZFS HDD where
         # random writes cost the whole box (ARC eviction + 75 GiB of churn).
         fileSystems."/var/cache/forgejo-ci" = {
@@ -304,7 +308,12 @@
         services.zfs.autoScrub.enable = true;
         # gitpool: the SSD pool behind /Git and the CI caches (see above).
         boot.zfs.extraPools = [ "serenity_onetb_zpool" "gitpool" ];
-        boot.zfs.devNodes = "/dev/disk/by-label/serenity_onetb_zpool";
+        # zfs-import scans ONLY this path. Pointing it at a by-label directory
+        # that contains a single device is why gitpool was "in state MISSING,
+        # waiting" for 60 s at boot on 2026-10-22 and local-fs failed into
+        # rescue: the SSD was never in the search path. by-id covers both
+        # pools and is the NixOS default.
+        boot.zfs.devNodes = "/dev/disk/by-id";
         boot.initrd.supportedFilesystems = [ "zfs" ];
 
         # Nvidia driver

@@ -268,9 +268,16 @@
         # gitpool lives on the 119 GiB Apacer SSD: zstd compression (the CI Rust
         # target dir alone is 75 GiB uncompressed) and per-dataset quotas so a
         # runaway build hits its own ceiling instead of filling the disk.
+        # nofail on both datasets is deliberate: a missing or slow pool must
+        # degrade the box, not strand it at the rescue prompt. Without it
+        # local-fs.target carries Requires= on these mount units, so one failed
+        # import on 2026-10-22 was enough to stop the whole boot. With nofail,
+        # git/CI work is broken until the pool comes back, but ssh, the gateway
+        # and everything else still come up - and that is repairable remotely.
         fileSystems."/Git" = {
           device = "gitpool/git";
           fsType = "zfs";
+          options = [ "zfsutil" "nofail" "x-systemd.mount-timeout=60s" ];
         };
 
         # Belt for the same failure mode: a slow SATA link must not drop the box
@@ -282,6 +289,11 @@
         fileSystems."/var/cache/forgejo-ci" = {
           device = "gitpool/ci-cache";
           fsType = "zfs";
+          # A cache with nofail is correct: CI can rebuild, and the runner must
+          # not drag the boot down with it. zfsutil is required to mount a
+          # dataset by name at all - `mount -t zfs pool/ds /path` without it
+          # fails with "cannot be mounted using 'mount'" (verified by hand).
+          options = [ "zfsutil" "nofail" "x-systemd.mount-timeout=60s" ];
         };
 
         fileSystems."/" = {

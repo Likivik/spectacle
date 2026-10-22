@@ -265,12 +265,19 @@
         # the entire tree appeared to vanish. /Git's parent is `/`, mounted
         # first by construction — no ordering dance, no bind.
         #
-        # Interim: plain ext4 until the ZFS pool is created; then this entry is
-        # replaced by the gitpool/git dataset with the same mountpoint.
+        # gitpool lives on the 119 GiB Apacer SSD: zstd compression (the CI Rust
+        # target dir alone is 75 GiB uncompressed) and per-dataset quotas so a
+        # runaway build hits its own ceiling instead of filling the disk.
         fileSystems."/Git" = {
-          device = "/dev/disk/by-uuid/b1f69b8f-cc97-4879-9942-ac8df1e0f6d8";
-          fsType = "ext4";
-          options = [ "rw" "nosuid" "nodev" ];
+          device = "gitpool/git";
+          fsType = "zfs";
+        };
+
+        # CI build caches, same pool: they must not live on the ZFS HDD where
+        # random writes cost the whole box (ARC eviction + 75 GiB of churn).
+        fileSystems."/var/cache/forgejo-ci" = {
+          device = "gitpool/ci-cache";
+          fsType = "zfs";
         };
 
         fileSystems."/" = {
@@ -295,7 +302,8 @@
         boot.zfs.forceImportRoot = false;
         networking.hostId = "ad7406b6";
         services.zfs.autoScrub.enable = true;
-        boot.zfs.extraPools = [ "serenity_onetb_zpool" ];
+        # gitpool: the SSD pool behind /Git and the CI caches (see above).
+        boot.zfs.extraPools = [ "serenity_onetb_zpool" "gitpool" ];
         boot.zfs.devNodes = "/dev/disk/by-label/serenity_onetb_zpool";
         boot.initrd.supportedFilesystems = [ "zfs" ];
 

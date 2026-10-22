@@ -109,8 +109,13 @@
         # (module wires `after = tailscaled.service`; runs `tailscale set <flags>`
         # once the backend is Running). Runtime `tailscale set` changes are
         # overwritten on every activation — keep this block in sync.
+        # Exit node by IP, not hostname: `tailscale set --exit-node=erebus` dies
+        # with "cannot resolve exit node by hostname while Tailscale is starting
+        # up" when it runs in the first seconds of boot, and the unit is a bare
+        # oneshot with no retries - so it failed on every boot and the exit node
+        # silently never applied. 100.105.125.69 is erebus.
         services.tailscale.extraSetFlags = [
-          "--exit-node=erebus"
+          "--exit-node=100.105.125.69"
           "--exit-node-allow-lan-access=true"
         ];
 

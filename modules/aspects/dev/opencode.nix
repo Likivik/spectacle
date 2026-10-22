@@ -1,9 +1,14 @@
 { den, inputs, lib, ... }:
 {
   den.aspects.opencode = {
-    maid = { user, ... }: {
-      file.xdg_config."opencode".source = "/Storage/Git/spectacle/modules/users/likivik/dotfiles/opencode";
-    };
+    maid =
+      { user, host, ... }:
+      let
+        gitRoot = import ../../../lib/git-root.nix host;
+      in
+      {
+        file.xdg_config."opencode".source = "${gitRoot}/spectacle/modules/users/likivik/dotfiles/opencode";
+      };
 
     nixos =
       { pkgs, ... }: {

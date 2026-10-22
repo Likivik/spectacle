@@ -49,10 +49,10 @@ pkgs.testers.nixosTest {
     machine.succeed("[ \"$(stat -c %U /Storage/forgejo/repositories)\" = forgejo ]")
 
     # 3b. Persistent Rust cargo cache dirs created + owned by the job user
-    machine.succeed("test -d /Storage/forgejo/rust-cache")
-    machine.succeed("test -d /Storage/forgejo/rust-target")
-    machine.succeed("[ \"$(stat -c %U /Storage/forgejo/rust-cache)\" = nixuser ]")
-    machine.succeed("[ \"$(stat -c %U /Storage/forgejo/rust-target)\" = nixuser ]")
+    machine.succeed("test -d /var/cache/forgejo-ci/rust-cache")
+    machine.succeed("test -d /var/cache/forgejo-ci/rust-target")
+    machine.succeed("[ \"$(stat -c %U /var/cache/forgejo-ci/rust-cache)\" = nixuser ]")
+    machine.succeed("[ \"$(stat -c %U /var/cache/forgejo-ci/rust-target)\" = nixuser ]")
 
     # 3c. Runner config.yaml declares the cargo env + writable volumes
     # (container options compile into the generated config.yaml, referenced by
@@ -62,8 +62,8 @@ pkgs.testers.nixosTest {
       + "| grep -o '/nix/store/[^ ]*config.yaml' | head -1); "
       + "grep -q 'CARGO_HOME=/opt/cargo' \"$cfg\" && "
       + "grep -q 'CARGO_TARGET_DIR=/opt/target' \"$cfg\" && "
-      + "grep -q '/Storage/forgejo/rust-cache:/opt/cargo' \"$cfg\" && "
-      + "grep -q '/Storage/forgejo/rust-target:/opt/target' \"$cfg\""
+      + "grep -q '/var/cache/forgejo-ci/rust-cache:/opt/cargo' \"$cfg\" && "
+      + "grep -q '/var/cache/forgejo-ci/rust-target:/opt/target' \"$cfg\""
     )
 
     # 3. forgejo must be able to traverse its parent (group membership)

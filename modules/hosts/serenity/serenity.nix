@@ -258,38 +258,19 @@
           }
         ];
 
-        fileSystems."/panther" = {
+        # ── /Git: repos + jj workspaces on the SSD ───────────────────────────
+        # Replaces the old /panther + `bind /panther/Git → /Storage/Git` pair.
+        # That bind was ordered only against panther.mount, never against
+        # Storage.mount, so on 2026-10-21 the ZFS /Storage mounted over it and
+        # the entire tree appeared to vanish. /Git's parent is `/`, mounted
+        # first by construction — no ordering dance, no bind.
+        #
+        # Interim: plain ext4 until the ZFS pool is created; then this entry is
+        # replaced by the gitpool/git dataset with the same mountpoint.
+        fileSystems."/Git" = {
           device = "/dev/disk/by-uuid/b1f69b8f-cc97-4879-9942-ac8df1e0f6d8";
           fsType = "ext4";
-          options = [
-            "defaults"
-            "user"
-            "rw"
-          ];
-        };
-
-        # /Storage/Git lives on the fast scratch SSD (/panther) via a bind mount.
-        #
-        # Why: git/jj are metadata-heavy (thousands of small files in .git/objects,
-        # the index, and .jj's store), and /Storage is a spinning disk. Binding keeps
-        # every path in the fleet identical (/Storage/Git/...) so docs, CI, scripts,
-        # autopull timers and other sessions need no changes.
-        #
-        # The original ZFS copy is deliberately left in place underneath the mount:
-        # it costs ~2.8G on a pool with hundreds of GB free and behaves as a
-        # de-facto snapshot if the scratch SSD ever dies. To reclaim it you must
-        # stop the mount first, or you will delete the SSD copy instead.
-        #
-        # x-systemd.requires-mounts-for orders this after /panther, so the source
-        # is always mounted before the bind.
-        fileSystems."/Storage/Git" = {
-          device = "/panther/Git";
-          fsType = "none";
-          # Bind mounts inherit the parent mount flags, and the /panther user
-          # option implies noexec - so every repo under /Storage/Git was
-          # non-executable (./gradlew -> Permission denied, exit 126). exec
-          # applies to the bind only; /panther stays noexec,nosuid,nodev.
-          options = [ "bind" "exec" "x-systemd.requires-mounts-for=/panther" ];
+          options = [ "rw" "nosuid" "nodev" ];
         };
 
         fileSystems."/" = {

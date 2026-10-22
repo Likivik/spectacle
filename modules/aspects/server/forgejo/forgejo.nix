@@ -167,15 +167,15 @@
             };
             container = {
               network = "host";
-              options = "-e NIX_BUILD_SHELL=/bin/bash -e PAGER=cat -e PATH=/bin -e SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt -e CARGO_HOME=/opt/cargo -e CARGO_TARGET_DIR=/opt/target --user nixuser -v /nix:/nix -v ${storeDeps}/bin:/bin -v ${storeDeps}/etc/ssl:/etc/ssl -v /Storage/forgejo/rust-cache:/opt/cargo -v /Storage/forgejo/rust-target:/opt/target";
-              valid_volumes = [ "/nix" "${storeDeps}/bin" "${storeDeps}/etc/ssl" "/Storage/forgejo/rust-cache" "/Storage/forgejo/rust-target" ];
+              options = "-e NIX_BUILD_SHELL=/bin/bash -e PAGER=cat -e PATH=/bin -e SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt -e CARGO_HOME=/opt/cargo -e CARGO_TARGET_DIR=/opt/target --user nixuser -v /nix:/nix -v ${storeDeps}/bin:/bin -v ${storeDeps}/etc/ssl:/etc/ssl -v /var/cache/forgejo-ci/rust-cache:/opt/cargo -v /var/cache/forgejo-ci/rust-target:/opt/target";
+              valid_volumes = [ "/nix" "${storeDeps}/bin" "${storeDeps}/etc/ssl" "/var/cache/forgejo-ci/rust-cache" "/var/cache/forgejo-ci/rust-target" ];
             };
             # Forgejo's intended Actions cache: a cache server inside the runner,
             # serving actions/cache (tar archives on the runner's disk, keyed per
             # branch). Works with our host-networked containers (no pasta issue).
             cache = {
               enabled = true;
-              dir = "/Storage/forgejo/actcache";
+              dir = "/var/cache/forgejo-ci/actcache";
             };
           };
         };
@@ -212,14 +212,20 @@
           install -d -o forgejo -g forgejo -m 0750 \
             /Storage/forgejo/repositories \
             /Storage/forgejo/lfs
+          # CI build caches live on the root SSD (/dev/sdb2), NOT on the ZFS
+          # HDD pool: 75 GiB of uncompressed rust-target random writes was the
+          # slowest thing on the box and it evicted ARC. Parent must be
+          # traversable by the runner (gitea-runner) and by the in-container
+          # job user (nixuser).
+          install -d -o root -g root -m 0755 /var/cache/forgejo-ci
           # actions/cache server dir — owned by the runner (gitea-runner) user.
-          install -d -o gitea-runner -g gitea-runner -m 0750 /Storage/forgejo/actcache
+          install -d -o gitea-runner -g gitea-runner -m 0750 /var/cache/forgejo-ci/actcache
           # Persistent Rust cargo cache (Layer 2): the runner job runs as nixuser
           # inside a container whose bind-mounted /opt dirs preserve host
           # ownership — nixuser:nixuser 0770 lets the in-container job read/write.
           install -d -o nixuser -g nixuser -m 0770 \
-            /Storage/forgejo/rust-cache \
-            /Storage/forgejo/rust-target
+            /var/cache/forgejo-ci/rust-cache \
+            /var/cache/forgejo-ci/rust-target
           install -d -o forgejo -g forgejo -m 0700 /var/backup/forgejo
         '';
 

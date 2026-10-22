@@ -37,8 +37,13 @@ xdg.portal = {
       ];
     };
 
-    maid = { user, ... }: {
-      file.xdg_config."niri".source = "/Storage/Git/spectacle/modules/users/likivik/dotfiles/niri";
-    };
+    maid =
+      { user, host, ... }:
+      let
+        gitRoot = import ../../../../../lib/git-root.nix host;
+      in
+      {
+        file.xdg_config."niri".source = "${gitRoot}/spectacle/modules/users/likivik/dotfiles/niri";
+      };
   };
 }

@@ -161,17 +161,20 @@
       };
 
     maid =
-      { user, ... }:
+      { user, host, ... }:
+      let
+        gitRoot = import ../../../../../lib/git-root.nix host;
+      in
       {
-        file.xdg_config."DankMaterialShell".source = "/Storage/Git/spectacle/modules/users/likivik/dotfiles/DankMaterialShell";
+        file.xdg_config."DankMaterialShell".source = "${gitRoot}/spectacle/modules/users/likivik/dotfiles/DankMaterialShell";
         file.xdg_config."qt6ct/qt6ct.conf".text = ''
           [Appearance]
           icon_theme=Tela
           standard_dialogs=filechooser
         '';
-        file.xdg_config."ghostty/config".source = "/Storage/Git/spectacle/modules/users/likivik/dotfiles/ghostty/config";
-        file.xdg_config."kitty/kitty.conf".source = "/Storage/Git/spectacle/modules/users/likivik/dotfiles/kitty/kitty.conf";
-        file.xdg_config."wezterm/wezterm.lua".source = "/Storage/Git/spectacle/modules/users/likivik/dotfiles/wezterm/wezterm.lua";
+        file.xdg_config."ghostty/config".source = "${gitRoot}/spectacle/modules/users/likivik/dotfiles/ghostty/config";
+        file.xdg_config."kitty/kitty.conf".source = "${gitRoot}/spectacle/modules/users/likivik/dotfiles/kitty/kitty.conf";
+        file.xdg_config."wezterm/wezterm.lua".source = "${gitRoot}/spectacle/modules/users/likivik/dotfiles/wezterm/wezterm.lua";
         file.xdg_config."mimeapps.list".text = ''
           [Default Applications]
           inode/directory=org.kde.dolphin.desktop

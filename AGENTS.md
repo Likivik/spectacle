@@ -13,7 +13,8 @@ Cite/document what you found when it shapes a decision.
 
 **One agent session = one jj workspace. Never edit the shared checkout.**
 
-The shared checkout `/Storage/Git/spectacle` belongs to `likivik`. Working in it
+The shared checkout belongs to `likivik` — `/Git/spectacle` on serenity (SSD
+pool `gitpool`), `/Storage/Git/spectacle` on traversal. Working in it
 means your session snapshots another session's in-flight files into its working
 copy — that is how a schema + permission change was once silently dropped by a
 merge, and how a commit that looked like "another session stole my work" got
@@ -21,16 +22,16 @@ created. `jj new` does **not** isolate you: it only starts a new change inside
 whatever checkout you are in.
 
 ```bash
-cd /Storage/Git/spectacle                  # only to create or forget workspaces
+cd /Git/spectacle                         # only to create or forget workspaces
 jj workspace add --name spectacle-<sessionid> -r main \
-   /Storage/Git/Workspaces/spectacle-<sessionid>
-cd /Storage/Git/Workspaces/spectacle-<sessionid>
+   /Git/hermes/workspaces/spectacle-<sessionid>
+cd /Git/hermes/workspaces/spectacle-<sessionid>
 jj workspace update-stale                  # after any gap
 ```
 
 All work — editing, testing, deploying — happens inside that workspace, and the
 deploy command must point at it:
-`--flake path:/Storage/Git/Workspaces/<name>#<host>`.
+`--flake path:/Git/hermes/workspaces/<name>#<host>`.
 
 Before publishing anything, prove your change contains only what you touched:
 `jj diff --stat --from main --to @` must list only your files.
@@ -173,9 +174,12 @@ A green PR is **not** permission to deploy — see the deploy flow below.
 
 ## Repo Location
 
-- **Serenity**: `/Storage/Git/spectacle` — **the host the Hermes agent runs on** (moved
-  there from Erebus on 2026-10-05; see `/var/lib/hermes/flip-to-serenity.sh`). Builds,
-  tests, VM smoke gates and deploys happen here.
+- **Serenity**: `/Git/spectacle` — **the host the Hermes agent runs on**. The 119 GiB
+  Apacer SSD holds ZFS pool `gitpool`: dataset `gitpool/git` → `/Git` (repos, quota
+  60 G) and `gitpool/ci-cache` → `/var/cache/forgejo-ci` (quota 40 G). Agent
+  workspaces live in `/Git/hermes/workspaces`. Builds, tests, VM smoke gates and
+  deploys happen here. Note `nofail` on both mounts: if the pool fails to import,
+  the box still boots and `/Git` is simply absent.
 - **Erebus**: `/Storage/Git/spectacle` — edit-only scratch (jj repo). Its Hermes gateway is
   masked and it has no space: **never build here**, heavy Nix work belongs on Serenity.
 - **Traversal**: `/Storage/Git/spectacle` — the `spectacle-autopull` unit is defined in
@@ -221,7 +225,7 @@ This repo uses **jj** (Jujutsu) on top of git. jj is the primary VCS.
       hermes-agent v2026.9.7 while serenity ran v2026.9.24.
    2. **Work in your own workspace**, never the shared checkout:
       `jj workspace add --name spectacle-<sessionid> -r main \
-         /Storage/Git/Workspaces/spectacle-<sessionid>`
+         /Git/hermes/workspaces/spectacle-<sessionid>`
    3. **Edit** in that workspace.
    4. **Rebase onto latest main** and resolve conflicts before building
       anything: `jj git fetch && jj rebase -d main`.

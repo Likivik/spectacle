@@ -189,9 +189,22 @@
           poppler-utils
           ffmpeg
           (python3.withPackages (ps: [ ps.numpy ps.pillow ]))
+          # Remote power control for the PowerEdge T110 II BMC. Credential paths
+          # are baked in from sops at build time (see sops.secrets below), so the
+          # script itself carries no secrets.
+          (pkgs.callPackage ../../../pkgs/poweredge-power.nix {
+            bmcUserFile = config.sops.secrets."poweredge/bmc-user".path;
+            bmcPasswordFile = config.sops.secrets."poweredge/bmc-password".path;
+          })
         ];
 
         sops.secrets = {
+          # PowerEdge T110 II BMC (IPMI over LAN), consumed by `poweredge-power`.
+          # Readable by group users on purpose: the tool is run by hermes and by
+          # likivik, not only by root. The BMC itself only accepts cipher suite 3
+          # and has no unauthenticated path left (issue #89).
+          "poweredge/bmc-user" = { sopsFile = ../../../secrets/poweredge/secrets.yaml; owner = "root"; group = "users"; mode = "0440"; };
+          "poweredge/bmc-password" = { sopsFile = ../../../secrets/poweredge/secrets.yaml; owner = "root"; group = "users"; mode = "0440"; };
           # Env + platform tokens
           "hermes/env" = { sopsFile = ../../../secrets/serenity/hermes-secrets.yaml; owner = "hermes"; group = "hermes"; mode = "0600"; };
           "hermes/telegram-bot-token" = { sopsFile = ../../../secrets/serenity/hermes-secrets.yaml; owner = "hermes"; group = "hermes"; mode = "0600"; };

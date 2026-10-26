@@ -234,7 +234,11 @@
         config.sops.secrets."tailscale/auth-key".path;
       services.tailscale.extraUpFlags = lib.mkAfter [
         "--advertise-tags=tag:server,tag:exit-node"
-        "--advertise-exit-node"
+        # No --advertise-exit-node here: tailscaled 1.102.5 rejects the
+        # combination outright ("Cannot advertise an exit node and use an exit
+        # node at the same time"), so `tailscale up` failed and the --exit-node
+        # below never got applied - which left this host on the direct path,
+        # where most caches are unreachable.
         "--advertise-routes=192.168.0.100/32"
         "--accept-routes"
         "--exit-node=erebus"

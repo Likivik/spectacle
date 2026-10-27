@@ -47,13 +47,24 @@ work you had; resolve by keeping main's side. Full detail: skill
 
 ## VM smoke — run it locally, it is not a CI check
 
-`.github/workflows/ci.yml` runs three required checks: the nc-ocr-flow pytest
-suite, `nix build --dry-run` over every `nixosConfiguration`, and `nix checks` —
-one aggregate over the CI-safe flake checks (see "Adding a test" below). The VM
-smoke is deliberately absent: a hosted runner cannot cold-build the serenity
+`.github/workflows/ci.yml` runs two required checks: `nix build --dry-run` over
+every `nixosConfiguration`, and `nix checks` — one aggregate over the CI-safe
+flake checks (see "Adding a test" below). The VM smoke is deliberately absent: a
+hosted runner cannot cold-build the serenity
 closure within a job timeout (the build job was killed at 90 minutes with `nix`
 still running), while serenity itself builds the same VM in 5-10 minutes because
 it already has the store.
+
+One exception in that loop: `poweredge`. Its `services.ocrflow` (the ocrflow
+flake) asserts at *evaluation* time that `/run/secrets/nextcloud/
+ocr-webhook-secret` and `ocr-webdav-password` exist — they do on poweredge, which
+is also poweredge's build host (`--build-host likivik@poweredge`), and never do on
+a runner. CI therefore evaluates that one host with the two options pointed at a
+file that exists, which changes nothing about the derivation (the value's only
+consumer is systemd's `LoadCredential`). Consequence for you: `nix build
+.#nixosConfigurations.poweredge.config.system.build.toplevel --dry-run` only
+passes on a machine that holds those two files, i.e. on poweredge. Run it there,
+or accept that the assertion — not your change — is what fails.
 
 So the smoke is a step you run, and running it before you push is the point:
 
@@ -94,9 +105,10 @@ gh pr create --repo Likivik/spectacle --base main --head feat/<topic> \
 
 What the ruleset enforces before a PR can merge:
 
-- **All three required checks pass**: `python tests (nc-ocr-flow)`,
-  `nix eval (all hosts)` — which covers *every* host, not just deploy targets —
-  and `nix checks`.
+- **Both required checks pass**: `nix eval (all hosts)` — which covers *every*
+  host, not just deploy targets — and `nix checks`. (A third, `python tests
+  (nc-ocr-flow)`, went away with the OCR cutover: the worker and the app live in
+  github:Likivik/ocrflow and are tested there.)
 - **The branch is up to date with `main`** (`strict_required_status_checks_policy`).
   GitHub will not merge a PR whose base has moved on. Because a squash merge
   makes `main` a brand-new commit, every open PR goes `BEHIND` the moment

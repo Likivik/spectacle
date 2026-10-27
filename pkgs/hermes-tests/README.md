@@ -22,7 +22,7 @@ make test
 # live (needs the bot token at /run/secrets/hermes/telegram-bot-token)
 make test-live
 # or
-../nc-ocr-flow/.venv/bin/python smoke.py
+python3 smoke.py
 ```
 
 ## Layout

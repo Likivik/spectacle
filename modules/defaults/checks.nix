@@ -35,7 +35,12 @@
             # would find it (graphiti-roundtrip, mcp-roundtrip) are excluded
             # above because a hosted runner cannot boot them in time.
             { name = "graphiti-mcp"; path = inputs.graphiti-mcp-workspace.packages.${pkgs.system}.graphiti-mcp; }
-            { name = "ocrflow-ncapp"; path = pkgs.callPackage ../../pkgs/ocrflow-ncapp { }; }
+            # The OCR app tree comes from the ocrflow flake now. Still built by
+            # CI: it is a copy of appinfo/ lib/ templates/ js/ img/ (the JS
+            # bundle is committed), so it is seconds, and a renamed or missing
+            # file in the upstream package would otherwise only surface on a
+            # deploy.
+            { name = "ocrflow-app"; path = inputs.ocrflow.packages.${pkgs.system}.ocrflow-app; }
           ];
 
         # Config still evaluates + builds (the "won't break Hermes on deploy" guard).

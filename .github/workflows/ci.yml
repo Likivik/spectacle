@@ -2,8 +2,13 @@ name: CI
 
 # Required gate before anything reaches main.
 #
-#   python-tests  — pytest over pkgs/nc-ocr-flow, required (~30 s)
 #   nix-eval      — evaluates EVERY host config, required (~4 min)
+#   nix-checks    — builds the CI-safe check aggregate (includes the OCR app tree)
+#
+# The Python worker and the OCR app moved to github:Likivik/ocrflow and are
+# tested in that repository's own CI; the local `python-tests` (pkgs/nc-ocr-flow)
+# and `php-tests` (workflow-ocr PHP scripts) jobs went away with the cutover —
+# they ran suites over code this repo no longer contains.
 #
 # The VM smoke deliberately does NOT run here. A hosted runner cannot cold-build
 # the serenity closure: the build job was killed by its own 90-minute timeout
@@ -36,63 +41,7 @@ concurrency:
 permissions:
   contents: read
 
-env:
-  ORI_MODEL_URL: https://huggingface.co/PaddleOcrNet/PaddleOcrNet-models/resolve/main/PP-LCNet_x1_0_doc_ori.onnx
-  ORI_MODEL_SHA256: d85b3185075afca1a83157f73eac2e52b598d72e9d47dd19cc4a2f3605e23e3f
-
 jobs:
-  python-tests:
-    name: python tests (nc-ocr-flow)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: pkgs/nc-ocr-flow/pyproject.toml
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          # Same set the service's start script installs, plus test-only bits.
-          # httpx2 is what starlette's TestClient asks for here; httpx is kept
-          # alongside so either name resolves.
-          python -m pip install \
-            pymupdf pillow requests img2pdf numpy onnxruntime \
-            fastapi uvicorn pydantic pdf-inspector \
-            google-cloud-vision google-cloud-storage \
-            pytest httpx httpx2
-
-      - name: Fetch the orientation model (verified by sha256)
-        run: |
-          curl -fsSL -o /tmp/pp_lcnet_x1_0_doc_ori.onnx "$ORI_MODEL_URL"
-          echo "$ORI_MODEL_SHA256  /tmp/pp_lcnet_x1_0_doc_ori.onnx" | sha256sum -c -
-
-      - name: Install the font the service uses for the text layer
-        # dev==prod for fonts. The unit sets NC_OCR_FONT_PATH to a Cyrillic TTF
-        # and ocr.py treats an explicitly configured path as authoritative, so
-        # without this step the suite would silently exercise the Latin-only
-        # Helvetica fallback and prove nothing about Cyrillic text layers.
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq fonts-dejavu-core
-          test -f /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
-
-      - name: Run the test suite
-        working-directory: pkgs/nc-ocr-flow
-        env:
-          # The service installs the package into its venv; here we just put the
-          # source on the path. Without this every test module fails to collect
-          # with "No module named 'nc_ocr_flow'".
-          PYTHONPATH: src
-          NC_OCR_ORIENTATION_MODEL: /tmp/pp_lcnet_x1_0_doc_ori.onnx
-          # Same variable, same meaning, as the deployed unit.
-          NC_OCR_FONT_PATH: /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
-        run: python -m pytest tests/ -q
-
   nix-eval:
     name: nix eval (all hosts)
     runs-on: ubuntu-24.04
@@ -118,45 +67,52 @@ jobs:
           failed=""
           for h in $hosts; do
             echo "::group::eval $h"
-            if nix build --dry-run --no-link \
-                 ".#nixosConfigurations.$h.config.system.build.toplevel"; then
-              echo "ok: $h"
-            else
-              echo "::error::eval failed for $h"
-              failed="$failed $h"
-            fi
+            case "$h" in
+              poweredge)
+                # services.ocrflow (github:Likivik/ocrflow) asserts at EVAL time
+                # that its two credential files exist — /run/secrets/nextcloud/
+                # ocr-webhook-secret and ocr-webdav-password. They exist on
+                # poweredge, which is also where poweredge is built (AGENTS.md:
+                # --build-host likivik@poweredge). A runner has no /run/secrets,
+                # so the unmodified config cannot be forced here at all.
+                #
+                # So the two options are pointed at a file that does exist for
+                # the EVALUATION only. The value never leaves the option: its
+                # only consumer is systemd's LoadCredential, so no content is
+                # read and nothing is baked into the derivation. What this job
+                # promises — "every host config evaluates" — stays honest; what
+                # it does NOT promise, and cannot, is that a host's local secret
+                # files are present, which the host itself checks when it builds.
+                #
+                # TODO(ocrflow): drop this case once that module checks the two
+                # files at activation time (ExecStartPre / ConditionPathExists)
+                # instead of in `assertions`.
+                nix eval --impure --raw --expr "
+                  let
+                    f = builtins.getFlake \"$PWD\";
+                    lib = f.inputs.nixpkgs.lib;
+                    c = f.nixosConfigurations.poweredge.extendModules {
+                      modules = [ {
+                        services.ocrflow.secretFile = lib.mkForce \"/etc/hostname\";
+                        services.ocrflow.davPasswordFile = lib.mkForce \"/etc/hostname\";
+                      } ];
+                    };
+                  in c.config.system.build.toplevel.drvPath" > /dev/null
+                ;;
+              *)
+                nix build --dry-run --no-link \
+                  ".#nixosConfigurations.$h.config.system.build.toplevel"
+                ;;
+            esac \
+              && echo "ok: $h" || {
+                echo "::error::eval failed for $h"; failed="$failed $h"
+              }
             echo "::endgroup::"
           done
           if [ -n "$failed" ]; then
             echo "configs that do not evaluate:$failed"
             exit 1
           fi
-
-  php-tests:
-    name: php tests (workflow-ocr)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      # No third-party action on purpose: this repo allows only
-      # GitHub-owned actions plus DeterminateSystems/nix-installer-action
-      # (repos/.../actions/permissions/selected-actions). Any other
-      # `uses:` kills the whole workflow at startup — not the job, the
-      # run — so the PHP toolchain comes from the runner image and a
-      # pinned phar instead.
-      - name: Install PHP + PHPUnit
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq php-cli php-xml
-          php -v
-          curl -fsSL -o "$RUNNER_TEMP/phpunit.phar" \
-            https://phar.phpunit.de/phpunit-12.phar
-          php "$RUNNER_TEMP/phpunit.phar" --version
-
-      - name: Run PHPUnit
-        working-directory: modules/aspects/server/workflow-ocr/tests
-        run: php "$RUNNER_TEMP/phpunit.phar"
 
   nix-checks:
     name: nix checks

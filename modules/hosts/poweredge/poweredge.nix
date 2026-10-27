@@ -4,14 +4,17 @@
       den.aspects.server.core
       den.aspects.server.sops
       den.aspects.server.nextcloud
-      # Single OCR owner: den.aspects.server.workflow-ocr runs nc-ocr-flow
-      # (Google Vision) via webhooks, plus our own `ocrflow` Nextcloud app.
+      # OCR: den.aspects.server.workflow-ocr installs the `ocrflow` Nextcloud
+      # app (its own app dir, built from the ocrflow flake) and the flake's
+      # NixOS module, which runs the worker as `ocrflow-worker.service` — a
+      # stateless client of the app's queue. The old hand-rolled
+      # `nc-ocr-webhook` receiver on :8095 and the WebhookListeners
+      # registration/`enforce-single-owner.php` machinery are gone with it.
       # The third-party `workflow_ocr` app (R0Wi-DEV) that used to sit next to
       # it was removed 2026-10-17 — it was a second OCR writer on the same
       # postCreate/postWrite events and overwrote this service's text layer on
-      # every file it saw. The aspect now asserts the two are never configured
-      # together. (The old `den.aspects.server.nc-ocr` module no longer exists;
-      # this comment used to claim otherwise.)
+      # every file it saw. The single-owner guard now lives in that module
+      # (evaluation-time throw + appstoreEnable mkForce), not in the aspect.
       den.aspects.server.workflow-ocr
       den.aspects.server.immich
       # immich-nc-bridge disabled — requires Extism WASM rewrite + real npm deps hash.
@@ -140,10 +143,10 @@
         #     array_replace_recursive.
         # So the literal in config.php is not the value in use — do not "fix" a
         # rotation by re-rendering it.
-        # The four workflow-ocr units bind this as a LoadCredential but their
-        # scripts never read it — verified: zero references to
-        # $CREDENTIALS_DIRECTORY/mail_smtppassword in any of them. The real
-        # consumer is Nextcloud's own mail.
+        # No longer bound by the OCR path: nc-webhook-worker and
+        # nc-ocr-register-webhook were its only LoadCredential consumers, and both
+        # went away with the webhook cutover (the worker queue replaced file
+        # events). The real consumer is Nextcloud's own mail.
       };
 
       sops.secrets."tailscale/auth-key" = {
@@ -182,52 +185,69 @@
       sops.secrets."nextcloud/ocr-webhook-secret" = {
         sopsFile = ../../../secrets/poweredge/secrets.yaml;
         owner = "nextcloud"; group = "nextcloud"; mode = "0400";
-        # Three consumers, none of which re-read on their own: the occ
-        # config:system:set ocrflow_secret in nextcloud-setup.service.postStart
-        # (whose nixpkgs restartTriggers only cover overrideConfig), plus
-        # LoadCredential in nc-ocr-webhook and nc-ocr-register-webhook.
-        restartUnits = [ "nextcloud-setup.service" "nc-ocr-webhook.service" "nc-ocr-register-webhook.service" ];
+        # Name kept from the webhook era on purpose: it is the same random
+        # value, now serving as the ocrflow worker's shared secret. Two
+        # consumers, neither of which re-reads on its own:
+        #   * ocrflow-worker-secret.service (in the workflow-ocr aspect) copies
+        #     it into the app's `worker_secret` app config via occ;
+        #   * ocrflow-worker.service receives it as LoadCredential.
+        # php-fpm is in the list because the app reads `worker_secret` through
+        # Nextcloud's app-config cache: without a reload a rotation leaves the
+        # running PHP answering 401 "worker secret not configured" while the
+        # worker presents the new value (docs/adr/0001 in the ocrflow repo).
+        restartUnits = [
+          "phpfpm-nextcloud.service"
+          "ocrflow-worker-secret.service"
+          "ocrflow-worker.service"
+        ];
       };
       sops.secrets."nextcloud/ocr-webdav-password" = {
         sopsFile = ../../../secrets/poweredge/secrets.yaml;
         owner = "nextcloud"; group = "nextcloud"; mode = "0400";
-        # LoadCredential nc-ocr-password in nc-ocr-webhook (WebDAV auth as likivik),
-        # read once at process start.
-        restartUnits = [ "nc-ocr-webhook.service" ];
+        # LoadCredential ocrflow-dav-password in ocrflow-worker — the identity
+        # the worker downloads files with, read once at process start.
+        # TODO(cutover): still likivik's app password. ADR 0002 option A wants a
+        # dedicated `ocrflow-worker` Nextcloud user holding a share on the OCR
+        # folders only; until that account exists this secret is the worker's
+        # authority over the whole instance. Adding it is an occ + UI runbook
+        # step (user, share, app password), not a nix change, so it is NOT done
+        # in this commit.
+        restartUnits = [ "ocrflow-worker.service" ];
       };
       sops.secrets."nextcloud/minimax-api-key" = {
         sopsFile = ../../../secrets/poweredge/secrets.yaml;
         owner = "nextcloud"; group = "nextcloud"; mode = "0400";
-        # Was declared but wired to nothing: the engine reads NC_OCR_MINIMAX_KEY or
-        # NC_OCR_MINIMAX_KEY_FILE (minimax_engine.py:290,293) and the service set
-        # neither, so the minimax engine had no credential at all. Now bound as a
-        # LoadCredential in nc-ocr-webhook and exported by the start script. The
-        # engine is opt-in (NC_OCR_ENGINE=google), so this is inert until selected.
-        restartUnits = [ "nc-ocr-webhook.service" ];
+        # No consumer right now: the worker reads NC_OCR_MINIMAX_KEY or
+        # NC_OCR_MINIMAX_KEY_FILE (minimax_engine.py) and services.ocrflow has no
+        # option for either, so the minimax engine is unusable until the module
+        # grows an extra-environment knob (see the TODO list in the workflow-ocr
+        # aspect). Kept because deleting a secret is not a config change.
+        restartUnits = [ ];
       };
       # Google Cloud Vision service-account JSON key (whole-doc OCR engine).
       # Project spectacle-xandria; SA ocr-worker@spectacle-xandria.iam.gserviceaccount.com.
       sops.secrets."nextcloud/ocr-google-key" = {
         sopsFile = ../../../secrets/poweredge/secrets.yaml;
         owner = "nextcloud"; group = "nextcloud"; mode = "0400";
-        # LoadCredential google-ocr-key in nc-ocr-webhook, exported as
-        # GOOGLE_APPLICATION_CREDENTIALS, read once at process start.
-        restartUnits = [ "nc-ocr-webhook.service" ];
+        # Exported as GOOGLE_APPLICATION_CREDENTIALS in ocrflow-worker, pointing at
+        # the unit's private copy: the aspect passes it through
+        # `services.ocrflow.extraCredentials` + `extraEnvironment`, so the Google
+        # client sees a literal path inside $CREDENTIALS_DIRECTORY and the sops
+        # source never appears in the process environment.
+        restartUnits = [ "ocrflow-worker.service" ];
       };
       # App password for the dedicated webhook-registration service account.
       # The account (user ``ocr-svc``, group ``ocr-webhooks``) holds ONLY the
       # OCA\WebhookListeners\Settings\Admin delegation, granted with
       #   occ admin-delegation:add 'OCA\WebhookListeners\Settings\Admin' ocr-webhooks
-      # It exists because the admin account has TOTP 2FA enabled (so its account
-      # password cannot be used for basic auth) and the sops copy of that
-      # password is stale. A passwordless app password is not sufficient: it
-      # authenticates but is not an admin session.
+      # UNUSED after the ocrflow cutover: nothing registers webhook listeners any
+      # more (the app's queue replaced file events), so nc-ocr-register-webhook
+      # and this credential's only consumer are gone. Kept for a rollback — the
+      # account and this secret are what the reverted unit needs.
       sops.secrets."nextcloud/ocr-svc-app-password" = {
         sopsFile = ../../../secrets/poweredge/secrets.yaml;
         owner = "nextcloud"; group = "nextcloud"; mode = "0400";
-        # LoadCredential ocr-svc-app-password in nc-ocr-register-webhook, read
-        # once at unit start.
-        restartUnits = [ "nc-ocr-register-webhook.service" ];
+        restartUnits = [ ];
       };
 
       services.tailscale.authKeyFile =

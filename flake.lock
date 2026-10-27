@@ -2472,6 +2472,26 @@
         "type": "github"
       }
     },
+    "ocrflow": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1793103921,
+        "narHash": "sha256-36x++E/MnQUQw7aLFGYa2J4A9PmXdnZtsQsl60br+6g=",
+        "owner": "Likivik",
+        "repo": "ocrflow",
+        "rev": "b0a4d1cfde6d0e20484a4eb47e6a6376198a9f11",
+        "type": "github"
+      },
+      "original": {
+        "owner": "Likivik",
+        "repo": "ocrflow",
+        "type": "github"
+      }
+    },
     "pre-commit-hooks": {
       "inputs": {
         "flake-compat": "flake-compat_2",
@@ -2704,6 +2724,7 @@
         "nixos-anywhere": "nixos-anywhere",
         "nixpkgs": "nixpkgs_11",
         "nixpkgs-master": "nixpkgs-master",
+        "ocrflow": "ocrflow",
         "pyproject-build-systems": "pyproject-build-systems_2",
         "pyproject-nix": "pyproject-nix_2",
         "quadlet-nix": "quadlet-nix",

@@ -66,6 +66,10 @@
     };
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     nixpkgs-master.url = "github:NixOS/nixpkgs/master";
+    ocrflow = {
+      url = "github:Likivik/ocrflow";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     pyproject-build-systems = {
       url = "github:pyproject-nix/build-system-pkgs";
       inputs = {

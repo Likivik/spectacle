@@ -1,13 +1,22 @@
-.PHONY: test test-live smoke
+.PHONY: test test-live smoke bootstrap
 
-# Reuses the nc-ocr-flow venv (python3.14 + pytest + pytest_httpserver).
-# A dedicated devShell/venv can replace this later via flake wiring.
-VENV := ../nc-ocr-flow/.venv
+# Interpreter for the local suite. This used to borrow ../nc-ocr-flow/.venv,
+# which the OCR cutover deleted (the worker moved to github:Likivik/ocrflow).
+# CI does not use this Makefile — checks.nix builds the suite with nix — so this
+# is the developer path only: point PYTHON at any interpreter that has pytest
+# and pytest_httpserver, or run `make bootstrap` once.
+PYTHON ?= python3
+
+bootstrap:
+	$(PYTHON) -m venv .venv
+	./.venv/bin/python -m pip install --upgrade pip
+	./.venv/bin/python -m pip install pytest pytest_httpserver
+	@echo "now run: make test PYTHON=./.venv/bin/python"
 
 test:
-	$(VENV)/bin/python -m pytest -v
+	$(PYTHON) -m pytest -v
 
 test-live:
-	$(VENV)/bin/python -m pytest -m live -v
+	$(PYTHON) -m pytest -m live -v
 
 smoke: test-live

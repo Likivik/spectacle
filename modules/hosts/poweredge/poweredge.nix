@@ -217,11 +217,13 @@
       sops.secrets."nextcloud/minimax-api-key" = {
         sopsFile = ../../../secrets/poweredge/secrets.yaml;
         owner = "nextcloud"; group = "nextcloud"; mode = "0400";
-        # No consumer right now: the worker reads NC_OCR_MINIMAX_KEY or
-        # NC_OCR_MINIMAX_KEY_FILE (minimax_engine.py) and services.ocrflow has no
-        # option for either, so the minimax engine is unusable until the module
-        # grows an extra-environment knob (see the TODO list in the workflow-ocr
-        # aspect). Kept because deleting a secret is not a config change.
+        # No consumer right now, but nothing blocks it: the worker reads
+        # NC_OCR_MINIMAX_KEY or NC_OCR_MINIMAX_KEY_FILE (minimax_engine.py) and
+        # services.ocrflow accepts both through extraEnvironment + extraCredentials
+        # — the same two options that carry the Vision key. Wiring it is one
+        # `extraCredentials` entry plus one `extraEnvironment` line, and only worth
+        # doing if the minimax engine is chosen. Kept because deleting a secret is
+        # not a config change.
         restartUnits = [ ];
       };
       # Google Cloud Vision service-account JSON key (whole-doc OCR engine).

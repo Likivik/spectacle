@@ -37,21 +37,9 @@ updates:
   # Majors deliberately stay separate — a major is the bump that needs a real
   # decision — and security updates are left ungrouped so a vulnerability fix can
   # be reviewed and reverted on its own.
-  - package-ecosystem: uv
-    directory: /pkgs/nc-ocr-flow
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 3
-    groups:
-      patch-and-minor:
-        applies-to: version-updates
-        update-types:
-          - minor
-          - patch
-    commit-message:
-      prefix: "chore(deps)"
-    labels:
-      - dependencies
+  # /pkgs/nc-ocr-flow was deleted by the OCR cutover. Dependabot on a missing
+  # directory does not fail loudly — it just stops working — so the entry went
+  # with the directory. The worker's deps are now bumped in the ocrflow repo.
 
   - package-ecosystem: uv
     directory: /pkgs/graphiti/mcp-workspace
@@ -77,21 +65,9 @@ updates:
       - dependencies
 
   # ── npm lockfiles ─────────────────────────────────────────────────────────
-  - package-ecosystem: npm
-    directory: /pkgs/ocrflow-ncapp/frontend
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 3
-    groups:
-      patch-and-minor:
-        applies-to: version-updates
-        update-types:
-          - minor
-          - patch
-    commit-message:
-      prefix: "chore(deps)"
-    labels:
-      - dependencies
+  # /pkgs/ocrflow-ncapp/frontend went with the OCR cutover: the panel's bundle is
+  # committed in the ocrflow repo and rebuilt there (`frontend bundle is current`
+  # is a gate in its CI), so there is no npm lockfile here to watch.
 
   - package-ecosystem: npm
     directory: /pkgs/immich-nc-bridge

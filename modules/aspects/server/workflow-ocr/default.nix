@@ -198,15 +198,10 @@
         # time. Two copies of that invariant is how they drift apart.
 
         # ── Still open, deliberately not "fixed" by guessing here ─────────────
-        # 1. Google Vision credentials. The retired unit exported
-        #    GOOGLE_APPLICATION_CREDENTIALS=$CREDENTIALS_DIRECTORY/google-ocr-key
-        #    plus NC_OCR_GOOGLE_PROJECT/BUCKET/LOCATION. The module has no
-        #    option for extra environment or extra LoadCredentials, and the
-        #    Google client only honours a literal path, so this cannot be added
-        #    without overriding ExecStart — which would put the whole unit back
-        #    under this file's control. BLOCKING FOR DEPLOY: with engine=google
-        #    and no key, every job fails at the Vision call.
-        # 2. The nginx allow-list on the queue route. The module only WARNS with
+        # (Google Vision credentials are NOT on this list any more: they come
+        # through extraCredentials + extraEnvironment above, verified on the
+        # evaluated host config.)
+        # 1. The nginx allow-list on the queue route. The module only WARNS with
         #    the snippet (it does not own the Nextcloud vhost), and this host is
         #    behind a Cloudflare tunnel, so the route is reachable from the
         #    internet with only the shared secret in front of it. The vhost's
@@ -214,7 +209,7 @@
         #    NixOS's rendered config, and NixOS orders `locations` by attribute
         #    name, so dropping the snippet in blind would produce a location that
         #    never matches — this needs a real nginx test, not a guess.
-        # 3. A dedicated `ocrflow-worker` DAV identity (ADR 0002 option A). The
+        # 2. A dedicated `ocrflow-worker` DAV identity (ADR 0002 option A). The
         #    worker still authenticates as likivik, i.e. with authority over the
         #    whole instance instead of the folders OCR runs on.
       };

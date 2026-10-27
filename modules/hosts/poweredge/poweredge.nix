@@ -229,12 +229,11 @@
       sops.secrets."nextcloud/ocr-google-key" = {
         sopsFile = ../../../secrets/poweredge/secrets.yaml;
         owner = "nextcloud"; group = "nextcloud"; mode = "0400";
-        # BLOCKING FOR DEPLOY: the retired unit exported this as
-        # GOOGLE_APPLICATION_CREDENTIALS. services.ocrflow has no option for
-        # extra environment or extra LoadCredentials, and the Google client only
-        # honours a literal path, so the key is NOT wired to ocrflow-worker yet
-        # (the aspect carries the TODO). With engine=google every job fails at
-        # the Vision call until it is.
+        # Exported as GOOGLE_APPLICATION_CREDENTIALS in ocrflow-worker, pointing at
+        # the unit's private copy: the aspect passes it through
+        # `services.ocrflow.extraCredentials` + `extraEnvironment`, so the Google
+        # client sees a literal path inside $CREDENTIALS_DIRECTORY and the sops
+        # source never appears in the process environment.
         restartUnits = [ "ocrflow-worker.service" ];
       };
       # App password for the dedicated webhook-registration service account.

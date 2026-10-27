@@ -89,6 +89,17 @@
           # password — a dedicated `ocrflow-worker` account (ADR 0002, option A)
           # does not exist yet; see the TODO in modules/hosts/poweredge.
           davPasswordFile = config.sops.secrets."nextcloud/ocr-webdav-password".path;
+
+          # Cloud Vision key. The Google client honours a literal file path and
+          # nothing else, so the sops file is delivered through LoadCredential and
+          # the path is the unit's private copy — the source path never reaches
+          # the process environment.
+          extraCredentials = [
+            "google-ocr-key:${config.sops.secrets."nextcloud/ocr-google-key".path}"
+          ];
+          extraEnvironment = {
+            GOOGLE_APPLICATION_CREDENTIALS = "$CREDENTIALS_DIRECTORY/google-ocr-key";
+          };
         };
 
         # ── Seed the app's worker_secret from sops ────────────────────────────

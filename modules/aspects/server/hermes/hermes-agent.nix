@@ -400,6 +400,85 @@
           };
         };
 
+        # Post-boot / post-switch proof that Telegram actually works, using the
+        # REAL token and the REAL egress path. `systemctl is-active
+        # hermes-gateway` proves neither: the adapter reconnects while the unit
+        # stays green (2026-10-28: ConnectTimeout on 149.154.166.110, DoH
+        # discovery timed out, "home-channel startup notification failed:
+        # send_path_degraded" - and nothing failed), and a stale mitmproxy CA in
+        # the process environment stalls every connect silently.
+        #
+        # getMe, never getUpdates: getUpdates would consume the updates the live
+        # poller needs.
+        #
+        # A guest cannot make this check - no exit node, dummy secret values - so
+        # it is skipped by the session key the VM smoke installs.
+        systemd.user.services."hermes-telegram-egress-check" = {
+          description = "Hermes: Telegram egress + bot token check (getMe)";
+          after = [
+            "network-online.target"
+            "sops-install-secrets.service"
+            "hermes-gateway.service"
+          ];
+          wants = [
+            "network-online.target"
+            "sops-install-secrets.service"
+          ];
+          wantedBy = [ "default.target" ];
+          # NOT restartTriggers = [ config.system.build.toplevel ]: that forces
+          # the whole toplevel to be evaluated from inside a unit definition,
+          # and the fleet-wide `nix eval` CI job went from 3m32s to >45m and was
+          # cancelled. The deploy step starts this unit explicitly instead:
+          #   systemctl --user start hermes-telegram-egress-check
+          unitConfig = {
+            ConditionUser = "hermes";
+            ConditionPathExists = "!/run/smoke-age-key.txt";
+          };
+          serviceConfig = {
+            Type = "oneshot";
+            RemainAfterExit = true;
+            TimeoutStartSec = "240";
+            EnvironmentFile = [
+              "/run/secrets/hermes/env"
+              (envFileFor "hermes/sops-env")
+            ];
+            ExecStart = pkgs.writeShellScript "hermes-telegram-egress-check" ''
+              set -uo pipefail
+              fail() { echo "$1"; exit 1; }
+              [ -n "''${TELEGRAM_BOT_TOKEN:-}" ] || fail "TELEGRAM_EGRESS_NO_TOKEN: rendered env has no TELEGRAM_BOT_TOKEN"
+
+              # The tailscale exit node comes up asynchronously after boot and
+              # flaps afterwards, so retry instead of declaring a deploy dead on
+              # the first timeout.
+              code=""
+              for i in 1 2 3 4 5; do
+                code=$(${pkgs.curl}/bin/curl -sS --max-time 20 -o /dev/null \
+                  -w '%{http_code}' \
+                  "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/getMe" 2>/dev/null)
+                [ "$code" = "200" ] && break
+                echo "attempt $i: http=$code, retrying in 10s"
+                sleep 10
+              done
+              [ "$code" = "200" ] || fail "TELEGRAM_EGRESS_FAIL: getMe http=$code (token, DNS, TLS, CA or exit node)"
+
+              # The RUNNING gateway must not carry a mitmproxy proxy/CA: that
+              # combination stalls every adapter connect while the unit stays
+              # active (the 2026-10-14 class hermes-agent.nix:454 cleans up).
+              pid=$(${pkgs.procps}/bin/pgrep -u hermes -f 'hermes gateway run' | ${pkgs.coreutils}/bin/head -1)
+              if [ -n "''${pid:-}" ] && [ -r "/proc/$pid/environ" ]; then
+                if ${pkgs.coreutils}/bin/tr '\0' '\n' < "/proc/$pid/environ" \
+                  | ${pkgs.gnugrep}/bin/grep -qE '^(HTTPS_PROXY|https_proxy|SSL_CERT_FILE|REQUESTS_CA_BUNDLE)=.*mitm'; then
+                  fail "TELEGRAM_GATEWAY_STALE_CA: gateway pid $pid holds a mitmproxy proxy/CA env"
+                fi
+                echo "gateway pid $pid: proxy/CA env clean"
+              else
+                echo "TELEGRAM_EGRESS_NO_GATEWAY_PID: gateway process not running yet"
+              fi
+              echo "TELEGRAM_EGRESS_OK"
+            '';
+          };
+        };
+
         # Boot-safe one-time migration cleanup: purge remnants of the
         # hermes-CLI-managed gateway unit so they can't shadow or dangle
         # alongside the NixOS-managed one above. Pure filesystem ops (root),

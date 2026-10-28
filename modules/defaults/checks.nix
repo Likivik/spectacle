@@ -430,23 +430,6 @@
           '';
       };
 
-      # Boot the erebus host headless and assert Telegram TLS connectivity.
-      # `nix run .#erebus-telegram` — reads serial for TELEGRAM_TLS_OK.
-      apps.erebus-telegram =
-        let
-          vm = inputs.self.nixosConfigurations.erebus.extendModules {
-            modules = [ (import ../../tests/erebus-telegram.nix) ];
-          };
-          run-vm = "${vm.config.system.build.vm}/bin/run-erebus-vm";
-        in
-        {
-          type = "app";
-          # `program` must be a string; writeShellScript emits a single file at $out.
-          program =
-            "${pkgs.writeShellScript "erebus-telegram" ''
-              exec ${run-vm} -nographic "$@"
-            ''}";
-        };
 
       # Full-host serenity boot smoke test: boots the ENTIRE serenity config in
       # QEMU and asserts (a) no FAILED system unit outside an explicit allowlist,

@@ -68,6 +68,22 @@
             modules = [ (import ../../tests/serenity-smoke.nix) ];
           }).config.system.build.vm;
 
+        # Full-host boot smoke for poweredge. Boots the ENTIRE host config in a
+        # VM with a build-time dummy sops file, then asserts at runtime: no failed
+        # units outside the probe's allowlist, every declared secret rendered
+        # non-empty, Nextcloud serving with the ocrflow app enabled and its panel
+        # rendering, the app accepting the worker secret over OCS, ocrflow-worker
+        # active with both LoadCredential entries, and nothing on :8095.
+        #
+        # NOT a CI check: the worker closure (PyMuPDF, onnxruntime, fastapi) cannot
+        # be built on a hosted runner inside its timeout. Run it by hand:
+        #   nix run .#poweredge-smoke
+        poweredge-smoke-vm =
+          (inputs.self.nixosConfigurations.poweredge.extendModules {
+            specialArgs = { base = inputs.self.nixosConfigurations.poweredge; };
+            modules = [ (import ../../tests/poweredge-smoke.nix) ];
+          }).config.system.build.vm;
+
         # Hermes cron dispatch fix (upstream #111484, first shipped v2026.9.21).
         #
         # Pre-fix, a SUCCESSFUL scope probe was cached permanently
@@ -439,6 +455,79 @@
       # restart-safe cron dispatch needs (upstream #111484 broke exactly this).
       # See tests/serenity-smoke.nix for what is neutralised and why.
       #   nix run .#serenity-smoke
+        # Full-host boot smoke for poweredge: boots the ENTIRE host config in QEMU
+        # with a build-time dummy sops file, then asserts at runtime — no failed unit
+        # outside an anchored allowlist, multi-user.target reached, nothing stuck in
+        # `activating`, every declared secret rendered non-empty, Nextcloud serving
+        # with the ocrflow app enabled, worker_secret seeded, the worker plane
+        # accepting the delivered secret, ocrflow-worker active with both
+        # LoadCredential entries, and nothing on :8095.
+        #
+        # NOT in CI: the worker closure (PyMuPDF, onnxruntime, fastapi) and Nextcloud
+        # cannot be built on a hosted runner inside its timeout. Run it by hand:
+        #   nix run .#poweredge-smoke
+        #
+        # The verdict is a MARKER in the serial log, not QEMU's exit code: the guest
+        # powers itself off, so QEMU exits 0 even when the probe failed.
+        apps.poweredge-smoke =
+          let
+            vm = inputs.self.nixosConfigurations.poweredge.extendModules {
+              specialArgs = { base = inputs.self.nixosConfigurations.poweredge; };
+              modules = [ (import ../../tests/poweredge-smoke.nix) ];
+            };
+            run-vm = "${vm.config.system.build.vm}/bin/run-poweredge-vm";
+          in
+          {
+            type = "app";
+            program = "${pkgs.writeShellScript "poweredge-smoke" ''
+              set -eu
+              IMG="$PWD/poweredge.qcow2"
+              LOG="$PWD/poweredge-smoke.log"
+
+              # Two QEMUs cannot share one disk image, and a previous run may still be
+              # releasing it. This scan runs as the invoking user — the only identity
+              # that can read the fds of its own qemu processes.
+              if [ -e "$IMG" ]; then
+                for attempt in 1 2 3 4 5 6 7 8 9 10; do
+                  HOLDERS=""
+                  for p in /proc/[0-9]*; do
+                    for f in "$p"/fd/*; do
+                      case "$(readlink "$f" 2>/dev/null)" in
+                        *"$IMG") HOLDERS="$HOLDERS ''${p#/proc/}" ;;
+                      esac
+                    done
+                  done
+                  [ -z "''${HOLDERS// /}" ] && break
+                  for holder in $HOLDERS; do
+                    if [ "$attempt" -le 3 ]; then kill "$holder" 2>/dev/null || true
+                    else kill -9 "$holder" 2>/dev/null || true; fi
+                  done
+                  sleep 2
+                done
+                [ -z "''${HOLDERS// /}" ] || { echo "refusing to start: $IMG still held by$HOLDERS" >&2; exit 1; }
+              fi
+
+              # 0600: the serial log is pasted into PRs, and it must contain no secret.
+              # The probe enforces that; this file mode keeps it from being world-readable
+              # in the meantime.
+              ( umask 077; : > "$LOG" )
+              echo "=== booting the WHOLE poweredge host in QEMU (report follows) ==="
+              RC=0
+              ${run-vm} -nographic "$@" 2>&1 | tee -a "$LOG" || RC=$?
+
+              if grep -q 'POWEREDGE_SMOKE_VERDICT: PASS' "$LOG"; then
+                echo "=== verdict: PASS ==="
+                exit 0
+              fi
+              if grep -q 'POWEREDGE_SMOKE_VERDICT: FAIL' "$LOG"; then
+                echo "=== verdict: FAIL (probe reported failures; full log: $LOG) ===" >&2
+                exit 1
+              fi
+              echo "=== verdict: NO VERDICT (VM exited before the probe finished; qemu rc=$RC, log: $LOG) ===" >&2
+              exit 1
+            ''}";
+          };
+
       apps.serenity-smoke =
         let
           vm = inputs.self.nixosConfigurations.serenity.extendModules {

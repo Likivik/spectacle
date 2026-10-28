@@ -512,8 +512,13 @@
               fi
 
               echo "=== booting the WHOLE serenity host in QEMU (report follows) ==="
+              # Capture the serial output so the verdict can be read back. The
+              # guest powers itself off, so QEMU exits 0 whether the probe said
+              # PASS or FAIL: the exit code of run-vm is NOT the verdict, and
+              # relying on it made every failed gate look green to a script.
+              LOG="$PWD/serenity-smoke.log"
               RC=0
-              ${run-vm} -nographic "$@" || RC=$?
+              ${run-vm} -nographic "$@" 2>&1 | tee "$LOG" || RC=$?
 
               # The guest powers itself off when the probe finishes. If a QEMU
               # survives anyway (interrupted run), release the disk image here:
@@ -530,7 +535,16 @@
                   esac
                 done
               done
-              exit "$RC"
+              if grep -q 'SERENITY_SMOKE_PASS' "$LOG"; then
+                echo "=== verdict: PASS ==="
+                exit 0
+              fi
+              if grep -q 'SERENITY_SMOKE_FAIL' "$LOG"; then
+                echo "=== verdict: FAIL (probe printed SERENITY_SMOKE_FAIL; report above, full log: $LOG) ===" >&2
+                exit 1
+              fi
+              echo "=== verdict: NO VERDICT (VM exited before the probe finished; qemu rc=$RC, full log: $LOG) ===" >&2
+              exit 1
             ''}";
         };
 

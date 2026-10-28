@@ -33,8 +33,9 @@
 #   - Tailscale: no tailnet, and it holds network-online.target hostage.
 #
 # Run:  nix run .#serenity-smoke
-# The probe is tests/serenity-smoke-probe.sh; it is piped into the guest over
-# the forwarded port and its report ends with SERENITY_SMOKE_PASS/FAIL.
+# The probe is tests/serenity-smoke-probe.sh; it runs as an in-guest oneshot,
+# reports on the serial console and ends with SERENITY_SMOKE_PASS/FAIL, which
+# `nix run .#serenity-smoke` greps to decide its exit code.
 { config, pkgs, lib, base, ... }:
 let
   # --- a real (but worthless) sops round-trip ------------------------------
@@ -121,10 +122,6 @@ YAML
     (lib.concatStringsSep "\n" allEnvFiles + "\n");
   expectedKeysFile = pkgs.writeText "serenity-smoke-expected-keys"
     (lib.concatStringsSep "\n" templateKeys + "\n");
-
-  # User units the deployed config expects to exist for `hermes`. Generated, so
-  # a new aspect unit is covered automatically.
-  expectedUserUnits = lib.attrNames config.systemd.user.services;
 
   # The probe checks, as a store path. Kept in its own file so editing it is a
   # change in one obvious place rather than inside a Nix string.
@@ -220,22 +217,20 @@ in
   # default the kernel OOM-killed hermes, python3.13 and the compositor
   # mid-boot, which would make this test report noise instead of regressions.
 
-  # The probe is driven from the HOST, not from an in-guest oneshot:
-  # a CONNECT on the forwarded port runs `bash -s` as root, the host pipes the
-  # probe in and reads the report back. Two reasons:
-  #   1. an in-guest probe's output dies on the serial console the moment agetty
-  #      takes ttyS0, so its failures were unobservable;
-  #   2. probe edits then cost seconds instead of a full VM rebuild.
-  # Port 9999 is deliberate - the guest's own sshd owns 22.
-  # The guest ttyS0 is ours: agetty was resetting the tty underneath the probe,
-  # so its output silently vanished after a few lines while the script kept
-  # running (and a probe that hung looked identical to one that had not started).
+  # The guest's ttyS0 belongs to the probe. agetty was resetting the tty
+  # underneath it, so its output silently vanished after a few lines while the
+  # script kept running - a hung probe looked identical to one that had not
+  # started. ExecStart below redirects the probe's output there, so disabling
+  # the getty is load-bearing, not cosmetic.
   systemd.services."serial-getty@ttyS0".enable = false;
 
-  # The probe runs as an in-guest oneshot and reports to the serial console, then
+  # The probe runs as an in-guest oneshot, reports to the serial console and
   # powers the VM off - which is what makes `nix run .#serenity-smoke` terminate
-  # on its own. The checks live in tests/serenity-smoke-probe.sh; EXPECTED_UNITS
-  # is passed as an environment variable because the probe is a plain script.
+  # on its own. The checks live in tests/serenity-smoke-probe.sh.
+  #
+  # The expected user-unit set is NOT passed in: the probe reads the INSTALLED
+  # set from /etc/systemd/user, so an aspect that adds a unit is covered
+  # automatically and an unquoted list cannot silently shrink the assertion.
   systemd.services.vmcheck-serenity = {
     description = "serenity full-host boot smoke test (see tests/serenity-smoke-probe.sh)";
     wantedBy = [ "multi-user.target" ];
@@ -247,7 +242,6 @@ in
     serviceConfig = {
       Type = "oneshot";
       Environment = [
-        "EXPECTED_UNITS=${lib.concatStringsSep " " expectedUserUnits}"
         # Secret-pipeline assertions. SMOKE_ENV_FILES and SMOKE_EXPECTED_KEYS are
         # FILE paths: NixOS renders serviceConfig.Environment entries unquoted
         # and systemd word-splits such a value, so a space-joined list silently

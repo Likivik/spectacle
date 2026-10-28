@@ -73,6 +73,11 @@ ALLOW_PATTERNS=(
   'zfs-[a-z0-9_.@-]+\.(service|target|timer)'
   'tailscale[a-z0-9_.@-]*\.service'
   'v2raya\.service'
+  # forgejo-backup.{service,timer} DO exist on serenity (forgejo.nix:259,266);
+  # the midnight dump ships to poweredge over the tailnet the guest lacks, so it
+  # fails here for a real reason. Restored after being dropped by mistake:
+  # ALLOWLIST_UNUSED means "did not fail on THIS boot", not "does not exist".
+  'forgejo-backup\.(service|timer)'
 )
 ALLOW_UNITS="^($(IFS='|'; echo "${ALLOW_PATTERNS[*]}"))\$"
 FAILED_UNITS=$(timeout 20 systemctl --failed --no-legend --plain 2>/dev/null | awk '{print $1}' | grep -v '^$' || true)

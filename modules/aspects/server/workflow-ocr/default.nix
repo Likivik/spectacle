@@ -89,6 +89,10 @@
           # password — a dedicated `ocrflow-worker` account (ADR 0002, option A)
           # does not exist yet; see the TODO in modules/hosts/poweredge.
           davPasswordFile = config.sops.secrets."nextcloud/ocr-webdav-password".path;
+          # The username that goes with that password. It had NO source before this:
+          # the module exported nothing and the worker exits 2 without it, so a clean
+          # boot crash-looped while every gate stayed green (found by poweredge-smoke).
+          davUser = "likivik";
 
           # Cloud Vision key. The Google client honours a literal file path and
           # nothing else, so the sops file is delivered through LoadCredential and
@@ -123,10 +127,28 @@
           wants = [ "nextcloud-setup.service" ];
           wantedBy = [ "multi-user.target" ];
           serviceConfig = {
+            # occ REFUSES to run as root ("Console has to be executed with the user
+            # that owns config/config.php") and exits 1, so this oneshot failed on
+            # every clean boot and the app kept an empty worker_secret. Found by the
+            # poweredge VM smoke: the unit was `failed`, the app answered
+            # "Current user is not logged in" to a worker that presented a valid secret.
+            # NixOS runs Nextcloud as the `nextcloud` user; www-data does not exist
+            # here and systemd fails the job with 217/USER ("Unknown user").
+            User = "nextcloud";
             Type = "oneshot";
             RemainAfterExit = true;
             LoadCredential =
-              "ocrflow-worker-secret:${config.sops.secrets."nextcloud/ocr-webhook-secret".path}";
+              [ "ocrflow-worker-secret:${config.sops.secrets."nextcloud/ocr-webhook-secret".path}" ]
+              # `nextcloud-occ` inherits CREDENTIALS_DIRECTORY and requires EVERY
+            # services.nextcloud.secrets entry, not just the one this unit needs:
+            # nixpkgs' nextcloud-setup passes `runtimeSystemdCredentials` for the
+            # same reason. With only our own credential the wrapper aborted with
+            # "Cannot read credential 'mail_smtppassword' passed by NixOS" and the
+            # app never learned its worker_secret. Doing what the module does is the
+            # only version that keeps working when a secret is added later.
+            ++ lib.mapAttrsToList
+              (n: p: "${n}:${p}")
+              config.services.nextcloud.secrets;
           };
           script = ''
             ${config.services.nextcloud.occ}/bin/nextcloud-occ \

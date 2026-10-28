@@ -81,6 +81,25 @@ Honest consequence: CI can no longer catch a build failure — a bad hash, a
 failing build step. Nothing automated covers that any more; the smoke does, and
 only when you actually run it.
 
+### poweredge
+
+    nix run .#poweredge-smoke
+
+Boots the whole poweredge host in QEMU and prints `POWEREDGE_SMOKE_VERDICT: PASS`
+or `FAIL`, exiting non-zero on anything but PASS. Run it before any deploy that
+touches poweredge, and before merging a change to `modules/aspects/server/nextcloud`,
+`modules/aspects/server/workflow-ocr`, the ocrflow flake input, or `modules/hosts/poweredge`.
+
+It is the only build-level gate poweredge has: CI evaluates the config and builds
+nothing, so a unit that crash-loops on a clean boot (a missing Python module, `occ`
+refusing to run as root, a missing DAV username) passes every check there. The
+first three runs of this smoke found exactly that class of defect.
+
+Two things it deliberately does not cover: container-backed units (removed in the
+guest, so their definitions are untested) and real TPM unsealing (the guest uses a
+build-time age identity and dummy secret values; the delivery path is real, the
+values are not).
+
 ## Reaching main (PR flow)
 
 `main` is the only long-lived branch; `dev` is gone. Direct pushes to `main` are

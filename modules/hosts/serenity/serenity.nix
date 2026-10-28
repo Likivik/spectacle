@@ -213,6 +213,8 @@
           "hermes/exa-api-key" = { sopsFile = ../../../secrets/serenity/hermes-secrets.yaml; owner = "hermes"; group = "hermes"; mode = "0600"; };
           "hermes/minimax-api-key" = { sopsFile = ../../../secrets/serenity/hermes-secrets.yaml; owner = "hermes"; group = "hermes"; mode = "0600"; };
           "hermes/synthetic-api-key" = { sopsFile = ../../../secrets/serenity/hermes-secrets.yaml; owner = "hermes"; group = "hermes"; mode = "0600"; };
+          # Nextcloud CalDAV (calendar + tasks) for the agent
+          "hermes/nextcloud-app-password" = { sopsFile = ../../../secrets/serenity/hermes-secrets.yaml; owner = "hermes"; group = "hermes"; mode = "0600"; };
           # Gateway API listeners (default :8642, salem :8643)
           "hermes/api-server-key" = { sopsFile = ../../../secrets/serenity/hermes-secrets.yaml; owner = "hermes"; group = "hermes"; mode = "0600"; };
           "hermes/salem-api-server-key" = { sopsFile = ../../../secrets/serenity/hermes-secrets.yaml; owner = "hermes"; group = "hermes"; mode = "0600"; };

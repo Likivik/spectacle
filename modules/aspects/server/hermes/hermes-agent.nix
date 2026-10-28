@@ -425,9 +425,11 @@
             "sops-install-secrets.service"
           ];
           wantedBy = [ "default.target" ];
-          # Re-run on every switch: a new generation is exactly when the token,
-          # the CA bundle or the egress path can change underneath us.
-          restartTriggers = [ config.system.build.toplevel ];
+          # NOT restartTriggers = [ config.system.build.toplevel ]: that forces
+          # the whole toplevel to be evaluated from inside a unit definition,
+          # and the fleet-wide `nix eval` CI job went from 3m32s to >45m and was
+          # cancelled. The deploy step starts this unit explicitly instead:
+          #   systemctl --user start hermes-telegram-egress-check
           unitConfig = {
             ConditionUser = "hermes";
             ConditionPathExists = "!/run/smoke-age-key.txt";

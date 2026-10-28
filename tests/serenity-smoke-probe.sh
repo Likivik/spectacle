@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # serenity VM smoke probe - this file runs INSIDE the guest, as root.
 #
-# The host pipes it into the guest's `smoke-shell` socket (a systemd unit with
-# StandardInput=socket -> `bash -s`), which QEMU forwards from 127.0.0.1:2222.
-# The host prepends EXPECTED_UNITS="..." before this body, because `bash -s`
-# cannot take arguments.
+# It runs as the in-guest oneshot `vmcheck-serenity.service`, whose ExecStart
+# redirects stdout/stderr to /dev/ttyS0 (serial-getty@ttyS0 is disabled in
+# tests/serenity-smoke.nix for exactly this reason). Everything it needs arrives
+# as an environment variable; list-like values are passed as FILE paths because
+# systemd word-splits a space-joined Environment entry.
 #
-# Keep the marker strings stable: the app greps for them.
+# Keep the marker strings stable: the app wrapper in modules/defaults/checks.nix
+# greps for SERENITY_SMOKE_PASS and exits non-zero when it is absent.
 set -u
-EXPECTED_UNITS="${EXPECTED_UNITS:-}"
 FAILED=0
 
 echo "=== SERENITY_SMOKE_START (in-guest probe) ==="
@@ -44,13 +45,62 @@ fi
 echo "--- FAILED system units ---"
 timeout 20 systemctl --failed --no-legend --plain || true
 
-# Units a QEMU guest cannot possibly run: host disks/mounts, zpools, GPU, TPM
-# secrets, display/remote-desktop, and the LAN-only helpers.
-#   tailscale-serve-*      - needs a tailnet (tailscale itself is off here)
-#   forgejo-backup         - nightly dump shipped to poweredge over the tailnet;
-#                            timer-driven, so it only fails on some boots (flake)
-ALLOW='boot\.mount|panther\.mount|Storage\.mount|Storage-Git\.mount|swap|zfs[^ ]*|zpool[^ ]*|nvidia[^ ]*|display-manager|krfb|krdp|tailscale[^ ]*|v2raya|mullvad|wg-quick[^ ]*|wireguard[^ ]*|forgejo-backup[^ ]*'
-BAD=$(timeout 20 systemctl --failed --no-legend --plain 2>/dev/null | awk '{print $1}' | grep -v '^$' | grep -Ev "$ALLOW" | tr '\n' ' ' || true)
+# Units a QEMU guest cannot possibly run. Every pattern is ANCHORED: the old
+# unanchored list granted immunity by substring, so `swap` also masked
+# swapfile-cleanup.service, `zfs[^ ]*` also masked my-zfs-checker.service and
+# `tailscale[^ ]*` also masked tailscale-helper.service. Unit names below were
+# read from the deployed config
+# (`nix eval .#nixosConfigurations.serenity.config.systemd.units`), not guessed.
+#
+# Evidence per pattern:
+#   boot.mount          host ESP; the guest mounts its own root, no /boot
+#   dev-disk-by*.swap   the host's swap device does not exist in QEMU
+#   display-manager     no DRM device
+#   nvidia-*            no NVIDIA device
+#   zpool-*, zfs-*      no real pool: zfs-import-gitpool cannot import one
+#   tailscale*          no tailnet and no auth key (tailscale is disabled)
+#   v2raya              TUN-mode VLESS needs the tailnet route
+#
+# Removed because no such unit exists anywhere in this repo (the patterns only
+# inflated the list): panther.mount, Storage.mount, Storage-Git.mount, krfb,
+# krdp, mullvad-daemon, wg-quick*, wireguard*, forgejo-backup*.
+ALLOW_PATTERNS=(
+  'boot\.mount'
+  'dev-disk-by.*\.swap'
+  'display-manager\.service'
+  'nvidia-[a-z0-9_.@-]+\.service'
+  'zpool-[a-z0-9_.@-]+\.(service|target|timer)'
+  'zfs-[a-z0-9_.@-]+\.(service|target|timer)'
+  'tailscale[a-z0-9_.@-]*\.service'
+  'v2raya\.service'
+)
+ALLOW_UNITS="^($(IFS='|'; echo "${ALLOW_PATTERNS[*]}"))\$"
+FAILED_UNITS=$(timeout 20 systemctl --failed --no-legend --plain 2>/dev/null | awk '{print $1}' | grep -v '^$' || true)
+BAD=$(printf '%s\n' "$FAILED_UNITS" | grep -Ev "$ALLOW_UNITS" | tr '\n' ' ' || true)
+
+# Report what the allowlist hides on THIS boot instead of swallowing it, and
+# name the reason systemd recorded. A skipped-by-condition unit is expected; a
+# unit that failed with ConditionResult=yes is a real breakage the allowlist
+# used to mute.
+ALLOWED_FAILED=$(printf '%s\n' "$FAILED_UNITS" | grep -E "$ALLOW_UNITS" || true)
+if [ -n "${ALLOWED_FAILED// /}" ]; then
+  echo "--- allowlisted failures on this boot ---"
+  while IFS= read -r u; do
+    [ -n "$u" ] || continue
+    CR=$(timeout 10 systemctl show -p ConditionResult --value "$u" 2>/dev/null || echo '?')
+    RES=$(timeout 10 systemctl show -p Result --value "$u" 2>/dev/null || echo '?')
+    echo "  ALLOWLISTED_FAILURE: $u (ConditionResult=$CR Result=$RES)"
+  done <<ALLOWED
+$ALLOWED_FAILED
+ALLOWED
+fi
+
+# Rot detection: a pattern that matched nothing has usually outlived the unit it
+# was written for. Informational, not fatal - a timer-driven unit may only fail
+# on some boots.
+for pat in "${ALLOW_PATTERNS[@]}"; do
+  printf '%s\n' "$FAILED_UNITS" | grep -Eq "^${pat}\$" || echo "  ALLOWLIST_UNUSED: ${pat}"
+done
 if [ -n "${BAD// /}" ]; then
   echo "UNEXPECTED_FAILED_UNITS: $BAD"
   # Report WHY, not just which. Without this a failed system unit is a bare
@@ -319,6 +369,13 @@ fi
 echo "--- summary ---"
 timeout 20 systemctl list-units --type=service --state=running --no-legend --plain 2>/dev/null | wc -l | sed 's/^/running services: /'
 timeout 20 systemctl list-units --type=service --no-legend --plain 2>/dev/null | wc -l | sed 's/^/loaded services:  /'
+
+# A degraded system with nothing in the failed list means a unit is spinning in
+# auto-restart: "degraded" alone is not a good state, it is an unclassified one.
+if [ "$ST" = degraded ] && [ -z "${BAD// /}${ALLOWED_FAILED// /}" ]; then
+  echo "SYSTEM_DEGRADED_WITHOUT_FAILED_UNITS: nothing failed, so something is auto-restarting"
+  FAILED=1
+fi
 
 # The critical-unit checks above append to USER_FAILED after the block that raises
 # FAILED, so re-check it here - otherwise a non-active hermes unit cannot fail the

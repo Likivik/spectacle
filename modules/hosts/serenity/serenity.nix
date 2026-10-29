@@ -258,6 +258,28 @@
         # have not been decapsulated onto tailscale0 yet.
         services.tailscale.openFirewall = true;
 
+        # Ports are granted onto wires instead of opened globally. 41641/udp stays
+        # global (NAT-punched WireGuard endpoint), which is why it is declared here
+        # rather than granted to a wire.
+        networkFirewall = {
+          enable = true;
+          ifaces = {
+            lan = "enp2s0";
+            tailnet = "tailscale0";
+          };
+          global.udp = [ 41641 ];
+          services = {
+            ssh.ports = [ 22 ];
+            ollama.ports = [ 11434 ];
+            avahi.udp = [ 5353 ];
+          };
+          grants = {
+            ssh = [ "lan" "tailnet" ];
+            ollama = [ "lan" "tailnet" ];
+            avahi = [ "lan" ];
+          };
+        };
+
         users.users.likivik.openssh.authorizedKeys.keys = [
           # hermes@erebus
           "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIECMxs9cBFN8Adq8AJ9I62gVNFTkgNkr0ikg+VkWbHx1 hermes@erebus"

@@ -126,6 +126,13 @@ in
   # cannot hold here, because sops renders those files at BOOT and the builder
   # cannot see them. This is the module's own supported switch, added for exactly
   # this case — not an assertion bypass.
+  # The guest's NIC is `eth0`; poweredge's is `eno1`. A firewall rule naming a
+  # device that does not exist stalls the boot (measured 2026-10-29: system sat in
+  # `starting` for the full 120s settle window, with no failed unit). Re-point the
+  # wire at the device the guest actually has, so the gate exercises the model
+  # instead of the host's NIC census.
+  networkFirewall.ifaces.lan = lib.mkForce "eth0";
+
   services.ocrflow.checkSecretFiles = lib.mkForce false;
   # In the guest every dummy secret has the same value, which is exactly what makes
   # the worker's WebDAV login authenticatable: davPasswordFile renders the same dummy

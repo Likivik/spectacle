@@ -43,9 +43,27 @@
       boot.blacklistedKernelModules = [ "btusb" ];
       hardware.bluetooth.enable = lib.mkForce false;
 
-      # kkmserver HTTP endpoint (default port 5893) — local-only by default;
-      # remove the restriction if yclients runs on a separate browser client.
-      networking.firewall.allowedTCPPorts = [ 5893 5894 ];
+      # kkmserver HTTP endpoint (default port 5893) — local-only by default.
+      # Ports are granted onto wires: kkmserver is on lo + lan (other LAN devices
+      # open the KKM web UI), ssh on lan + tailnet, mDNS on lan only.
+      networkFirewall = {
+        enable = true;
+        ifaces = {
+          lan = "enp2s0";
+          tailnet = "tailscale0";
+          lo = "lo";
+        };
+        services = {
+          ssh.ports = [ 22 ];
+          kkmserver.ports = [ 5893 5894 ];
+          avahi.udp = [ 5353 ];
+        };
+        grants = {
+          ssh = [ "lan" "tailnet" ];
+          kkmserver = [ "lo" "lan" ];
+          avahi = [ "lan" ];
+        };
+      };
 
       # --- Tailscale operator -------------------------------------------
       # core.tailscale sets --operator=likivik fleet-wide, but the KDE session

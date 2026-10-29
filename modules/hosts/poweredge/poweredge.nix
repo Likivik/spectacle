@@ -421,10 +421,17 @@
             #   3. The fork is a 2-star AI-maintained fork ("AI-NOTICE: Bridgette
             #      authored", issues disabled) holding an app password with full
             #      account access.
-            # Cost: upstream publishes NO release tags (semver stops at 0.9.0),
-            # so the pin is a commit tag + digest and the "version" lives in this
-            # comment: sha-4da6ef6 = master as of 2026-10-29.
-            image = "ghcr.io/cbcoutinho/nextcloud-mcp-server:sha-4da6ef6@sha256:07d0d0edbdb14ff7bb21e5c41588e29ab6dfbb35b69ab957094a9bcdc13416d3";
+            # Release tag + digest. Version tags DO exist (481 of them, 0.1.1 to
+            # 0.203.0); the earlier "no release tags, only sha-* commits" reading
+            # came from GHCR's tags/list defaulting to 100 entries. Those sha-*
+            # tags are stale builds - sha-4da6ef6 is a 2025-05 image with package
+            # 0.2.2 and no app.py at all, which is why /mcp 404'd and only the
+            # legacy /sse answered.
+            #
+            # 0.203.0 == latest as of 2026-10-29. The digest makes the tag
+            # advisory: it is resolved by digest, so a later `latest` move cannot
+            # change what this generation runs.
+            image = "ghcr.io/cbcoutinho/nextcloud-mcp-server:0.203.0@sha256:e021187a3f87acfe5e3f9b460a4f8a04932f9ed2fcd9490a8a27bf4780e24fe1";
             # --network=host: same rationale as qdrant (sidestep netavark DNAT bug)
             networks = [ "host" ];
             # Env vars per upstream docs (README + 'Required configuration' log).

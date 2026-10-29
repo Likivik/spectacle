@@ -254,31 +254,73 @@
 
       services.tailscale.authKeyFile =
         config.sops.secrets."tailscale/auth-key".path;
+      # Tags ARE declared here, so a wiped state or a re-registered node gets
+      # them back without anyone remembering to click in the console.
+      #
+      # They only take effect if the tailnet ACL lets this machine's key grant
+      # them — `tagOwners` must include the owner of `tailscale/auth-key`:
+      #
+      #   "tagOwners": {
+      #     "tag:server":             ["likivik"],
+      #     "tag:nix-binary-caches":  ["likivik"],
+      #   }
+      #
+      # Measured 2026-10-29: this line asked for `tag:exit-node` — a tag only
+      # erebus has ever carried — and the key could not grant it, so tailscaled
+      # refused the whole `up` ("requested tags [...] are invalid or not
+      # permitted"), the node stayed logged out in NoState, published no serve
+      # config, and every tailnet port filtered. A healthy host looked dead for
+      # ~40 minutes. The tags below are the ones this node actually holds.
+      #
+      # --exit-node=erebus stays in this list even though `tailscale up` can
+      # fail to resolve it ("cannot resolve exit node by hostname while
+      # Tailscale is starting up"). It has to: tailscaled-autoconnect re-runs
+      # `tailscale up` with exactly this list whenever the node is
+      # NeedsLogin/NeedsMachineAuth/Stopped, and an `up` that omits a
+      # non-default pref the node already holds is rejected outright ("requires
+      # mentioning all non-default flags") — which would wedge every later boot
+      # in NeedsLogin. One writer for these prefs; no `tailscale set` anywhere.
       services.tailscale.extraUpFlags = lib.mkAfter [
-        "--advertise-tags=tag:server,tag:exit-node"
+        "--advertise-tags=tag:server,tag:nix-binary-caches"
         # No --advertise-exit-node here: tailscaled 1.102.5 rejects the
         # combination outright ("Cannot advertise an exit node and use an exit
-        # node at the same time"), so `tailscale up` failed and the --exit-node
-        # below never got applied - which left this host on the direct path,
-        # where most caches are unreachable.
+        # node at the same time").
         "--advertise-routes=192.168.0.100/32"
         "--accept-routes"
+        # Stays here, and nowhere else: tailscaled-autoconnect re-runs
+        # `tailscale up` with exactly this list whenever the node is
+        # NeedsLogin/NeedsMachineAuth/Stopped, and an `up` that omits a
+        # non-default pref the node already holds is rejected ("requires
+        # mentioning all non-default flags"). A separate unit applying the exit
+        # node via `tailscale set` would therefore break the NEXT boot's up.
         "--exit-node=erebus"
       ];
 
       systemd.services.tailscale-serve = {
         description = "Tailscale Serve — HTTPS proxy to Nextcloud + Immich";
-        after = [ "tailscaled.service" "tailscaled-autoconnect.service" ];
+        # Started AFTER the boot target: a tailnet-facing proxy must never be a
+        # reason for the boot to hang, and a slow/absent tailnet must not keep
+        # multi-user.target inactive.
+        after = [ "tailscaled.service" "tailscaled-autoconnect.service" "multi-user.target" ];
         wants = [ "tailscaled.service" ];
         wantedBy = [ "multi-user.target" ];
+        path = with pkgs; [ tailscale gnugrep gnused coreutils ];
         serviceConfig = {
           Type = "oneshot";
           RemainAfterExit = true;
+          # Measured 2026-10-29: at boot this ran while the backend was still
+          # NoState, `tailscale serve` exited 1, and NOTHING retried it — so
+          # https://poweredge.<tailnet> and the Immich pane stayed down until
+          # the unit was restarted by hand.
         };
         script = ''
-          ${lib.getExe pkgs.tailscale} serve --bg --https=443 http://127.0.0.1:80
-          ${lib.getExe pkgs.tailscale} serve --bg --https=8443 http://127.0.0.1:3001
-          ${lib.getExe pkgs.tailscale} serve --bg --https=8787 http://127.0.0.1:8787
+          # Wait for a Running backend instead of racing it: `tailscale serve`
+          # fails hard on NoState. Helper lives in aspects/core/tailscale.nix,
+          # so every host gets the same behaviour.
+          tailscale-wait-running
+          tailscale serve --bg --https=443 http://127.0.0.1:80
+          tailscale serve --bg --https=8443 http://127.0.0.1:3001
+          tailscale serve --bg --https=8787 http://127.0.0.1:8787
         '';
       };
 

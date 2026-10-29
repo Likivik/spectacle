@@ -294,6 +294,11 @@
         # mentioning all non-default flags"). A separate unit applying the exit
         # node via `tailscale set` would therefore break the NEXT boot's up.
         "--exit-node=erebus"
+        # LAN access alongside the exit node. Without it tailscaled installs no
+        # `throw 192.168.0.0/24` in table 52, so replies to a LAN peer leave over
+        # tailscale0 with the tunnel source address and the peer drops them
+        # (measured 2026-10-29: `ip route get 192.168.0.10` -> dev tailscale0).
+        "--exit-node-allow-lan-access=true"
       ];
 
       systemd.services.tailscale-serve = {

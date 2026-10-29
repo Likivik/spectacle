@@ -67,43 +67,13 @@ jobs:
           failed=""
           for h in $hosts; do
             echo "::group::eval $h"
-            case "$h" in
-              poweredge)
-                # services.ocrflow (github:Likivik/ocrflow) asserts at EVAL time
-                # that its two credential files exist — /run/secrets/nextcloud/
-                # ocr-webhook-secret and ocr-webdav-password. They exist on
-                # poweredge, which is also where poweredge is built (AGENTS.md:
-                # --build-host likivik@poweredge). A runner has no /run/secrets,
-                # so the unmodified config cannot be forced here at all.
-                #
-                # So the two options are pointed at a file that does exist for
-                # the EVALUATION only. The value never leaves the option: its
-                # only consumer is systemd's LoadCredential, so no content is
-                # read and nothing is baked into the derivation. What this job
-                # promises — "every host config evaluates" — stays honest; what
-                # it does NOT promise, and cannot, is that a host's local secret
-                # files are present, which the host itself checks when it builds.
-                #
-                # TODO(ocrflow): drop this case once that module checks the two
-                # files at activation time (ExecStartPre / ConditionPathExists)
-                # instead of in `assertions`.
-                nix eval --impure --raw --expr "
-                  let
-                    f = builtins.getFlake \"$PWD\";
-                    lib = f.inputs.nixpkgs.lib;
-                    c = f.nixosConfigurations.poweredge.extendModules {
-                      modules = [ {
-                        services.ocrflow.secretFile = lib.mkForce \"/etc/hostname\";
-                        services.ocrflow.davPasswordFile = lib.mkForce \"/etc/hostname\";
-                      } ];
-                    };
-                  in c.config.system.build.toplevel.drvPath" > /dev/null
-                ;;
-              *)
-                nix build --dry-run --no-link \
-                  ".#nixosConfigurations.$h.config.system.build.toplevel"
-                ;;
-            esac \
+            # No per-host cases: ocrflow checks its two secret files at
+            # ACTIVATION time now (Likivik/ocrflow#27), so poweredge evaluates in
+            # pure mode like every other host. The old workaround here forced the
+            # two paths to /etc/hostname because the module asserted
+            # builtins.pathExists at eval time, which no runner can satisfy.
+            nix build --dry-run --no-link \
+              ".#nixosConfigurations.$h.config.system.build.toplevel" \
               && echo "ok: $h" || {
                 echo "::error::eval failed for $h"; failed="$failed $h"
               }

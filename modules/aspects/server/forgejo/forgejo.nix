@@ -240,14 +240,18 @@
         # loopback-only (127.0.0.1:3000); serve fronts it with a tailnet cert.
         systemd.services."tailscale-serve-forgejo" = {
           description = "Expose Forgejo on the tailnet over HTTPS (tailscale serve)";
-          after = [ "tailscaled.service" "forgejo.service" ];
+          after = [ "tailscaled.service" "forgejo.service" "multi-user.target" ];
           wants = [ "tailscaled.service" ];
           wantedBy = [ "multi-user.target" ];
           serviceConfig = {
             Type = "oneshot";
             RemainAfterExit = true;
+            # Same boot race as poweredge 2026-10-29: `tailscale serve` exits 1
+            # while the backend is NoState, and a oneshot has nothing to retry
+            # it. The wait helper ships fleet-wide from aspects/core/tailscale.
           };
           script = ''
+            tailscale-wait-running
             ${pkgs.tailscale}/bin/tailscale serve --bg --https=443 http://127.0.0.1:3000
           '';
         };

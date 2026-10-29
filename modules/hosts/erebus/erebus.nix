@@ -1,6 +1,5 @@
 { den, inputs, lib, pkgs, ... }:
 let
-  lockSshToTailscale = false;
 in
 {
   den.aspects.erebus = {
@@ -83,27 +82,39 @@ in
         };
       };
 
-      networking.firewall = {
-        enable = true;
-        # WireGuard endpoint for tailscaled: must be open on the WAN interface
-        # (global level). `interfaces.tailscale0.allowedUDPPorts` is wrong — by
-        # the time packets arrive on tailscale0 the tunnel is already decapsulated;
-        # the inbound UDP from peers (e.g. serenity) hits the WAN interface and
-        # was silently dropped, forcing every peer pair through DERP relays.
-        allowedUDPPorts = [ 41641 ];
-        interfaces.tailscale0.allowedTCPPorts = [
-          9119
-          8642
-          3443
-          8880
-        ];
-        interfaces.tailscale0.allowedUDPPorts = [ 41641 ];
-      } // (if lockSshToTailscale then {
-        allowedTCPPorts = lib.mkForce [ ];
-        interfaces.tailscale0.allowedTCPPorts = [ 22 9119 8642 3443 8001 8003 8880 8090 ];
-      } else {
-        allowedTCPPorts = lib.mkForce [ 22 ];
-      });
+      networking.firewall.enable = true;
+      # Ports are granted onto wires: services declare ports, this host decides where
+      # they appear. `lockSshToTailscale` is superseded — ssh is granted on the tailnet
+      # wire only, which is the same result without a second, competing definition.
+      networkFirewall.enable = true;
+      networkFirewall.ifaces = {
+        wan = "ens3";
+        tailnet = "tailscale0";
+        podman0 = "podman0";
+        lo = "lo";
+      };
+      # NAT-punched peer traffic arrives on ens3 from the peer's public address,
+      # before decapsulation, so no interface-scoped rule can ever match it. This
+      # is the one port that legitimately has to be global.
+      networkFirewall.global.udp = [ 41641 ];
+      networkFirewall.services = {
+        ssh.ports = [ 22 ];
+        forgejo.ports = [ 3443 ];
+        sillytavern.ports = [ 8001 ];
+        hermes-api.ports = [ 8642 ];
+        hermes-dashboard.ports = [ 9119 ];
+        tts.ports = [ 8880 ];
+        fishaudio.ports = [ 8099 ];
+      };
+      networkFirewall.grants = {
+        ssh = [ "tailnet" ];
+        forgejo = [ "tailnet" ];
+        sillytavern = [ "tailnet" ];
+        hermes-api = [ "tailnet" ];
+        hermes-dashboard = [ "tailnet" ];
+        tts = [ "tailnet" ];
+        fishaudio = [ "tailnet" "lo" "podman0" ];
+      };
 
       swapDevices = [ { device = "/swapfile"; size = 4096; } ];
 

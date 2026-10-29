@@ -7,6 +7,7 @@
     includes = lib.mkDefault [
       den.aspects.core.bootloader
       den.aspects.core.determinate-nix
+      den.aspects.core.firewall
       den.aspects.core.default-locale
       den.aspects.core.ghostty-terminfo
       den.aspects.core.nix

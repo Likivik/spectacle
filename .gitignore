@@ -2,6 +2,7 @@
 *.qcow2
 # serial log the serenity smoke app writes next to the image (checks.nix)
 serenity-smoke.log
+poweredge-smoke.log
 # Build outputs (nix build, nixos-rebuild)
 result
 # ISO images from fleet-installer build

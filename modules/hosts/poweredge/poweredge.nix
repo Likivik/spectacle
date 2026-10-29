@@ -330,7 +330,27 @@
       # packets after DNAT on this NixOS+podman. Firewall restricts the
       # published ports to loopback only (not exposed to LAN).
       # Compare erebus kokoro-tts (works, 0.0.0.0) vs falkordb (broken, 127.0.0.1).
-      networking.firewall.interfaces.eno1.allowedTCPPorts = lib.mkForce [ ];
+      # Ports are granted onto wires, never opened globally. The module-level
+      # `--dport 22` accept carries no `-i`, which is why LAN SSH was reachable
+      # while this file claimed the opposite. See docs/firewall-interface-options-2026.md.
+      networkFirewall.enable = true;
+      networkFirewall.ifaces = {
+        lan = "eno1";
+        tailnet = "tailscale0";
+        lo = "lo";
+      };
+      networkFirewall.services = {
+        ssh.ports = [ 22 ];
+        qdrant-http.ports = [ 6333 ];
+        qdrant-grpc.ports = [ 6334 ];
+        nextcloud-mcp.ports = [ 8000 ];
+      };
+      networkFirewall.grants = {
+        ssh = [ "lan" "tailnet" ];
+        qdrant-http = [ "tailnet" "lo" ];
+        qdrant-grpc = [ "tailnet" "lo" ];
+        nextcloud-mcp = [ "tailnet" ];
+      };
       # tailscale0: ports exposed over Tailscale for cross-host MCP access.
       # 22: SSH — CRITICAL. a8cafce (2026-08-05) closed all tailscale0 ports
       #   with mkForce [], and e871f23 reopened only 6333/6334/8000, forgetting
@@ -342,8 +362,6 @@
       # 8000: nextcloud-mcp MCP endpoint (Hermes MCP client).
       # Other hosts use Tailscale magic DNS to reach
       # http://poweredge.oryx-galaxy.ts.net:8000/mcp.
-      networking.firewall.interfaces.tailscale0.allowedTCPPorts = lib.mkForce [ 22 6333 6334 8000 ];
-      networking.firewall.interfaces.lo.allowedTCPPorts = lib.mkForce [ 2000 6333 6334 8000 ];
 
       # Tailscale route hijack: tailscaled installs `10.88.0.0/16 dev tailscale0`
       # in its own table (52). podman0 also uses 10.88.0.0/16, so without

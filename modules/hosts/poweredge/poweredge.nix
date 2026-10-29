@@ -412,15 +412,19 @@
         containers.nextcloud-mcp = {
           autoStart = true;
           containerConfig = {
-            # pi0n00r/nextcloud-mcp-server — hardened fork of cbcoutinho.
-            # Bridgette v1.9.9.3 (2026-10-10, f9f595f). Multi-arch image-index
-            # digest pins to an immutable OCI manifest list so a same-tag
-            # rebuild cannot silently swap the running image:
-            #   sha256:fb4833666580ba996437c93b7775cb28c87e978399e4e3c2b83c6f86d6e093b4
-            # (amd64 sha256:1fc77279052502d7b79e9e4c1b7df2582b563e755fae1af3bd57ca35245006d1
-            #  arm64 sha256:b8d104a2f76fed5fa2a0f59f444ce0e25f85ac47f4be2ea78f4295a9f8d30fc7)
-            # Release notes: https://github.com/pi0n00r/nextcloud-mcp-server/releases/tag/v1.9.9.3
-            image = "ghcr.io/pi0n00r/nextcloud-mcp-server:v1.9.9.3@sha256:fb4833666580ba996437c93b7775cb28c87e978399e4e3c2b83c6f86d6e093b4";
+            # UPSTREAM cbcoutinho, not the pi0n00r fork. Reasons, in order:
+            #   1. The fork REGRESSED the ETag on create: it returns "etag": ""
+            #      where upstream returns await self._object_etag(...), so every
+            #      event/todo edit needs a read-back that upstream does not.
+            #   2. Upstream now carries the DAV hardening the fork once uniquely
+            #      had (dav_errors, DavPreconditionFailed, _parse_event_datetime).
+            #   3. The fork is a 2-star AI-maintained fork ("AI-NOTICE: Bridgette
+            #      authored", issues disabled) holding an app password with full
+            #      account access.
+            # Cost: upstream publishes NO release tags (semver stops at 0.9.0),
+            # so the pin is a commit tag + digest and the "version" lives in this
+            # comment: sha-4da6ef6 = master as of 2026-10-29.
+            image = "ghcr.io/cbcoutinho/nextcloud-mcp-server:sha-4da6ef6@sha256:07d0d0edbdb14ff7bb21e5c41588e29ab6dfbb35b69ab957094a9bcdc13416d3";
             # --network=host: same rationale as qdrant (sidestep netavark DNAT bug)
             networks = [ "host" ];
             # Env vars per upstream docs (README + 'Required configuration' log).
@@ -487,22 +491,16 @@
               #   # to /<user>/files/ (the tag inherits down).
               VECTOR_SYNC_TAG = "vector-index";
               VECTOR_SYNC_KEYWORD_TAG = "keyword-index";
-              # EXCLUDED_TAGS — tag-based file/folder exclusion (issue #710,
-              # PR #765 in v1.9.x). Comma-separated list of system-tag names
-              # whose tagged files / folders are hidden from EVERY WebDAV MCP
-              # tool — listings, reads, writes, deletes, moves, copies, search.
-              # A folder tag recursively excludes everything beneath it via
-              # path-prefix match. The vector-sync scanner also honors this
-              # set (PR #765): a file tagged `vector-exclude` is NOT
-              # indexed even if it sits under a folder tagged `vector-index`.
-              # Default: empty (feature off). Setting the env var to a tag
-              # name that does not exist in Nextcloud is a no-op, so it is
-              # safe to ship the config ahead of `occ systemtag:add`.
-              # Threat model: create the tag --user-assignable=false so
-              # users cannot bypass the exclusion by removing the tag from a
-              # file in the WebUI. The tag itself is created manually:
-              #   occ systemtag:add vector-exclude \
-              #     --visibility visible --assignable false
+              # EXCLUDED_TAGS — tag-based file/folder exclusion. NOT fork-only:
+              # upstream implements it in nextcloud_mcp_server/server/
+              # tag_exclusion.py and documents it at docs/configuration.md:1665.
+              # Comma-separated system tags whose files/folders are hidden from
+              # every WebDAV tool and skipped by the vector scanner (a folder tag
+              # excludes everything beneath it by path prefix). Empty = feature off.
+              # Unknown tag name = no-op, so shipping this ahead of
+              # `occ systemtag:add` is safe. Create the tag non-assignable so a
+              # user cannot escape the exclusion by removing it:
+              #   occ systemtag:add vector-exclude --visibility visible --assignable false
               EXCLUDED_TAGS = "vector-exclude";
               # --- Multi-format indexing (v1.9.5+) ---------------------------
               # v1.5.1.1 hard-coded a PDF-only MIME filter inside the file

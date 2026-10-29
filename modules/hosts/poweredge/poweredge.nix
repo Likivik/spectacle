@@ -29,14 +29,18 @@
       # into a single-line env var file. Used by ExecStartPre so the
       # password never appears in Nix store or as a literal env var
       # embedded in unit files.
-      ncMcpCredsToEnvScript = pkgs.writeShellScript "nc-mcp-creds-to-env" ''
-        set -eu
-        : "''${CREDENTIALS_DIRECTORY:?must be set by systemd}"
-        install -m 0600 /dev/null /run/nextcloud-mcp.env
-        printf 'NEXTCLOUD_PASSWORD=%s\n' \
-          "$(cat "$CREDENTIALS_DIRECTORY/mcp-password")" \
-          > /run/nextcloud-mcp.env
-      '';
+      # `envPath` is a parameter because a second, side-by-side instance needs its
+      # own env file: two containers cannot share /run/nextcloud-mcp.env.
+      ncMcpCredsToEnvScript =
+        envPath:
+        pkgs.writeShellScript "nc-mcp-creds-to-env" ''
+          set -eu
+          : "''${CREDENTIALS_DIRECTORY:?must be set by systemd}"
+          install -m 0600 /dev/null ${envPath}
+          printf 'NEXTCLOUD_PASSWORD=%s\n' \
+            "$(cat "$CREDENTIALS_DIRECTORY/mcp-password")" \
+            > ${envPath}
+        '';
     in {
       imports = [
         inputs.disko.nixosModules.disko
@@ -344,12 +348,14 @@
         qdrant-http.ports = [ 6333 ];
         qdrant-grpc.ports = [ 6334 ];
         nextcloud-mcp.ports = [ 8000 ];
+        nextcloud-mcp-upstream.ports = [ 8010 ];
       };
       networkFirewall.grants = {
         ssh = [ "lan" "tailnet" ];
         qdrant-http = [ "tailnet" "lo" ];
         qdrant-grpc = [ "tailnet" "lo" ];
         nextcloud-mcp = [ "tailnet" ];
+        nextcloud-mcp-upstream = [ "tailnet" ];
       };
       # tailscale0: ports exposed over Tailscale for cross-host MCP access.
       # 22: SSH — CRITICAL. a8cafce (2026-08-05) closed all tailscale0 ports
@@ -578,7 +584,38 @@
             LoadCredential = "mcp-password:${config.sops.secrets."nextcloud/mcp-app-password".path}";
             RequiresMountsFor = [ "/run/secrets" ];
             # ExecStartPre runs the helper script defined in the let block.
-            ExecStartPre = "${toString pkgs.bash}/bin/bash ${ncMcpCredsToEnvScript}";
+            ExecStartPre = "${toString pkgs.bash}/bin/bash ${ncMcpCredsToEnvScript "/run/nextcloud-mcp.env"}";
+          };
+        };
+
+        # Side-by-side UPSTREAM instance, for evaluating a switch away from the
+        # pi0n00r fork. Same Nextcloud, same app password, different port.
+        # Semantic search is OFF on purpose: two writers on one Qdrant collection
+        # would index everything twice and make any search comparison meaningless.
+        # Upstream publishes no release tags (semver stops at 0.9.0), so the pin is
+        # a commit tag plus digest — the version lives in this comment, not a tag.
+        containers.nextcloud-mcp-upstream = {
+          autoStart = true;
+          containerConfig = {
+            image = "ghcr.io/cbcoutinho/nextcloud-mcp-server:sha-4da6ef6@sha256:07d0d0edbdb14ff7bb21e5c41588e29ab6dfbb35b69ab957094a9bcdc13416d3";
+            networks = [ "host" ];
+            # The image ENTRYPOINT already carries `run --host 0.0.0.0`
+            # (Dockerfile:77), so only the port is overridden; 8000 stays with
+            # the fork instance the live MCP client points at.
+            exec = "--port 8010";
+            environmentFiles = [ "/run/nextcloud-mcp-upstream.env" ];
+            environments = {
+              NEXTCLOUD_HOST = "http://127.0.0.1:80";
+              NEXTCLOUD_USERNAME = "likivik";
+              MCP_DEPLOYMENT_MODE = "single_user_basic";
+              ENABLE_SEMANTIC_SEARCH = "false";
+            };
+          };
+          serviceConfig = {
+            Restart = "always";
+            LoadCredential = "mcp-password:${config.sops.secrets."nextcloud/mcp-app-password".path}";
+            RequiresMountsFor = [ "/run/secrets" ];
+            ExecStartPre = "${toString pkgs.bash}/bin/bash ${ncMcpCredsToEnvScript "/run/nextcloud-mcp-upstream.env"}";
           };
         };
       };

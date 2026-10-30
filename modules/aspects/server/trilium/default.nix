@@ -5,7 +5,9 @@
     nixos = { config, lib, pkgs, ... }: {
       services.trilium-server = {
         enable = true;
-        host = "0.0.0.0";
+        # Loopback only: the tailnet reaches Trilium exclusively through
+        # `tailscale serve` on :8091, which terminates TLS with a real cert.
+        host = "127.0.0.1";
         port = 8090;
       };
 

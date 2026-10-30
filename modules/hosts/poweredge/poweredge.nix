@@ -329,7 +329,7 @@
           tailscale-wait-running
           tailscale serve --bg --https=443 http://127.0.0.1:80
           tailscale serve --bg --https=8443 http://127.0.0.1:3001
-          tailscale serve --bg --https=8787 http://127.0.0.1:8787
+          tailscale serve --bg --https=8091 http://127.0.0.1:8090
         '';
       };
 

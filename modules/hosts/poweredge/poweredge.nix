@@ -309,7 +309,11 @@
         after = [ "tailscaled.service" "tailscaled-autoconnect.service" "multi-user.target" ];
         wants = [ "tailscaled.service" ];
         wantedBy = [ "multi-user.target" ];
-        path = with pkgs; [ tailscale gnugrep gnused coreutils ];
+        # config.system.path carries `tailscale-wait-running`, which the script
+        # below calls (installed fleet-wide by aspects/core/tailscale.nix via
+        # environment.systemPackages). Without it the unit dies status=127 and
+        # takes the whole switch down with it (measured 2026-10-30).
+        path = with pkgs; [ tailscale gnugrep gnused coreutils config.system.path ];
         serviceConfig = {
           Type = "oneshot";
           RemainAfterExit = true;

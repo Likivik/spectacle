@@ -160,9 +160,12 @@
             DynamicUser = true; StateDirectory = "llama-ollama-proxy";
           };
         };
-        # Open 11434 on tailscale0 only (loopback already reachable from poweredge
-        # via Tailscale's magic DNS routing). 127.0.0.1 is implicit via Type=exec.
-        networking.firewall.interfaces.tailscale0.allowedTCPPorts = [ 11434 ];
+        # Open 11434 (embedder proxy) and 8082 (reranker) on tailscale0 only —
+        # loopback is already reachable from poweredge via Tailscale's magic DNS.
+        # 8082 is what SEARCH_RERANK_URL points at (poweredge.nix); opening it
+        # explicitly means the reranker is not reachable only by accident of a
+        # broader rule someone later tightens.
+        networking.firewall.interfaces.tailscale0.allowedTCPPorts = [ 11434 8082 ];
       })
     ];
   };

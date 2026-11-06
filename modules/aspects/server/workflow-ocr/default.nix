@@ -103,6 +103,16 @@
           ];
           extraEnvironment = {
             GOOGLE_APPLICATION_CREDENTIALS = "$CREDENTIALS_DIRECTORY/google-ocr-key";
+            # The bucket the worker already owns. Without it the engine tries to
+            # CREATE a throwaway bucket per run, and the service account holds
+            # "Storage Object Admin on this bucket only" — so bucket creation
+            # answers 403 and every Google job dies before the first page:
+            #   ocr-worker@spectacle-xandria.iam.gserviceaccount.com does not
+            #   have storage.buckets.create access to the Google Cloud project.
+            # The bucket (europe-west4, next to the project) was created when the
+            # google-vision-word-ocr-pdf skill was written; the worker uploads
+            # the PDF, batch-annotates it and deletes its own objects afterwards.
+            NC_OCR_GOOGLE_BUCKET = "ocr-project-tmp";
           };
         };
 

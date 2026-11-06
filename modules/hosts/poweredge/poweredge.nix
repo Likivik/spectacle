@@ -540,6 +540,15 @@
               # llama-reranker runs --parallel 2; never queue more than it can
               # serve at once or searches serialise behind each other.
               SEARCH_RERANK_MAX_CONCURRENCY = "2";
+              # 200 candidates × up to 2000 chars is ~400k chars of scoring on a
+              # GTX 1660 — measured ~0.09 s per 1200-char document, so the
+              # upstream 30 s default times out on a wide query and the search
+              # silently falls back to retrieval order (observed). Rerank the
+              # top 50 instead: same ranking quality, ~8 s, and 120 s of slack
+              # (the client's own compiled-in default) so a cold GPU cannot
+              # convert a good search into a degraded one.
+              SEARCH_RERANK_POOL_SIZE = "50";
+              SEARCH_RERANK_TIMEOUT_SECONDS = "120";
 
               # --- Vector-sync tuning ---------------------------------------
               # NB: the correct env-var name is VECTOR_SYNC_SCAN_INTERVAL, NOT

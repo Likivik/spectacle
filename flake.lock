@@ -2479,11 +2479,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1793967169,
-        "narHash": "sha256-3nWFxFfG7WM/MoTY/4/qGsTfTqjgw0n01VHwKGZ9Qwo=",
+        "lastModified": 1793973455,
+        "narHash": "sha256-q42/ckeKx659TSbRg1S8JTShgOL5PcsYX/uyjcXwKYk=",
         "owner": "Likivik",
         "repo": "ocrflow",
-        "rev": "937db35d6fe0cd3760075242beee1d4e5aa4fae1",
+        "rev": "e1b04070ac3a5cb752968c7000200853b9bd5f55",
         "type": "github"
       },
       "original": {

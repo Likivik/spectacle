@@ -113,6 +113,16 @@
             # google-vision-word-ocr-pdf skill was written; the worker uploads
             # the PDF, batch-annotates it and deletes its own objects afterwards.
             NC_OCR_GOOGLE_BUCKET = "ocr-project-tmp";
+            # Bytes come from the app, not from WebDAV. On `dav` the worker must
+            # be a Nextcloud user, and a user can only read its OWN files — which
+            # is why a job for admin's file 404'd while the worker ran as
+            # likivik, and why a dedicated service account would not fix it
+            # either (WebDAV is per-user; it would need a share per job).
+            # On `api`, `GET|PUT /ocs/v2.php/apps/ocrflow/api/v1/queue/{id}/file`
+            # moves the bytes with the app's own authority, so the worker needs
+            # no account and OCR works for every user. The DAV credential stays
+            # configured as the documented fallback; it is simply unused.
+            NC_OCR_TRANSPORT = "api";
           };
         };
 

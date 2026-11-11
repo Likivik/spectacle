@@ -13,9 +13,44 @@
       # (upstream #130070, open). Pass it explicitly.
       # ⚠ keep in sync with the hermes-agent input tag in flake.nix /
       #   modules/defaults/inputs.nix.
-      hermes-pkg = (inputs.hermes-agent.packages.${pkgs.system}.minimal).override {
+      hermesVersion = "0.23.1";
+
+      # v0.23.1's nix/pm-packages.nix backports NixOS/patchelf#672 onto
+      # `patchelf` unconditionally, but that patch is written for 0.19 and
+      # rejects 4 of 6 hunks against the 0.15.2 that nixpkgs reverted to
+      # (NixOS/nixpkgs@61a15beb37, 2026-10-30; tracking #577387). Upstream fix
+      # is PR NousResearch/hermes-agent#152542 (open, P2) — it gates the
+      # backport on 0.19.0-0.19.2. Apply that gate locally so hermes builds
+      # against our cached patchelf. DROP this patch and go back to
+      # `(inputs.hermes-agent.packages.${pkgs.system}.minimal).override { … }`
+      # once a released tag contains it.
+      hermes-src = pkgs.applyPatches {
+        name = "hermes-agent-${hermesVersion}-patched";
+        src = inputs.hermes-agent;
+        patches = [
+          ./hermes-patchelf-gate.patch
+          # pnpm store hash: v0.23.1's nix/pnpm-deps-hash was produced by the
+          # upstream nixpkgs (02c087f); fetchPnpmDeps on ours (c5c4a43) yields a
+          # different store hash, so the fixed-output build fails. Re-derive with
+          # `nix build .#… -L`, copy the "got" line here; drop when we bump nixpkgs.
+          ./hermes-pnpm-deps-hash.patch
+        ];
+      };
+
+      hermes-pkg = pkgs.callPackage "${hermes-src}/nix/hermes-agent.nix" {
+        # Use hermes-agent's OWN pinned pyproject stack, not ours: its
+        # python.nix calls uv2nix APIs (e.g. `default-groups`) that older
+        # uv2nix revisions do not accept.
+        uv2nix = inputs.hermes-agent.inputs.uv2nix;
+        pyproject-nix = inputs.hermes-agent.inputs.pyproject-nix;
+        pyproject-build-systems = inputs.hermes-agent.inputs.pyproject-build-systems;
+        pmPackages = lib.filterAttrs (_: lib.isDerivation) (
+          pkgs.callPackage "${hermes-src}/nix/pm-packages.nix" { }
+        );
         extraDependencyGroups = [ "messaging" "anthropic" ];
-        version = "0.21.7";
+        version = hermesVersion;
+        rev = inputs.hermes-agent.rev or null;
+        lastModified = inputs.hermes-agent.lastModified or null;
       };
 
       # Extra (non-default) Hermes profiles. `default` stays hardcoded below for

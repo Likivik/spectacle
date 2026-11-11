@@ -1,0 +1,6 @@
+diff --git a/nix/pnpm-deps-hash b/nix/pnpm-deps-hash
+--- a/nix/pnpm-deps-hash
++++ b/nix/pnpm-deps-hash
+@@ -1 +1 @@
+-sha256-x+ywbFSCI60OcBH0R3UMm2zDc/pSLuYouerDLzqGi0c=
++sha256-2aUFZtfNSSfVvB9MYuEGTMaXbs7qtn9keDHgEekWzTs=

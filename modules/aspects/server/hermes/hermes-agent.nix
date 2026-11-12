@@ -284,6 +284,10 @@
         };
 
         environment.systemPackages = [ hermes-pkg ];
+        # Make the expected agent version machine-readable so the VM smoke probe
+        # cannot drift from it (it used to hardcode the tag and broke on every
+        # bump). Single source of truth: hermesVersion above.
+        environment.etc."hermes-expected-version".text = "${hermesVersion}\n";
 
         # Secrets reach every unit as a rendered env file, never as a
         # hand-written one. See the sopsTemplates block above for why.

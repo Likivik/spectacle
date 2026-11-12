@@ -219,13 +219,16 @@ echo "--- hermes version (install stamp -> CLI; upstream #130070 / #135217) ---"
 # install-stamp.json; Nix sources keep no .git, so upstream's flake stamps 0.0.0
 # unless the package is told the version. The aspect passes it explicitly — if that
 # override is ever dropped, this reports 0.0.0 and fails the gate.
-# ⚠ keep the literal below in sync with the hermes-agent input tag.
+# ⚠ expected version comes from the host config (/etc/hermes-expected-version,
+# written by the hermes-agent aspect); the literal is only a fallback so a
+# missing file is loud instead of silently passing.
+EXPECTED=$(cat /etc/hermes-expected-version 2>/dev/null || echo "v0.23.1")
 HV=$(timeout 60 sudo -u hermes HOME=/var/lib/hermes HERMES_HOME=/var/lib/hermes/.hermes \
   /run/current-system/sw/bin/hermes -V 2>&1 | head -1)
-echo "  ${HV:-<no output>}"
+echo "  ${HV:-<no output>}  (expected ${EXPECTED})"
 case "$HV" in
-  *v0.21.7*) echo "HERMES_VERSION_OK" ;;
-  *) echo "HERMES_VERSION_BAD: ${HV:-<no output>}"; FAILED=1 ;;
+  *"$EXPECTED"*) echo "HERMES_VERSION_OK" ;;
+  *) echo "HERMES_VERSION_BAD: expected ${EXPECTED}, got ${HV:-<no output>}"; FAILED=1 ;;
 esac
 # The date in parentheses is hermes_cli.__release_date__, a checked-in literal that
 # no release since v2026.9.24 has bumped (upstream #135217). Expected stale here; it

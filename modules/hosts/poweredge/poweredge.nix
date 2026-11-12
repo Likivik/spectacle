@@ -521,6 +521,35 @@
               OLLAMA_EMBEDDING_MODEL = "bge-m3";
               SEARCH_MODE = "hybrid";  # dense (via Ollama/proxy) + sparse (Qdrant BM25)
 
+              # --- Reranking -------------------------------------------------
+              # Cross-encoder reordering of retrieved chunks. Two ways in: a
+              # gateway (EMBEDDING_GATEWAY_URL + M2M token) or a direct endpoint
+              # in SEARCH_RERANK_URL, which nc-mcp uses VERBATIM and calls with
+              # the Cohere protocol ({model, query, documents} → results[].index
+              # + relevance_score). We use the direct path: serenity's
+              # llama-reranker already serves that shape on :8082/v1/rerank
+              # (measured: 1.308 for the matching passage vs -10.8 for junk).
+              # The gateway path would need an M2M token to a service we do not
+              # run, so the direct URL keeps the credential surface at zero.
+              # Degradation is silent by design — a wrong URL or a dead
+              # reranker falls back to retrieval order, so verify with
+              # `reranked: true` in the search response, not just success.
+              SEARCH_RERANK_ENABLED = "true";
+              SEARCH_RERANK_URL = "http://serenity:8082/v1/rerank";
+              SEARCH_RERANK_MODEL = "bge-reranker-v2-m3";
+              # llama-reranker runs --parallel 2; never queue more than it can
+              # serve at once or searches serialise behind each other.
+              SEARCH_RERANK_MAX_CONCURRENCY = "2";
+              # 200 candidates × up to 2000 chars is ~400k chars of scoring on a
+              # GTX 1660 — measured ~0.09 s per 1200-char document, so the
+              # upstream 30 s default times out on a wide query and the search
+              # silently falls back to retrieval order (observed). Rerank the
+              # top 50 instead: same ranking quality, ~8 s, and 120 s of slack
+              # (the client's own compiled-in default) so a cold GPU cannot
+              # convert a good search into a degraded one.
+              SEARCH_RERANK_POOL_SIZE = "50";
+              SEARCH_RERANK_TIMEOUT_SECONDS = "120";
+
               # --- Vector-sync tuning ---------------------------------------
               # NB: the correct env-var name is VECTOR_SYNC_SCAN_INTERVAL, NOT
               # VECTOR_SYNC_INTERVAL — the latter is silently ignored (upstream

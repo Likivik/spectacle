@@ -64,7 +64,7 @@
     # an aspect — two definitions conflict and break 
     # (and its check-flake-file guard) outright.
     hermes-agent = {
-      url = "github:NousResearch/hermes-agent/v0.21.7";
+      url = "github:NousResearch/hermes-agent/v0.23.1";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     llm-agents = {

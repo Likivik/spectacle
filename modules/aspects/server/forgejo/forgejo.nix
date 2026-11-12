@@ -143,27 +143,35 @@
           '';
         };
 
-        services.gitea-actions-runner.package = pkgs.forgejo-runner;
-        services.gitea-actions-runner.instances.serenity = {
+        # ── CI runner ────────────────────────────────────────────────────────
+        # 26.11 replaced services.gitea-actions-runner with services.forgejo-runner,
+        # and the runner no longer auto-registers: it connects with its own
+        # uuid + token (carried over from the old registration) instead of a
+        # short-lived registration token. The token is injected by systemd via
+        # LoadCredential, so no sops file has to be readable by the runner user.
+        services.forgejo-runner.package = pkgs.forgejo-runner;
+        services.forgejo-runner.instances.serenity = {
           enable = true;
-          url = "https://serenity.oryx-galaxy.ts.net/";
-          name = "serenity";
-          # Container-isolated job, as an unprivileged nixuser, with the host
-          # store (/nix) + storeDeps/bin mounted in; nix talks to the host daemon.
-          labels = [ "nix:docker://forgejo-runner-nix" ];
-          # Real tokenFile comes from sops (declared in serenity.nix); the module
-          # requires exactly one of token/tokenFile. Fall back to a dummy path
-          # when the sops module isn't present (e.g. the hermetic VM test) so the
-          # aspect stays self-contained and doesn't force a sops dependency.
-          tokenFile = config.sops.secrets."registration-token".path
-            or "/run/forgejo-registration/registration-token";
+          # A `docker://` label trips the module's assertion unless a container
+          # runtime is on; jobs still run inside podman.
+          runtimes.podman = true;
           settings = {
-            runner.capacity = 1;
-            runner.envs = {
-              # Determinate's COMPAT socket (standard Nix daemon protocol).
-              # The determinate-nixd.socket path speaks gRPC/HTTP2 and any
-              # normal nix client fails with "protocol mismatch, got HTTP/1.1 400".
-              NIX_REMOTE = "unix:///nix/var/nix/daemon-socket/socket";
+            server.connections.default = {
+              url = "https://serenity.oryx-galaxy.ts.net/";
+              # From the old registration: /var/lib/gitea-runner/serenity/.runner
+              uuid = "9919d069-fafd-4923-82ee-523e0953ff6a";
+            };
+            runner = {
+              capacity = 1;
+              # Container-isolated job, as an unprivileged nixuser, with the host
+              # store (/nix) + storeDeps/bin mounted in; nix talks to the host daemon.
+              labels = [ "nix:docker://forgejo-runner-nix" ];
+              envs = {
+                # Determinate's COMPAT socket (standard Nix daemon protocol).
+                # The determinate-nixd.socket path speaks gRPC/HTTP2 and any
+                # normal nix client fails with "protocol mismatch, got HTTP/1.1 400".
+                NIX_REMOTE = "unix:///nix/var/nix/daemon-socket/socket";
+              };
             };
             container = {
               network = "host";
@@ -178,24 +186,37 @@
               dir = "/var/cache/forgejo-ci/actcache";
             };
           };
+          # Real token path comes from sops (declared in serenity.nix); fall back
+          # to a fixed path when the sops module isn't present (e.g. the
+          # hermetic VM test) so the aspect stays self-contained.
+          secrets.server.connections.default.token_url =
+            config.sops.secrets."forgejo-runner-token".path
+              or "/run/forgejo-runner/token";
         };
 
         # The runner must not start before its image is imported.
-        systemd.services.gitea-runner-serenity.after = [ "forgejo-runner-nix-image.service" ];
-        systemd.services.gitea-runner-serenity.requires = [ "forgejo-runner-nix-image.service" ];
+        systemd.services.forgejo-runner-serenity.after = [ "forgejo-runner-nix-image.service" ];
+        systemd.services.forgejo-runner-serenity.requires = [ "forgejo-runner-nix-image.service" ];
 
-        # The module uses DynamicUser; keep a real user so it can (a) read the
-        # sops tokenFile (0600 gitea-runner) and (b) drive the root podman socket
-        # via the podman group. The *job* still runs as nixuser inside the container.
-        users.users.gitea-runner = {
+        # Keep a real user instead of the module's DynamicUser: the CI caches
+        # under /var/cache/forgejo-ci are shared with the job containers and need
+        # a stable owner across restarts. Token delivery is unaffected — systemd
+        # reads it as root and hands it over via LoadCredential. The *job* still
+        # runs as nixuser inside the container.
+        users.users.forgejo-runner = {
           isSystemUser = true;
-          group = "gitea-runner";
+          group = "forgejo-runner";
           createHome = true;
           home = "/Storage/forgejo/runner";
         };
-        users.groups.gitea-runner = { };
-        users.users.gitea-runner.extraGroups = [ "users" "podman" ]; # traverse /Storage + launch containers
-        systemd.services.gitea-runner-serenity.serviceConfig.DynamicUser = lib.mkForce false;
+        users.groups.forgejo-runner = { };
+        users.users.forgejo-runner.extraGroups = [ "users" "podman" ]; # traverse /Storage + launch containers
+        systemd.services.forgejo-runner-serenity.serviceConfig = {
+          DynamicUser = lib.mkForce false;
+          User = "forgejo-runner";
+          Group = "forgejo-runner";
+          SupplementaryGroups = lib.mkForce [ "podman" "users" ];
+        };
 
         # Create the ZFS-pool + backup data dirs owned by the forgejo user.
         # `install -d` is idempotent (creates only when absent, won't clobber).
@@ -204,7 +225,7 @@
         users.users.forgejo.extraGroups = [ "users" ];
 
         system.activationScripts.forgejo-dirs = lib.stringAfter [ "users" "specialfs" ] ''
-          # Parent is 0770 forgejo:users so both forgejo (owner) and gitea-runner
+          # Parent is 0770 forgejo:users so both forgejo (owner) and forgejo-runner
           # (via the users group) can traverse into it; subdirs stay per-user.
           install -d -o forgejo -g users -m 0770 /Storage/forgejo
           chown forgejo:users /Storage/forgejo 2>/dev/null || true
@@ -215,11 +236,11 @@
           # CI build caches live on the root SSD (/dev/sdb2), NOT on the ZFS
           # HDD pool: 75 GiB of uncompressed rust-target random writes was the
           # slowest thing on the box and it evicted ARC. Parent must be
-          # traversable by the runner (gitea-runner) and by the in-container
+          # traversable by the runner (forgejo-runner) and by the in-container
           # job user (nixuser).
           install -d -o root -g root -m 0755 /var/cache/forgejo-ci
-          # actions/cache server dir — owned by the runner (gitea-runner) user.
-          install -d -o gitea-runner -g gitea-runner -m 0750 /var/cache/forgejo-ci/actcache
+          # actions/cache server dir — owned by the runner (forgejo-runner) user.
+          install -d -o forgejo-runner -g forgejo-runner -m 0750 /var/cache/forgejo-ci/actcache
           # Persistent Rust cargo cache (Layer 2): the runner job runs as nixuser
           # inside a container whose bind-mounted /opt dirs preserve host
           # ownership — nixuser:nixuser 0770 lets the in-container job read/write.

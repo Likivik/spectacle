@@ -150,11 +150,15 @@
         # Tracked: https://github.com/Likivik/spectacle/issues/2
         sops.useSystemdActivation = true;
 
-        sops.secrets."registration-token" = {
-          sopsFile = ../../../secrets/serenity/secrets.yaml;
-          owner = "gitea-runner";
-          group = "gitea-runner";
-          mode = "0600";
+        # CI runner auth token. 26.11's services.forgejo-runner does not
+        # register with a registration token any more — it connects with the
+        # runner's own token from the old registration, which it receives via
+        # systemd LoadCredential (read as root), so the file needs no group
+        # dance. Drop "registration-token" once the old module is gone.
+        sops.secrets."forgejo-runner-token" = {
+          sopsFile = ../../../secrets/serenity/forgejo-runner.yaml;
+          owner = "root";
+          mode = "0400";
         };
 
         # ── Hermes Agent: secrets + runtime wiring ───────────────────────

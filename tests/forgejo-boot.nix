@@ -15,7 +15,7 @@
 #   - /var/backup/forgejo backup dir is created
 #   - Self-contained CI deps (the aspect carries its own builder requirements):
 #     podman is enabled, the forgejo-runner-nix image oneshot imports the runner
-#     image, nixuser exists, gitea-runner is in the podman group, and the runner
+#     image, nixuser exists, forgejo-runner is in the podman group, and the runner
 #     unit is generated ordered after the image import (so jobs can never run
 #     before the image is present).
 { inputs, pkgs, ... }:
@@ -58,7 +58,7 @@ pkgs.testers.nixosTest {
     # (container options compile into the generated config.yaml, referenced by
     # the daemon's ExecStart --config <storePath>.)
     machine.succeed(
-      "cfg=$(systemctl cat gitea-runner-serenity.service "
+      "cfg=$(systemctl cat forgejo-runner-serenity.service "
       + "| grep -o '/nix/store/[^ ]*config.yaml' | head -1); "
       + "grep -q 'CARGO_HOME=/opt/cargo' \"$cfg\" && "
       + "grep -q 'CARGO_TARGET_DIR=/opt/target' \"$cfg\" && "
@@ -97,14 +97,14 @@ pkgs.testers.nixosTest {
     machine.succeed("id nixuser")
 
     # 10. The runner user can drive the root podman socket (group scoping)
-    machine.succeed("id gitea-runner | grep -q '\\bpodman\\b'")
+    machine.succeed("id forgejo-runner | grep -q '\\bpodman\\b'")
 
     # 11. The runner unit is declared (config valid) ...
-    machine.succeed("systemctl cat gitea-runner-serenity.service >/dev/null")
+    machine.succeed("systemctl cat forgejo-runner-serenity.service >/dev/null")
 
     # 12. ... and ordered after the image import, so it never runs jobs first
     machine.succeed(
-      "systemctl show gitea-runner-serenity -p After | grep -q forgejo-runner-nix-image"
+      "systemctl show forgejo-runner-serenity -p After | grep -q forgejo-runner-nix-image"
     )
   '';
 }

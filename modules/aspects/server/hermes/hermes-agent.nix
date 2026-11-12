@@ -30,14 +30,29 @@
         patches = [
           ./hermes-patchelf-gate.patch
           # pnpm store hash: v0.23.1's nix/pnpm-deps-hash was produced by the
-          # upstream nixpkgs (02c087f); fetchPnpmDeps on ours (c5c4a43) yields a
-          # different store hash, so the fixed-output build fails. Re-derive with
-          # `nix build .#… -L`, copy the "got" line here; drop when we bump nixpkgs.
+          # upstream builder; fetchPnpmDeps normalises the store differently per
+          # nix version, so the same lockfile hashes differently per builder.
+          # The value below matches Determinate Nix 3.23.0 (serenity, erebus
+          # after its deploy). A builder still on an older nix (3.22.3 yields
+          # x+ywbF…) fails the fixed-output check — build on a 3.23.0 host and
+          # `--target-host` the outputs instead of re-deriving per host.
           ./hermes-pnpm-deps-hash.patch
+          # PM assumes a source checkout: it stamps the environment with
+          # sha256(<project>/uv.lock) and synthesises a workspace from
+          # <project>/pyproject.toml (pm/packages.py, pm/workspace.py). A nix
+          # install seals the code in a store venv, so repo_root() resolves to
+          # site-packages where neither file is. v0.23.1 then hard-fails
+          # (`hermes pm install` dies in sync(extras); plugin admission refuses
+          # with "uv.lock: No such file"). Patch project_root() to fall back to
+          # the wrapper's HERMES_INSTALL_ROOT — the directory upstream already
+          # uses for install-stamp.json — and ship the two files there below.
+          # Upstream has the same fix in flight (#140767 stamp-only, #152351
+          # avoids the path); drop this when either lands.
+          ./hermes-pm-project-root.patch
         ];
       };
 
-      hermes-pkg = pkgs.callPackage "${hermes-src}/nix/hermes-agent.nix" {
+      hermes-pkg-raw = pkgs.callPackage "${hermes-src}/nix/hermes-agent.nix" {
         # Use hermes-agent's OWN pinned pyproject stack, not ours: its
         # python.nix calls uv2nix APIs (e.g. `default-groups`) that older
         # uv2nix revisions do not accept.
@@ -52,6 +67,23 @@
         rev = inputs.hermes-agent.rev or null;
         lastModified = inputs.hermes-agent.lastModified or null;
       };
+
+      # The project template PM requires (see hermes-pm-project-root.patch).
+      # project_root() still keys install_state_dir (upstream value, untouched),
+      # but in a nix install it points at site-packages and holds no project
+      # files. PM therefore uses the wrapper's HERMES_INSTALL_ROOT — the
+      # directory upstream already uses for install-stamp.json — as the
+      # template source, and this ships the real files there. Mode is moot: the
+      # store normalises every file to 0444, which is why the patch also chmods
+      # the snapshot writable before rewriting it.
+      hermes-pkg = hermes-pkg-raw.overrideAttrs (o: {
+        postInstall = (o.postInstall or "") + ''
+          install -m644 ${hermes-src}/pyproject.toml \
+            $out/share/hermes-agent/pyproject.toml
+          install -m644 ${hermes-src}/uv.lock \
+            $out/share/hermes-agent/uv.lock
+        '';
+      });
 
       # Extra (non-default) Hermes profiles. `default` stays hardcoded below for
       # zero churn; these get parameterized gateway units + graphiti wiring.
@@ -284,6 +316,20 @@
         };
 
         environment.systemPackages = [ hermes-pkg ];
+        # The agent downloads its own toolchain (node, npm, pnpm, ripgrep,
+        # python, chromium) into ~/.hermes/tools and verifies each by running
+        # it. Those are generic-Linux ELF with interpreter
+        # /lib64/ld-linux-x86-64.so.2, so on NixOS they exit 127 ("Could not
+        # start dynamically linked executable") unless nix-ld provides that
+        # path — the install then rolls back and every node/npx MCP server
+        # parks. No library list is needed: nixpkgs merges its baseLibraries
+        # (zlib, zstd, gcc, curl, openssl, attr, libssh, bzip2, libxml2, acl,
+        # libsodium, util-linux, xz, systemd) whenever nix-ld is enabled, and
+        # node's DT_NEEDED (libstdc++, libgcc_s, libatomic) is covered by
+        # stdenv.cc.cc. This used to be inherited by accident from the dev
+        # aspects (omp/opencode), which is why serenity worked and erebus did
+        # not — declare it here, where the dependency lives.
+        programs.nix-ld.enable = true;
         # Make the expected agent version machine-readable so the VM smoke probe
         # cannot drift from it (it used to hardcode the tag and broke on every
         # bump). Single source of truth: hermesVersion above.

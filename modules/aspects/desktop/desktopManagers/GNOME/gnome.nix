@@ -18,7 +18,11 @@
           tiling-assistant
           transcodeappsearch
           vertical-workspaces
-          window-gestures
+          # window-gestures: dropped from nixpkgs' extension set in 26.11 (not a
+          # rename — no `gestures`-named extension matches it). Re-add here if
+          # upstream repackages it; the closest alternatives are
+          # custom-touchpad-gestures / touchpad-gesture-customization, which are
+          # different extensions, so this is not a silent swap.
           just-perfection
           arc-menu
           gjs-osk # slightly better on-screen-keyboard
@@ -39,7 +43,8 @@
           dash-to-panel
           dash-to-dock
           keep-pinned-apps-in-appgrid
-          quick-settings-tweaker
+          # quick-settings-tweaker: one of ~170 extensions dropped from nixpkgs'
+          # set in 26.11. Re-add if upstream repackages it.
           systemd-manager
           fly-pie
           kando-integration

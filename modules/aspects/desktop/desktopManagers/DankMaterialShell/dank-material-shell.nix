@@ -51,6 +51,18 @@
       {
         imports = [ inputs.dms-plugin-registry.nixosModules.default ];
 
+        # nixpkgs 26.11 renamed programs.dms-shell to programs.dux-shell, but
+        # dms-plugin-registry still wires only the OLD option paths
+        # (dankMaterialShell / dank-material-shell / dms-shell). Those no longer
+        # exist, so its module defined nothing, every plugin lost its `src`, and
+        # three hosts stopped evaluating on `plugins.<name>.src`.
+        # Wire the registry's plugin set to the new path; drop this once the
+        # registry knows programs.dux-shell.
+        programs.dux-shell.plugins = lib.mapAttrs (_: src: {
+          enable = lib.mkDefault false;
+          inherit src;
+        }) (import "${inputs.dms-plugin-registry}/nix/default.nix" { inherit pkgs; });
+
         services.displayManager.dms-greeter = {
           enable = true;
           compositor.name = "niri";

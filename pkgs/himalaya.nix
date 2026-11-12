@@ -7,9 +7,11 @@
   installShellCompletions ? stdenv.buildPlatform.canExecute stdenv.hostPlatform,
   installShellFiles,
   lib,
+  libgit2,
   openssl,
   pkg-config,
   rustPlatform,
+  sqlite,
   stdenv,
 }:
 
@@ -51,7 +53,13 @@ rustPlatform.buildRustPackage {
     installShellFiles
   ];
 
-  buildInputs = lib.optional withOpenssl openssl;
+  # 26.11's rustPlatform sets LIBGIT2_NO_VENDOR, so libgit2 must come from the
+  # system; mirrored from nixpkgs 7e9aff20 ("himalaya: use system libgit2 sqlite").
+  buildInputs = [
+    libgit2
+    sqlite
+  ]
+  ++ lib.optional withOpenssl openssl;
 
   postInstall =
     lib.optionalString (lib.hasInfix "wine" emulator) ''

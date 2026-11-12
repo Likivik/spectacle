@@ -37,8 +37,11 @@
 
         config = {
           dbtype = lib.mkDefault "pgsql";
-          adminuser = "admin";
-          adminpassFile = config.sops.secrets."nextcloud/admin-password".path;
+          # 26.11 removed config.adminuser / config.adminpassFile outright: the
+          # module no longer creates an initial admin. The instance already has
+          # one, so nothing is lost — a fresh install now needs
+          # `nextcloud-occ user:add <user>` + `group:adduser admin <user>`.
+          # The sops secret "nextcloud/admin-password" is kept for that path.
         };
 
         appstoreEnable = true;

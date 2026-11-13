@@ -105,6 +105,10 @@
           # Nothing calls her API listener; it existed only because her unit
           # inherited the default profile's env file.
           apiEnabled = false;
+          # No graphiti for her: the activation installer used to flip
+          # memory.provider and symlink the plugin for every profile
+          # unconditionally, which is how it came back after the migration.
+          graphiti = false;
         }
       ];
 

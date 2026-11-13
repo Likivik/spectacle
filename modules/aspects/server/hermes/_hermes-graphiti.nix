@@ -11,7 +11,9 @@
   };
 
   defaultProfile = { name = "default"; home = "/var/lib/hermes/.hermes"; };
-  profiles = [ defaultProfile ] ++ extraProfiles;
+  # A profile can opt out (`graphiti = false`): installing the plugin and
+  # forcing memory.provider would otherwise undo that choice on every switch.
+  profiles = [ defaultProfile ] ++ builtins.filter (p: p.graphiti or true) extraProfiles;
 
   installFor = p: let
     user = p.user or "hermes";

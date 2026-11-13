@@ -1,0 +1,53 @@
+--- a/pm/packages.py
++++ b/pm/packages.py
+@@ -512,7 +512,11 @@
+         python = (lock.version("python"), target,
+                   [artifact["sha256"] for artifact in lock.artifacts("python", target)])
+         h = hashlib.sha256()
+-        h.update(_uv_lock_digest(self.project_root() / "uv.lock"))
++        from pm.paths import install_root
++        lock = self.project_root() / "uv.lock"
++        # A nix install seals the code in a store venv, so the project root has
++        # no uv.lock; the wrapper's install root carries it instead.
++        h.update(_uv_lock_digest(lock if lock.is_file() else install_root() / "uv.lock"))
+         h.update(_layout_digest(self.project_root()))
+         h.update(",".join(sorted(extras)).encode())
+         h.update(json.dumps(python).encode())
+@@ -538,6 +542,11 @@
+         from pm.workspace import build_member_dirs, lock_and_sync
+ 
+         project = self.project_root()
++        # project_root() keys install_state_dir, so it must stay what upstream
++        # computes; it just holds no project files in a nix install. The
++        # wrapper's install root does, and is used as the template only.
++        from pm.paths import install_root
++        template = project if (project / "pyproject.toml").is_file() else install_root()
+         generation = install_state_dir(project) / "environments" / uuid.uuid4().hex
+         candidate = generation / "venv"
+         environment = managed_environment(candidate, env=source_build_environment(project),
+@@ -567,10 +576,10 @@
+                     raise InstallError(self.name, "recorded dependency lock is missing; refusing to drop plugins")
+                 replay = recorded.parent
+             seed = (Path(prior["resolved_lock"]) if members and prior.get("resolved_lock")
+-                    else project / "uv.lock")
++                    else template / "uv.lock")
+             lock_and_sync(members, extras, root=generation / "workspace",
+                           seed_lock=seed, frozen=repair or not members, replay=replay,
+-                          source=project, environment=environment)
++                          source=template, environment=environment)
+             resolved_lock = generation / "workspace" / "uv.lock"
+             environment.check(resolved_lock)
+             if repair:
+--- a/pm/workspace.py
++++ b/pm/workspace.py
+@@ -178,6 +178,10 @@
+     target = root / "pyproject.toml"
+     text = _without_release_age(text)
+     _copy_core_inputs(source, root)
++    # copy2 preserves the mode, and a sealed nix source is 0444 — make the
++    # snapshot we are about to overwrite writable.
++    if target.exists():
++        target.chmod(0o644)
+     target.write_text(text, encoding="utf-8")
+ 
+ 

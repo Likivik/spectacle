@@ -719,6 +719,12 @@ GITEOF
           DST=/var/lib/salem/.hermes
           if [ ! -d "$DST" ] && [ -d "$SRC" ]; then
             echo "hermes-salem-migrate: $SRC -> $DST"
+            # Quiesce the OLD gateway first: it lives in the hermes manager and
+            # is still writing state.db when activation runs. Copying a live
+            # sqlite file is a torn-read risk, so the migration stops it itself
+            # instead of trusting a human to remember. --machine selects the
+            # other user's manager; failure is tolerated (already stopped).
+            ${pkgs.systemd}/bin/systemctl --user --machine=hermes@.host stop hermes-gateway-salem 2>/dev/null || true
             mkdir -p "$DST"
             ${pkgs.rsync}/bin/rsync -a --chown=salem:salem \
               --exclude 'cache/' --exclude 'audio_cache/' --exclude 'tools/.staging-*' \

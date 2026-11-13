@@ -11,13 +11,13 @@
   };
 
   defaultProfile = { name = "default"; home = "/var/lib/hermes/.hermes"; };
-  # A profile can opt out (`graphiti = false`): installing the plugin and
-  # forcing memory.provider would otherwise undo that choice on every switch.
+  # A profile can opt out (`graphiti = false`): the plugin symlink is the only
+  # thing this module still manages. memory.provider is runtime config and is
+  # set imperatively (`hermes config set`) — nix no longer touches it.
   profiles = [ defaultProfile ] ++ builtins.filter (p: p.graphiti or true) extraProfiles;
 
   installFor = p: let
     user = p.user or "hermes";
-    homeDir = if user == "hermes" then "/var/lib/hermes" else "/var/lib/${user}";
   in ''
     PLUGIN_DIR="${p.home}/plugins/graphiti"
     rm -rf "$PLUGIN_DIR" 2>/dev/null || true
@@ -25,15 +25,8 @@
     ln -sf "${graphitiPlugin}/lib" "$PLUGIN_DIR"
     chown -h ${user}:${user} "$PLUGIN_DIR"
 
-    if ! ${pkgs.gnugrep}/bin/grep -q "provider: graphiti" "${p.home}/config.yaml" 2>/dev/null; then
-      ${pkgs.sudo}/bin/sudo -u ${user} ${pkgs.bash}/bin/bash -c ${lib.escapeShellArg ''
-        export HOME=${homeDir}
-        export HERMES_HOME=${p.home}
-        export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$(id -u)/bus"
-        export PATH=/run/current-system/sw/bin:/etc/profiles/per-user/${user}/bin
-        /run/current-system/sw/bin/hermes config set memory.provider graphiti
-      ''}
-    fi
+    # memory.provider is deliberately NOT set here: runtime config belongs to
+    # the operator, not to activation. Set it imperatively if you want graphiti.
   '';
 in {
   # Run after the salem home migration: installing into a home that does not

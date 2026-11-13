@@ -272,6 +272,13 @@
               "HERMES_OPTIONAL_MCPS=${hermes-pkg}/share/hermes-agent/optional-mcps"
               "HERMES_LAZY_INSTALL_TARGET=${p.home}/lazy-packages"
             ];
+            # Same reason as the default gateway's pre-step: reconcile PM before
+            # the process exists, so the env is never swapped under a live
+            # gateway. Non-fatal on purpose.
+            ExecStartPre = pkgs.writeShellScript "hermes-pm-reconcile-${p.name}" ''
+              ${pkgs.coreutils}/bin/timeout 300 ${hermes-pkg}/bin/hermes pm install \
+                || echo "pm reconcile failed (non-fatal); starting the gateway anyway"
+            '';
             ExecStart = "${hermes-pkg}/bin/hermes gateway run";
             EnvironmentFile = [
               "/run/secrets/hermes/env"
@@ -454,7 +461,22 @@
             ];
             # Swap in a pre-built compact DB (if staged) before opening it:
             # ExecStartPre runs with no live writers, so no service juggling.
-            ExecStartPre = pkgs.writeShellScript "hermes-db-swap" ''
+            ExecStartPre = [
+              # Reconcile PM dependencies BEFORE the gateway process exists.
+              # Done in-process, uv replaces the environment directory under the
+              # live gateway: measured 2026-11-13 13:28 on serenity, the install
+              # finished 13:28:05 and Telegram still failed at 13:28:25 because
+              # the process kept importing the replaced env — the platform was
+              # dropped for the whole process lifetime while the unit stayed
+              # green. A child process leaves the gateway a settled env; when the
+              # stamp already matches this is a no-op (8 s measured).
+              # Deliberately non-fatal: an offline or PyPI-less boot must still
+              # start the agent.
+              (pkgs.writeShellScript "hermes-pm-reconcile" ''
+                ${pkgs.coreutils}/bin/timeout 300 ${hermes-pkg}/bin/hermes pm install \
+                  || echo "pm reconcile failed (non-fatal); starting the gateway anyway"
+              '')
+              (pkgs.writeShellScript "hermes-db-swap" ''
               set -euo pipefail
               DB=/var/lib/hermes/.hermes/state.db
               NEW=/var/lib/hermes/.hermes/state.db.new
@@ -476,7 +498,8 @@
               [ "$res" = "ok" ] || { echo "swapped db failed quick_check: $res"; mv -f "$OLD" "$DB"; exit 1; }
               rm -f "$OLD"
               echo "swapped; db bytes=$(stat -c %s "$DB")"
-            '';
+              '')
+            ];
             ExecStart = "${hermes-pkg}/bin/hermes gateway run";
             EnvironmentFile = [
               "/run/secrets/hermes/env"

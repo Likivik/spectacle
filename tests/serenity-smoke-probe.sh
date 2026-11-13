@@ -374,6 +374,43 @@ else
   FAILED=1
 fi
 
+echo "--- platform adapters: an enabled platform must attach ---"
+# 2026-11-13 signature: the gateway installed PM dependencies inside its own
+# process, uv replaced the environment dir under it, and Telegram was dropped
+# with "requirements not met" / "No adapter available" while the unit stayed
+# green. Adapter creation happens before any network use, so this is assertable
+# in a guest holding only dummy tokens — which is exactly why it belongs here.
+# Only platforms whose token this env actually carries are asserted.
+PLATFORMS="telegram:TELEGRAM_BOT_TOKEN discord:DISCORD_BOT_TOKEN slack:SLACK_BOT_TOKEN"
+ADAPTER_MISSING=""
+if [ -n "$GW_PID" ] && [ "$GW_PID" != 0 ]; then
+  for pair in $PLATFORMS; do
+    plat=${pair%%:*}
+    key=${pair#*:}
+    tr '\0' '\n' < "/proc/$GW_PID/environ" 2>/dev/null | grep -qE "^${key}=." || continue
+    JLOG=$(timeout 30 sudo -u hermes XDG_RUNTIME_DIR="/run/user/$UID_H" \
+      journalctl --user-unit hermes-gateway --boot --no-pager -o cat 2>/dev/null || true)
+    if printf '%s\n' "$JLOG" | grep -qE \
+      "No adapter available for ${plat}|Platform '${plat}' is registered but adapter creation failed|Platform '${plat}' requirements not met"; then
+      echo "  ${plat}: adapter NOT created"
+      ADAPTER_MISSING="$ADAPTER_MISSING $plat"
+    else
+      echo "  ${plat}: adapter created"
+    fi
+  done
+  if [ -n "${ADAPTER_MISSING// /}" ]; then
+    echo "PLATFORM_ADAPTER_MISSING:$ADAPTER_MISSING"
+    timeout 30 sudo -u hermes XDG_RUNTIME_DIR="/run/user/$UID_H" \
+      journalctl --user-unit hermes-gateway --boot --no-pager -o cat 2>/dev/null \
+      | grep -iE "requirements not met|adapter creation failed|No adapter available" | tail -5 || true
+    FAILED=1
+  else
+    echo "PLATFORM_ADAPTERS_OK"
+  fi
+else
+  echo "PLATFORM_ADAPTERS_SKIPPED: no gateway pid"
+fi
+
 echo "--- summary ---"
 timeout 20 systemctl list-units --type=service --state=running --no-legend --plain 2>/dev/null | wc -l | sed 's/^/running services: /'
 timeout 20 systemctl list-units --type=service --no-legend --plain 2>/dev/null | wc -l | sed 's/^/loaded services:  /'

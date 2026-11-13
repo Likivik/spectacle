@@ -197,7 +197,9 @@
         content = lib.concatStringsSep "\n" (
           [ "TELEGRAM_BOT_TOKEN=${config.sops.placeholder.${botTokenSecret}}" ]
           ++ map (r: "${r.env}=${config.sops.placeholder.${r.secret}}") secretEnv
-          ++ [ "API_SERVER_KEY=${config.sops.placeholder.${apiKeySecret}}" ]
+          # No listener => no key. Leaving a key behind invites the adapter to
+          # enable itself from the environment alone.
+          ++ lib.optional apiEnabled "API_SERVER_KEY=${config.sops.placeholder.${apiKeySecret}}"
           ++ commonLiteralEnv apiPort apiEnabled
           ++ extraLiterals
         ) + "\n";
@@ -227,26 +229,11 @@
 
       envFileFor = name: config.sops.templates.${name}.path;
 
-      # Opt each extra profile out of the host multiplexer so its own unit can
-      # serve it. Gated by a grep so the CLI call only happens when the key is
-      # missing — same idiom as _hermes-graphiti.nix.
-      mkStandalone = { home, ... }: ''
-        if ! ${pkgs.gnugrep}/bin/grep -q "standalone: true" "${home}/config.yaml" 2>/dev/null; then
-          ${pkgs.sudo}/bin/sudo -u hermes ${pkgs.bash}/bin/bash -c '
-            export HOME=/var/lib/hermes
-            export HERMES_HOME=${home}
-            export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$(id -u)/bus"
-            export PATH=/run/current-system/sw/bin:/etc/profiles/per-user/hermes/bin
-            /run/current-system/sw/bin/hermes config set gateway.standalone true
-          '
-        fi
-      '';
-
-      # Per-profile gateways: 0.21.5 multiplexes ONE gateway per host, so a
-      # profile's own unit only starts if that profile opts out of the host
-      # multiplexer. The opt-out lives in the profile's own (Hermes-owned)
-      # config.yaml as `gateway.standalone: true` — set below through the
-      # supported CLI, never by hand-editing that file.
+      # Per-profile gateways. 0.23.1's model: the host gateway multiplexes every
+      # profile of its OS user; a profile that wants its own unit either gets its
+      # own OS user (the supported isolation boundary — see salem) or has
+      # `gateway.standalone: true` set imperatively via `hermes config set`.
+      # nix no longer writes that key: runtime config is managed by hand.
       # See hermes_cli/profiles.py:profile_is_standalone + profiles_to_serve.
 
       # `hermes-gateway-<name>` is a per-profile gateway that uses the
@@ -346,9 +333,6 @@
       litellmConfig
       (lib.mkIf (extraHermesProfiles != []) {
         systemd.user.services = extraGatewayUnits;
-        system.activationScripts."hermes-standalone-profiles" =
-          lib.stringAfter [ "hermes-seed" ] (lib.concatMapStringsSep "\n" mkStandalone
-            (lib.filter (p: (p.user or "hermes") == "hermes") extraHermesProfiles));
       })
       {
         users.groups.hermes = { };
@@ -771,6 +755,12 @@ GITEOF
           chown salem:salem /var/lib/salem /var/lib/salem/workspace
           chmod 2770 /var/lib/salem /var/lib/salem/workspace 2>/dev/null || true
         '';
+
+        # nix-maid declares maid-activation.service host-wide, but a user with
+        # `maid = null` has no all-maid bundle: the unit execs a path that was
+        # never built and exits 127. Negation keeps the unit alive for hermes and
+        # likivik while skipping exactly the user it breaks on.
+        systemd.user.services.maid-activation.unitConfig.ConditionUser = "!salem";
 
         systemd.tmpfiles.rules = [
           "f /var/lib/systemd/linger/hermes 0644 root root - -"

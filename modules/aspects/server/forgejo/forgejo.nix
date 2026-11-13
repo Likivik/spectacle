@@ -241,6 +241,11 @@
           install -d -o root -g root -m 0755 /var/cache/forgejo-ci
           # actions/cache server dir — owned by the runner (forgejo-runner) user.
           install -d -o forgejo-runner -g forgejo-runner -m 0750 /var/cache/forgejo-ci/actcache
+          # The dir predates the static user: bolt.db and cache/ are owned by
+          # the old DynamicUser uid (978), so the runner (975) could create
+          # nothing inside and the cache server died at every boot with
+          # "mkdir .../actcache/cache: permission denied" (measured 2026-11-13).
+          chown -R forgejo-runner:forgejo-runner /var/cache/forgejo-ci/actcache 2>/dev/null || true
           # Persistent Rust cargo cache (Layer 2): the runner job runs as nixuser
           # inside a container whose bind-mounted /opt dirs preserve host
           # ownership — nixuser:nixuser 0770 lets the in-container job read/write.

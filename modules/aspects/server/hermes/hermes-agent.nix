@@ -717,7 +717,11 @@ GITEOF
         system.activationScripts."hermes-salem-migrate" = lib.stringAfter [ "hermes-seed" ] ''
           SRC=/var/lib/hermes/.hermes/profiles/salem
           DST=/var/lib/salem/.hermes
-          if [ ! -d "$DST" ] && [ -d "$SRC" ]; then
+          # Guard on config.yaml, not on the directory: other activation
+          # snippets (hermes-graphiti-plugin) create the home as root before
+          # this runs, and "[ ! -d $DST ]" then skips the copy entirely and
+          # leaves her an empty home. config.yaml only exists after a real copy.
+          if [ ! -f "$DST/config.yaml" ] && [ -f "$SRC/config.yaml" ]; then
             echo "hermes-salem-migrate: $SRC -> $DST"
             # Quiesce the OLD gateway first: it lives in the hermes manager and
             # is still writing state.db when activation runs. Copying a live
@@ -726,6 +730,7 @@ GITEOF
             # other user's manager; failure is tolerated (already stopped).
             ${pkgs.systemd}/bin/systemctl --user --machine=hermes@.host stop hermes-gateway-salem 2>/dev/null || true
             mkdir -p "$DST"
+            chown salem:salem "$DST" /var/lib/salem
             ${pkgs.rsync}/bin/rsync -a --chown=salem:salem \
               --exclude 'cache/' --exclude 'audio_cache/' --exclude 'tools/.staging-*' \
               "$SRC/" "$DST/"
@@ -756,6 +761,7 @@ GITEOF
           open(p, "w").write("".join(res))
           PY
             chown -R salem:salem "$DST"
+            chmod 2770 "$DST"
           fi
           mkdir -p /var/lib/salem/workspace
           chown salem:salem /var/lib/salem /var/lib/salem/workspace

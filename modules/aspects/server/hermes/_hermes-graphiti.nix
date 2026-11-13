@@ -34,8 +34,13 @@
     fi
   '';
 in {
+  # Run after the salem home migration: installing into a home that does not
+  # exist yet creates it as root, and the profile's own user then cannot init
+  # its state (measured 2026-11-13: "Cannot initialize Hermes directory
+  # /var/lib/salem/.hermes/cron: Permission denied").
   system.activationScripts."hermes-graphiti-plugin" = lib.stringAfter (
     lib.optional (config.system.activationScripts ? setupSecrets) "setupSecrets"
     ++ lib.optional (config.system.activationScripts ? "hermes-graphiti-seed") "hermes-graphiti-seed"
+    ++ lib.optional (config.system.activationScripts ? "hermes-salem-migrate") "hermes-salem-migrate"
   ) (lib.concatMapStringsSep "\n\n" installFor profiles);
 }

@@ -680,6 +680,9 @@
 GITEOF
           chown -R hermes:hermes /var/lib/hermes/.config
 
+          # podman system migrate re-execs the rootless runtime after podman
+          # upgrades; per-boot is the safe idiom (audited 2026-11-13, kept:
+          # it is the documented step for runtime changes, not 0.21-era cruft).
           ${pkgs.sudo}/bin/sudo -u hermes XDG_RUNTIME_DIR=/run/user/$(id -u hermes) ${pkgs.podman}/bin/podman system migrate || true
         '';
 
@@ -697,9 +700,12 @@ GITEOF
 
         system.activationScripts."hermes-langfuse-alert" = lib.stringAfter [ "hermes-seed" ] ''
           mkdir -p /var/lib/hermes/.hermes/scripts
-          cp ${./scripts/langfuse-error-alert.py} /var/lib/hermes/.hermes/scripts/langfuse-error-alert.py
-          chmod 0700 /var/lib/hermes/.hermes/scripts/langfuse-error-alert.py
-          chown hermes:hermes /var/lib/hermes/.hermes/scripts/langfuse-error-alert.py
+          # Store-path symlink, not a copy: content is pinned by the system
+          # generation, updates land at the switch, and an old generation keeps
+          # its own script version for rollback. A live cron job (jobs.json)
+          # runs this file.
+          ln -sfn ${./scripts/langfuse-error-alert.py} /var/lib/hermes/.hermes/scripts/langfuse-error-alert.py
+          chown -h hermes:hermes /var/lib/hermes/.hermes/scripts/langfuse-error-alert.py
         '';
 
         # Salem's workspace (her terminal.cwd target). The one-shot home

@@ -13,21 +13,24 @@
   defaultProfile = { name = "default"; home = "/var/lib/hermes/.hermes"; };
   profiles = [ defaultProfile ] ++ extraProfiles;
 
-  installFor = p: ''
+  installFor = p: let
+    user = p.user or "hermes";
+    homeDir = if user == "hermes" then "/var/lib/hermes" else "/var/lib/${user}";
+  in ''
     PLUGIN_DIR="${p.home}/plugins/graphiti"
     rm -rf "$PLUGIN_DIR" 2>/dev/null || true
     mkdir -p "${p.home}/plugins"
     ln -sf "${graphitiPlugin}/lib" "$PLUGIN_DIR"
-    chown -h hermes:hermes "$PLUGIN_DIR"
+    chown -h ${user}:${user} "$PLUGIN_DIR"
 
     if ! ${pkgs.gnugrep}/bin/grep -q "provider: graphiti" "${p.home}/config.yaml" 2>/dev/null; then
-      ${pkgs.sudo}/bin/sudo -u hermes ${pkgs.bash}/bin/bash -c '
-        export HOME=/var/lib/hermes
-        export HERMES_HOME='"${p.home}"'
+      ${pkgs.sudo}/bin/sudo -u ${user} ${pkgs.bash}/bin/bash -c ${lib.escapeShellArg ''
+        export HOME=${homeDir}
+        export HERMES_HOME=${p.home}
         export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$(id -u)/bus"
-        export PATH=/run/current-system/sw/bin:/etc/profiles/per-user/hermes/bin
+        export PATH=/run/current-system/sw/bin:/etc/profiles/per-user/${user}/bin
         /run/current-system/sw/bin/hermes config set memory.provider graphiti
-      '
+      ''}
     fi
   '';
 in {

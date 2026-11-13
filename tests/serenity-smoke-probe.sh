@@ -411,6 +411,36 @@ else
   echo "PLATFORM_ADAPTERS_SKIPPED: no gateway pid"
 fi
 
+echo "--- salem: her own gateway must be up with a working adapter ---"
+# 2026-11-13: salem runs as her own OS user in her own manager. The default
+# gateway's checks above cannot see her. Token presence in her environment
+# gates the journal assertion the same way as the default profile's.
+US=$(id -u salem 2>/dev/null || true)
+if [ -n "$US" ]; then
+  SALEM_STATE=$(timeout 30 sudo -u salem XDG_RUNTIME_DIR="/run/user/$US" \
+    systemctl --user is-active hermes-gateway-salem 2>/dev/null || true)
+  if [ "$SALEM_STATE" = active ]; then
+    SPID=$(timeout 30 sudo -u salem XDG_RUNTIME_DIR="/run/user/$US" \
+      systemctl --user show -p MainPID --value hermes-gateway-salem 2>/dev/null || true)
+    if [ -n "$SPID" ] && [ "$SPID" != 0 ] && tr '\0' '\n' < "/proc/$SPID/environ" 2>/dev/null | grep -qE '^TELEGRAM_BOT_TOKEN=.'; then
+      SJLOG=$(timeout 30 sudo journalctl _UID="$US" --boot --no-pager -o cat 2>/dev/null || true)
+      if printf '%s\n' "$SJLOG" | grep -qE "No adapter available for telegram|Platform 'telegram' is registered but adapter creation failed|Platform 'telegram' requirements not met"; then
+        echo "SALEM_ADAPTER_MISSING: telegram"
+        FAILED=1
+      else
+        echo "SALEM_GATEWAY_OK"
+      fi
+    else
+      echo "SALEM_GATEWAY_OK (no telegram token in env, adapter check skipped)"
+    fi
+  else
+    echo "SALEM_GATEWAY_NOT_ACTIVE:$SALEM_STATE"
+    FAILED=1
+  fi
+else
+  echo "SALEM_GATEWAY_SKIPPED: no salem user (profile not declared on this host)"
+fi
+
 echo "--- summary ---"
 timeout 20 systemctl list-units --type=service --state=running --no-legend --plain 2>/dev/null | wc -l | sed 's/^/running services: /'
 timeout 20 systemctl list-units --type=service --no-legend --plain 2>/dev/null | wc -l | sed 's/^/loaded services:  /'

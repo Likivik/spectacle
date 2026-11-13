@@ -36,6 +36,5 @@ in {
   system.activationScripts."hermes-graphiti-plugin" = lib.stringAfter (
     lib.optional (config.system.activationScripts ? setupSecrets) "setupSecrets"
     ++ lib.optional (config.system.activationScripts ? "hermes-graphiti-seed") "hermes-graphiti-seed"
-    ++ lib.optional (config.system.activationScripts ? "hermes-salem-migrate") "hermes-salem-migrate"
   ) (lib.concatMapStringsSep "\n\n" installFor profiles);
 }

@@ -156,6 +156,9 @@
       ];
 
       # The default profile additionally carries dashboard password auth.
+      # apiEnabled = false (2026-11-13): nothing calls the OpenAI-compatible
+      # listener on 8642, and the platform enables itself from the environment
+      # alone, so the template no longer renders it at all.
       defaultSecretEnv = commonSecretEnv ++ [
         { env = "HERMES_DASHBOARD_BASIC_AUTH_PASSWORD_HASH"; secret = "hermes/dashboard-basic-auth-hash"; }
         { env = "HERMES_DASHBOARD_BASIC_AUTH_SECRET"; secret = "hermes/dashboard-basic-auth-secret"; }
@@ -215,6 +218,7 @@
           botTokenSecret = "hermes/telegram-bot-token";
           apiKeySecret = "hermes/api-server-key";
           apiPort = 8642;
+          apiEnabled = false;
           secretEnv = defaultSecretEnv;
           extraLiterals = [ "HERMES_DASHBOARD_BASIC_AUTH_USERNAME=likivik" ];
         };
@@ -698,69 +702,78 @@ GITEOF
           chown hermes:hermes /var/lib/hermes/.hermes/scripts/langfuse-error-alert.py
         '';
 
-        # One-shot migration: move salem onto her own home and user (2026-11-13).
-        # Guarded by the destination's absence so it runs exactly once; the source
-        # directory is left untouched as the rollback path. Databases are copied
-        # from a stopped unit — the cutover stops her gateway before the switch.
-        system.activationScripts."hermes-salem-migrate" = lib.stringAfter [ "hermes-seed" ] ''
-          SRC=/var/lib/hermes/.hermes/profiles/salem
-          DST=/var/lib/salem/.hermes
-          # Guard on config.yaml, not on the directory: other activation
-          # snippets (hermes-graphiti-plugin) create the home as root before
-          # this runs, and "[ ! -d $DST ]" then skips the copy entirely and
-          # leaves her an empty home. config.yaml only exists after a real copy.
-          if [ ! -f "$DST/config.yaml" ] && [ -f "$SRC/config.yaml" ]; then
-            echo "hermes-salem-migrate: $SRC -> $DST"
-            # Quiesce the OLD gateway first: it lives in the hermes manager and
-            # is still writing state.db when activation runs. Copying a live
-            # sqlite file is a torn-read risk, so the migration stops it itself
-            # instead of trusting a human to remember. --machine selects the
-            # other user's manager; failure is tolerated (already stopped).
-            ${pkgs.systemd}/bin/systemctl --user --machine=hermes@.host stop hermes-gateway-salem 2>/dev/null || true
-            mkdir -p "$DST"
-            chown salem:salem "$DST" /var/lib/salem
-            ${pkgs.rsync}/bin/rsync -a --chown=salem:salem \
-              --exclude 'cache/' --exclude 'audio_cache/' --exclude 'tools/.staging-*' \
-              "$SRC/" "$DST/"
-            rm -f "$DST/gateway.lock" "$DST/gateway.pid" "$DST/gateway.sock"
-            rm -f "$DST"/gateway_state_*.tmp
-            ${pkgs.python3}/bin/python3 - "$DST/config.yaml" <<'PY'
-          import sys
-          p = sys.argv[1]
-          text = open(p).read()
-          # Paths inside her own config now describe the NEW home.
-          text = text.replace("/var/lib/hermes/.hermes/profiles/salem", "/var/lib/salem/.hermes")
-          res, skip = [], False
-          for line in text.splitlines(keepends=True):
-              if skip:
-                  if line.startswith("    ") or not line.strip():
-                      continue
-                  skip = False
-              key = line.rstrip("\n")
-              if key == "  github:":            # dead MCP server (no PAT)
-                  skip = True
-                  continue
-              if key == "  standalone: true":   # own user => own manager, no shim
-                  continue
-              if key == "  cwd: /Storage/Git/spectacle":
-                  res.append("  cwd: /var/lib/salem/workspace\n")
-                  continue
-              res.append(line)
-          open(p, "w").write("".join(res))
-          PY
-            chown -R salem:salem "$DST"
-            chmod 2770 "$DST"
-          fi
+        # Salem's workspace (her terminal.cwd target). The one-shot home
+        # migration that used to live here ran exactly once on 2026-11-13 and
+        # is gone; her home is now just state.
+        system.activationScripts."hermes-salem-workspace" = ''
           mkdir -p /var/lib/salem/workspace
           chown salem:salem /var/lib/salem /var/lib/salem/workspace
           chmod 2770 /var/lib/salem /var/lib/salem/workspace 2>/dev/null || true
         '';
 
-        # nix-maid declares maid-activation.service host-wide, but a user with
-        # `maid = null` has no all-maid bundle: the unit execs a path that was
-        # never built and exits 127. Negation keeps the unit alive for hermes and
-        # likivik while skipping exactly the user it breaks on.
-        systemd.user.services.maid-activation.unitConfig.ConditionUser = "!salem";
+        # Salem profile backups (2026-11-13). Daily sqlite dumps (~25 MB) are
+        # the consistent, restorable core; full profile tars (191 MB) only
+        # weekly and monthly. Retention 14/6/3. Offsite goes to poweredge under
+        # the forgejo-backup key — that remote account is path-restricted to
+        # /tank/backups/serenity/forgejo/, so the destination lives inside it.
+        systemd.services.hermes-salem-backup = {
+          description = "Backup salem's hermes profile (daily DBs, weekly/monthly full tar)";
+          wants = [ "network-online.target" ];
+          after = [ "network-online.target" ];
+          serviceConfig.Type = "oneshot";
+          path = with pkgs; [ sqlite rsync gnutar coreutils sudo ];
+          script = ''
+            B=/var/backup/hermes-salem
+            D=$B/daily; W=$B/weekly; M=$B/monthly
+            mkdir -p "$D" "$W" "$M"
+            TS=$(date +%Y%m%d-%H%M)
+            H=/var/lib/salem/.hermes
+            # sqlite .backup is safe against a live gateway (WAL-consistent).
+            sqlite3 "$H/state.db" ".backup '$D/salem-state-$TS.db'"
+            if [ -f "$H/executions.db" ]; then
+              sqlite3 "$H/executions.db" ".backup '$D/salem-executions-$TS.db'"
+            fi
+            if [ "$(date +%u)" = "7" ]; then
+              tar czf "$W/salem-profile-$TS.tar.gz" -C /var/lib/salem .hermes
+            fi
+            if [ "$(date +%d)" = "01" ]; then
+              tar czf "$M/salem-profile-$TS.tar.gz" -C /var/lib/salem .hermes
+            fi
+            # Retention: keep newest 14 dailies / 6 weeklies / 3 monthlies.
+            ls -t "$D" 2>/dev/null | tail -n +15 | while read -r f; do rm -f "$D/$f"; done
+            ls -t "$W" 2>/dev/null | tail -n +7  | while read -r f; do rm -f "$W/$f"; done
+            ls -t "$M" 2>/dev/null | tail -n +4  | while read -r f; do rm -f "$M/$f"; done
+            # The offsite leg runs as forgejo (its key is 0600 forgejo-only).
+            chgrp -R forgejo "$B" || true
+            chmod -R g+rX "$B" || true
+            R="ssh -o BatchMode=yes -o IdentitiesOnly=yes -i /var/lib/forgejo/.ssh/id_forgejo_backup"
+            RHOST=forgejo-backup@poweredge.oryx-galaxy.ts.net
+            RT=/tank/backups/serenity/forgejo/salem
+            for pair in "$D:daily" "$W:weekly" "$M:monthly"; do
+              src="''${pair%%:*}"; sub="''${pair##*:}"
+              sudo -u forgejo rsync -az --delete -e "$R" "$src/" "$RHOST:$RT/$sub/" \
+                || echo "offsite $sub rsync failed (local copy is intact)"
+            done
+          '';
+        };
+        systemd.timers.hermes-salem-backup = {
+          wantedBy = [ "timers.target" ];
+          timerConfig = {
+            OnCalendar = "*-*-* 04:30:00";
+            Persistent = true;
+            RandomizedDelaySec = "20min";
+          };
+        };
+
+        # nix-maid ships maid-activation.service to every user manager and has no
+        # per-user opt-out (verified against nix-maid 13d29ccd: the unit
+        # hardcodes all-maid/nix-maid-$USER/activate; the only lever upstream
+        # offers is sharedModulesForAllUsers, which applies maid to everyone).
+        # A user with `maid = null` has no bundle, so the unit would exec a path
+        # that was never built and exit 127. Conditions AND, so the negations
+        # compose; add a user here when a new profile goes maid-less.
+        systemd.user.services.maid-activation.unitConfig.ConditionUser =
+          map (u: "!${u}") [ "salem" ];
 
         systemd.tmpfiles.rules = [
           "f /var/lib/systemd/linger/hermes 0644 root root - -"

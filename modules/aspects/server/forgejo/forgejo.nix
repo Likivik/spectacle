@@ -264,6 +264,13 @@
           after = [ "tailscaled.service" "forgejo.service" "multi-user.target" ];
           wants = [ "tailscaled.service" ];
           wantedBy = [ "multi-user.target" ];
+          # `tailscale-wait-running` is installed fleet-wide by
+          # aspects/core/tailscale.nix into environment.systemPackages, i.e.
+          # config.system.path. Without it on PATH the unit dies status=127 and
+          # forgejo's tailnet HTTPS never comes up — measured 2026-11-13 on
+          # serenity right after the 26.11 switch, where the old generation had
+          # inherited the helper by accident.
+          path = with pkgs; [ tailscale gnugrep gnused coreutils config.system.path ];
           serviceConfig = {
             Type = "oneshot";
             RemainAfterExit = true;

@@ -93,10 +93,18 @@
       extraHermesProfiles = [
         {
           name = "salem";
-          home = "/var/lib/hermes/.hermes/profiles/salem";
+          # Own OS user (2026-11-13): her own UID, home and credentials, so a
+          # bot's mistake can no longer touch the main profile's tree. Because
+          # she is the only gateway under this user, the host multiplexer has
+          # nothing to compete with — no `gateway.standalone` opt-out needed.
+          user = "salem";
+          home = "/var/lib/salem/.hermes";
           botTokenSecret = "hermes/salem-bot-token";
           apiPort = 8643;
           apiKeySecret = "hermes/salem-api-server-key";
+          # Nothing calls her API listener; it existed only because her unit
+          # inherited the default profile's env file.
+          apiEnabled = false;
         }
       ];
 
@@ -152,10 +160,16 @@
       # Non-secret settings that every consumer of the env file expects. They
       # live here (not only in serviceConfig.Environment) because the webui
       # loads the same file as a different service.
-      commonLiteralEnv = apiPort: [
+      commonLiteralEnv = apiPort: apiEnabled: if apiEnabled then [
         "API_SERVER_ENABLED=true"
         "API_SERVER_HOST=0.0.0.0"
         "API_SERVER_PORT=${toString apiPort}"
+        "HERMES_LANGFUSE_BASE_URL=https://cloud.langfuse.com"
+      ] else [
+        # Messaging-only profile: no listener. Until 2026-11-13 salem inherited
+        # API_SERVER_ENABLED=true from the default profile's env file and bound
+        # 0.0.0.0:8643/8644 that nothing ever called.
+        "API_SERVER_ENABLED=false"
         "HERMES_LANGFUSE_BASE_URL=https://cloud.langfuse.com"
       ];
 
@@ -167,6 +181,7 @@
       # duplication is the point: it is an independent statement of intent.
       permittedLiteralLines = [
         "API_SERVER_ENABLED=true"
+        "API_SERVER_ENABLED=false"
         "API_SERVER_HOST=0.0.0.0"
         "API_SERVER_PORT=8642"
         "API_SERVER_PORT=8643"
@@ -174,15 +189,15 @@
         "HERMES_DASHBOARD_BASIC_AUTH_USERNAME=likivik"
       ];
 
-      mkSopsTemplate = { botTokenSecret, apiKeySecret, apiPort, secretEnv, extraLiterals ? [ ] }: {
+      mkSopsTemplate = { botTokenSecret, apiKeySecret, apiPort, secretEnv, owner ? "hermes", apiEnabled ? true, extraLiterals ? [ ] }: {
         content = lib.concatStringsSep "\n" (
           [ "TELEGRAM_BOT_TOKEN=${config.sops.placeholder.${botTokenSecret}}" ]
           ++ map (r: "${r.env}=${config.sops.placeholder.${r.secret}}") secretEnv
           ++ [ "API_SERVER_KEY=${config.sops.placeholder.${apiKeySecret}}" ]
-          ++ commonLiteralEnv apiPort
+          ++ commonLiteralEnv apiPort apiEnabled
           ++ extraLiterals
         ) + "\n";
-        owner = "hermes";
+        inherit owner;
         mode = "0600";
       };
 
@@ -200,6 +215,8 @@
       } // lib.listToAttrs (map (p:
         lib.nameValuePair "hermes/${p.name}-sops-env" (mkSopsTemplate {
           inherit (p) botTokenSecret apiKeySecret apiPort;
+          owner = p.user or "hermes";
+          apiEnabled = p.apiEnabled or true;
           secretEnv = commonSecretEnv;
         })
       ) extraHermesProfiles);
@@ -245,18 +262,19 @@
       extraGatewayUnits = lib.listToAttrs (map (p:
         lib.nameValuePair "hermes-gateway-${p.name}" {
           description = "Hermes Agent Gateway (${p.name})";
+          # A profile with its own OS user is served by that user's systemd
+          # manager, so ordering against hermes-gateway.service — a unit of a
+          # different manager — would be silently ignored anyway.
           after = [
             "network-online.target"
             "sops-install-secrets.service"
-            "hermes-gateway.service"
-          ];
+          ] ++ lib.optional ((p.user or "hermes") == "hermes") "hermes-gateway.service";
           wants = [
             "network-online.target"
             "sops-install-secrets.service"
-            "hermes-gateway.service"
-          ];
+          ] ++ lib.optional ((p.user or "hermes") == "hermes") "hermes-gateway.service";
           wantedBy = [ "default.target" ];
-          unitConfig.ConditionUser = "hermes";
+          unitConfig.ConditionUser = p.user or "hermes";
           serviceConfig = {
             Restart = "always";
             RestartSec = 5;
@@ -272,18 +290,43 @@
               "HERMES_OPTIONAL_MCPS=${hermes-pkg}/share/hermes-agent/optional-mcps"
               "HERMES_LAZY_INSTALL_TARGET=${p.home}/lazy-packages"
             ];
-            # Same reason as the default gateway's pre-step: reconcile PM before
-            # the process exists, so the env is never swapped under a live
-            # gateway. Non-fatal on purpose.
-            ExecStartPre = pkgs.writeShellScript "hermes-pm-reconcile-${p.name}" ''
-              ${pkgs.coreutils}/bin/timeout 300 ${hermes-pkg}/bin/hermes pm install \
-                || echo "pm reconcile failed (non-fatal); starting the gateway anyway"
-            '';
-            ExecStart = "${hermes-pkg}/bin/hermes gateway run";
-            EnvironmentFile = [
-              "/run/secrets/hermes/env"
-              (envFileFor "hermes/${p.name}-sops-env")
+            # Same reason as the default gateway's pre-steps: reconcile PM before
+            # the process exists (the env is never swapped under a live
+            # gateway), and swap in a staged compact DB for this profile's home.
+            # Both are non-fatal on purpose.
+            ExecStartPre = [
+              (pkgs.writeShellScript "hermes-pm-reconcile-${p.name}" ''
+                ${pkgs.coreutils}/bin/timeout 300 ${hermes-pkg}/bin/hermes pm install \
+                  || echo "pm reconcile failed (non-fatal); starting the gateway anyway"
+              '')
+              (pkgs.writeShellScript "hermes-db-swap-${p.name}" ''
+                set -euo pipefail
+                DB=${p.home}/state.db
+                NEW=${p.home}/state.db.new
+                OLD=${p.home}/state.db.pre-vacuum
+                [ -s "$NEW" ] || exit 0
+                check() {
+                  ${pkgs.python3}/bin/python3 - "$1" <<'PY'
+                import sqlite3, sys
+                con = sqlite3.connect("file:" + sys.argv[1] + "?mode=ro", uri=True)
+                print(con.execute("PRAGMA quick_check").fetchone()[0])
+                PY
+                }
+                res=$(check "$NEW")
+                [ "$res" = "ok" ] || { echo "staged db failed quick_check: $res"; exit 1; }
+                mv -f "$DB" "$OLD"
+                mv -f "$NEW" "$DB"
+                rm -f "$DB-wal" "$DB-shm"
+                rm -f "$OLD"
+              '')
             ];
+            ExecStart = "${hermes-pkg}/bin/hermes gateway run";
+            # A profile with its own OS user must NOT load the default profile's
+            # env file. That inheritance is what silently gave salem
+            # API_SERVER_ENABLED=true and bound 0.0.0.0:8643 until 2026-11-13.
+            EnvironmentFile =
+              lib.optionals ((p.user or "hermes") == "hermes") [ "/run/secrets/hermes/env" ]
+              ++ [ (envFileFor "hermes/${p.name}-sops-env") ];
           };
         }
       ) extraHermesProfiles);
@@ -300,7 +343,8 @@
       (lib.mkIf (extraHermesProfiles != []) {
         systemd.user.services = extraGatewayUnits;
         system.activationScripts."hermes-standalone-profiles" =
-          lib.stringAfter [ "hermes-seed" ] (lib.concatMapStringsSep "\n" mkStandalone extraHermesProfiles);
+          lib.stringAfter [ "hermes-seed" ] (lib.concatMapStringsSep "\n" mkStandalone
+            (lib.filter (p: (p.user or "hermes") == "hermes") extraHermesProfiles));
       })
       {
         users.groups.hermes = { };
@@ -320,6 +364,22 @@
           # An empty config is all it takes: the bundle exists, and the unit becomes
           # a no-op. (Not a class question - hermes isn't a den user.)
           maid = { };
+        };
+
+        # Salem runs as her own OS user (2026-11-13). Separate UID means separate
+        # $HOME, separate credentials and separate gateway lock scope — the
+        # granularity Hermes's own rendezvous code assumes. `maid = { }` for the
+        # same reason as above: nix-maid ships the unit to every user host-wide.
+        users.groups.salem = { };
+        users.users.salem = {
+          isSystemUser = true;
+          group = "salem";
+          home = "/var/lib/salem";
+          createHome = true;
+          shell = pkgs.bash;
+          # Her gateway is a user unit; without linger it dies with her last
+          # session (the hermes user gets the same via tmpfiles below).
+          linger = true;
         };
 
         environment.systemPackages = [ hermes-pkg ];
@@ -648,6 +708,52 @@ GITEOF
           cp ${./scripts/langfuse-error-alert.py} /var/lib/hermes/.hermes/scripts/langfuse-error-alert.py
           chmod 0700 /var/lib/hermes/.hermes/scripts/langfuse-error-alert.py
           chown hermes:hermes /var/lib/hermes/.hermes/scripts/langfuse-error-alert.py
+        '';
+
+        # One-shot migration: move salem onto her own home and user (2026-11-13).
+        # Guarded by the destination's absence so it runs exactly once; the source
+        # directory is left untouched as the rollback path. Databases are copied
+        # from a stopped unit — the cutover stops her gateway before the switch.
+        system.activationScripts."hermes-salem-migrate" = lib.stringAfter [ "hermes-seed" ] ''
+          SRC=/var/lib/hermes/.hermes/profiles/salem
+          DST=/var/lib/salem/.hermes
+          if [ ! -d "$DST" ] && [ -d "$SRC" ]; then
+            echo "hermes-salem-migrate: $SRC -> $DST"
+            mkdir -p "$DST"
+            ${pkgs.rsync}/bin/rsync -a --chown=salem:salem \
+              --exclude 'cache/' --exclude 'audio_cache/' --exclude 'tools/.staging-*' \
+              "$SRC/" "$DST/"
+            rm -f "$DST/gateway.lock" "$DST/gateway.pid" "$DST/gateway.sock"
+            rm -f "$DST"/gateway_state_*.tmp
+            ${pkgs.python3}/bin/python3 - "$DST/config.yaml" <<'PY'
+          import sys
+          p = sys.argv[1]
+          text = open(p).read()
+          # Paths inside her own config now describe the NEW home.
+          text = text.replace("/var/lib/hermes/.hermes/profiles/salem", "/var/lib/salem/.hermes")
+          res, skip = [], False
+          for line in text.splitlines(keepends=True):
+              if skip:
+                  if line.startswith("    ") or not line.strip():
+                      continue
+                  skip = False
+              key = line.rstrip("\n")
+              if key == "  github:":            # dead MCP server (no PAT)
+                  skip = True
+                  continue
+              if key == "  standalone: true":   # own user => own manager, no shim
+                  continue
+              if key == "  cwd: /Storage/Git/spectacle":
+                  res.append("  cwd: /var/lib/salem/workspace\n")
+                  continue
+              res.append(line)
+          open(p, "w").write("".join(res))
+          PY
+            chown -R salem:salem "$DST"
+          fi
+          mkdir -p /var/lib/salem/workspace
+          chown salem:salem /var/lib/salem /var/lib/salem/workspace
+          chmod 2770 /var/lib/salem /var/lib/salem/workspace 2>/dev/null || true
         '';
 
         systemd.tmpfiles.rules = [

@@ -197,7 +197,9 @@
         content = lib.concatStringsSep "\n" (
           [ "TELEGRAM_BOT_TOKEN=${config.sops.placeholder.${botTokenSecret}}" ]
           ++ map (r: "${r.env}=${config.sops.placeholder.${r.secret}}") secretEnv
-          ++ [ "API_SERVER_KEY=${config.sops.placeholder.${apiKeySecret}}" ]
+          # No listener => no key. Leaving a key behind invites the adapter to
+          # enable itself from the environment alone.
+          ++ lib.optional apiEnabled "API_SERVER_KEY=${config.sops.placeholder.${apiKeySecret}}"
           ++ commonLiteralEnv apiPort apiEnabled
           ++ extraLiterals
         ) + "\n";
@@ -771,6 +773,12 @@ GITEOF
           chown salem:salem /var/lib/salem /var/lib/salem/workspace
           chmod 2770 /var/lib/salem /var/lib/salem/workspace 2>/dev/null || true
         '';
+
+        # nix-maid declares maid-activation.service host-wide, but a user with
+        # `maid = null` has no all-maid bundle: the unit execs a path that was
+        # never built and exits 127. Negation keeps the unit alive for hermes and
+        # likivik while skipping exactly the user it breaks on.
+        systemd.user.services.maid-activation.unitConfig.ConditionUser = "!salem";
 
         systemd.tmpfiles.rules = [
           "f /var/lib/systemd/linger/hermes 0644 root root - -"

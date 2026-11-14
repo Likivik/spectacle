@@ -30,7 +30,10 @@
       };
     };
     hermes-agent = {
-      url = "github:NousResearch/hermes-agent/v0.23.1";
+      # Pinned by commit, not by tag: a tag re-resolves on every rebuild and
+      # silently rewrites flake.lock, so hosts drift. 8fc03744 = v0.23.4
+      # (released 2026-11-24).
+      url = "github:NousResearch/hermes-agent/8fc0374447313e276f6b9a2764bfc750190c966a";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     hermes-webui = {

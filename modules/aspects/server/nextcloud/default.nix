@@ -166,6 +166,15 @@
             font/woff
             font/woff2;
         '';
+
+        # Apps installed from the flake live in `nix-apps/`, which the vhost
+        # root does not serve: `<root>/apps` symlinks the stock apps dir only.
+        # Without this, `/apps/ocrflow/js/ocrflow-panel.js` is not on disk, the
+        # generic `.js`/`.css` location falls through to index.php, and the app
+        # panel never loads (404). `^~` beats those regex locations.
+        virtualHosts.${config.services.nextcloud.hostName}.locations."^~ /apps/ocrflow/" = {
+          alias = "${config.services.nextcloud.extraApps.ocrflow}/";
+        };
       };
 
       networking.firewall.interfaces.tailscale0.allowedTCPPorts = [ 80 443 ];

@@ -374,7 +374,11 @@
           linger = true;
         };
 
-        environment.systemPackages = [ hermes-pkg ];
+        # Bitwarden CLI sits here so the agent's vault can use it as a login
+        # source: agent/vault_backends/bitwarden.py shells out to `bw` via
+        # shutil.which, and items are fillable only on the origin saved in the
+        # item. Opt out of a detected manager with vault.bitwarden.enabled.
+        environment.systemPackages = [ hermes-pkg pkgs.bitwarden-cli ];
         # The agent downloads its own toolchain (node, npm, pnpm, ripgrep,
         # python, chromium) into ~/.hermes/tools and verifies each by running
         # it. Those are generic-Linux ELF with interpreter

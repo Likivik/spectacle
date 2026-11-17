@@ -1,5 +1,5 @@
 diff --git a/agent/vault_login_classifier.py b/agent/vault_login_classifier.py
-index 2bb17a2b7f..a9834f9376 100644
+index 2bb17a2b7f..0904f4ecd9 100644
 --- a/agent/vault_login_classifier.py
 +++ b/agent/vault_login_classifier.py
 @@ -343,11 +343,124 @@ def build_fill_js(fills: list[dict[str, Any]], expected_origin: str, nonce: str 
@@ -90,9 +90,9 @@ index 2bb17a2b7f..a9834f9376 100644
 +    in-page origin assertion the JS fill path has: if the page navigated between the origin
 +    pre-check and the keystrokes, nothing is typed.
 +    """
-+    return ("(() => { if (window.location.origin !== %s) "
++    return ("(() => { if (window.location.origin !== " + json.dumps(expected_origin) + ") "
 +            "return JSON.stringify({ refused: 'origin_changed', found: window.location.origin }); "
-+            "return JSON.stringify({ ok: true }); })()" % json.dumps(expected_origin))
++            "return JSON.stringify({ ok: true }); })()")
 +
 +
 +def build_unstamp_js(nonce: str = "") -> str:

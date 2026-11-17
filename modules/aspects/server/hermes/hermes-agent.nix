@@ -49,16 +49,17 @@
           # Upstream has the same fix in flight (#140767 stamp-only, #152351
           # avoids the path); drop this when either lands.
           ./hermes-pm-project-root.patch
-          # browser_vault action=fill wrote the password with a JS value setter and an InputEvent
-          # without `data`, so a framework-controlled input (React/Vue/MUI — the DS24 cabinets
-          # cab.uksn.ru / cab.y-plus.ru) reverted it: the tool reported filled_fields: 1 while the
-          # field read empty and the submit button stayed disabled. The patch carries `data` in the
-          # event, reads every fill back (150 ms later, in-page, counts only) and reports
-          # fill_reverted / fill_unverified instead of success; text and password fields are typed
-          # with CDP Input.insertText after asserting document.activeElement is the stamped field
-          # (focus_lost aborts, nothing further typed). Upstream PR: NousResearch/hermes-agent#157140
-          # (the tests live there; this patch carries source only). DROP this patch when a tag
-          # contains it, and go back to the plain upstream input.
+          # browser_vault action=fill wrote a password with a JS value setter and an input event
+          # that carried no `data`. A framework-controlled input (React, Vue, MUI) ignores such an
+          # event and puts its own empty state back, so the tool reported filled_fields: 1 while the
+          # field was empty and the submit button stayed disabled.
+          # The patch: the event carries `data`; every fill is read back one page turn later
+          # (in-page, counts only) and reported as fill_reverted / fill_unverified instead of
+          # success; text and password fields are typed with CDP Input.insertText after the fill
+          # proves document.activeElement is the target field (focus_lost aborts, nothing more is
+          # typed). Generic: no host names, no site branch.
+          # Upstream PR: NousResearch/hermes-agent#157140 (tests live there; this patch is source
+          # only). DROP it when a release contains the fix and go back to the plain upstream input.
           ./hermes-vault-fill-react.patch
         ];
       };

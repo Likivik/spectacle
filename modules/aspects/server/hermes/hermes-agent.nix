@@ -36,7 +36,11 @@
           # after its deploy). A builder still on an older nix (3.22.3 yields
           # x+ywbF…) fails the fixed-output check — build on a 3.23.0 host and
           # `--target-host` the outputs instead of re-deriving per host.
-          ./hermes-pnpm-deps-hash.patch
+          # NOTE (2026-11-18): the hash patch is disabled. Serenity's nix 3.23.0 now
+          # reproduces upstream's value x+ywbF… for these deps; the 2aUFZtf… pin can no
+          # longer be satisfied (hash mismatch at build). Keeping upstream's value means
+          # one less patch. Re-enable if a builder goes back to the old normalisation.
+          # ./hermes-pnpm-deps-hash.patch
           # PM assumes a source checkout: it stamps the environment with
           # sha256(<project>/uv.lock) and synthesises a workspace from
           # <project>/pyproject.toml (pm/packages.py, pm/workspace.py). A nix
@@ -49,6 +53,18 @@
           # Upstream has the same fix in flight (#140767 stamp-only, #152351
           # avoids the path); drop this when either lands.
           ./hermes-pm-project-root.patch
+          # browser_vault action=fill wrote a password with a JS value setter and an input event
+          # that carried no `data`. A framework-controlled input (React, Vue, MUI) ignores such an
+          # event and puts its own empty state back, so the tool reported filled_fields: 1 while the
+          # field was empty and the submit button stayed disabled.
+          # The patch: the event carries `data`; every fill is read back one page turn later
+          # (in-page, counts only) and reported as fill_reverted / fill_unverified instead of
+          # success; text and password fields are typed with CDP Input.insertText after the fill
+          # proves document.activeElement is the target field (focus_lost aborts, nothing more is
+          # typed). Generic: no host names, no site branch.
+          # Upstream PR: NousResearch/hermes-agent#157140 (tests live there; this patch is source
+          # only). DROP it when a release contains the fix and go back to the plain upstream input.
+          ./hermes-vault-fill-react.patch
         ];
       };
 

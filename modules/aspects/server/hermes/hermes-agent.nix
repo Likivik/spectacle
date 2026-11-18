@@ -36,7 +36,11 @@
           # after its deploy). A builder still on an older nix (3.22.3 yields
           # x+ywbF…) fails the fixed-output check — build on a 3.23.0 host and
           # `--target-host` the outputs instead of re-deriving per host.
-          ./hermes-pnpm-deps-hash.patch
+          # NOTE (2026-11-18): the hash patch is disabled. Serenity's nix 3.23.0 now
+          # reproduces upstream's value x+ywbF… for these deps; the 2aUFZtf… pin can no
+          # longer be satisfied (hash mismatch at build). Keeping upstream's value means
+          # one less patch. Re-enable if a builder goes back to the old normalisation.
+          # ./hermes-pnpm-deps-hash.patch
           # PM assumes a source checkout: it stamps the environment with
           # sha256(<project>/uv.lock) and synthesises a workspace from
           # <project>/pyproject.toml (pm/packages.py, pm/workspace.py). A nix

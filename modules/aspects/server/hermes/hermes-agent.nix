@@ -720,12 +720,16 @@ GITEOF
 
         system.activationScripts."hermes-langfuse-alert" = lib.stringAfter [ "hermes-seed" ] ''
           mkdir -p /var/lib/hermes/.hermes/scripts
-          # Store-path symlink, not a copy: content is pinned by the system
-          # generation, updates land at the switch, and an old generation keeps
-          # its own script version for rollback. A live cron job (jobs.json)
-          # runs this file.
-          ln -sfn ${./scripts/langfuse-error-alert.py} /var/lib/hermes/.hermes/scripts/langfuse-error-alert.py
-          chown -h hermes:hermes /var/lib/hermes/.hermes/scripts/langfuse-error-alert.py
+          # A real copy, never a store symlink. The cron scheduler resolves a
+          # script's real path and refuses anything outside the scripts
+          # directory (cron/scheduler_script.py: "script path resolves outside
+          # the scripts directory"), so a symlink into /nix/store blocks the
+          # live cron job outright. rm first: install would write through an
+          # existing symlink into the read-only store path.
+          rm -f /var/lib/hermes/.hermes/scripts/langfuse-error-alert.py
+          ${pkgs.coreutils}/bin/install -m 0755 ${./scripts/langfuse-error-alert.py} \
+            /var/lib/hermes/.hermes/scripts/langfuse-error-alert.py
+          chown hermes:hermes /var/lib/hermes/.hermes/scripts/langfuse-error-alert.py
         '';
 
         # Salem's workspace (her terminal.cwd target). The one-shot home

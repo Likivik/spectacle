@@ -209,8 +209,7 @@ A green PR is **not** permission to deploy — see the deploy flow below.
   tests, VM smoke gates and deploys happen here.
 - **Erebus**: `/Storage/Git/spectacle` — edit-only scratch (jj repo). Its Hermes gateway is
   masked and it has no space: **never build here**, heavy Nix work belongs on Serenity.
-- **Traversal**: `/Storage/Git/spectacle` — the `spectacle-autopull` unit is defined in
-  `modules/hosts/traversal/traversal.nix`, but the host is off the tailnet: nothing pulls.
+- **Traversal**: `/Storage/Git/spectacle` — plain git checkout, pulled **by hand**.
 
 ## VCS: Jujutsu (jj)
 

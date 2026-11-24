@@ -189,20 +189,9 @@ in
           group = "hermes";
           mode = "0600";
         };
-        # Salem profile's gateway API key (own listener on :8643)
-        "hermes/salem-api-server-key" = {
-          sopsFile = ../../../secrets/erebus/secrets.yaml;
-          owner = "hermes";
-          group = "hermes";
-          mode = "0600";
-        };
-        # Salem profile's Telegram bot token (The Witch Queen bot)
-        "hermes/salem-bot-token" = {
-          sopsFile = ../../../secrets/erebus/secrets.yaml;
-          owner = "hermes";
-          group = "hermes";
-          mode = "0600";
-        };
+        # Salem's gateway secrets are gone from this host (2026-11-24): her
+        # profile runs on serenity only, and keeping the token here is what let
+        # a stray erebus gateway fight serenity over the same bot.
         # Dashboard username/password auth (dashboard_auth/basic plugin) —
         # lets mobile clients (rusty4444 app) log in without Nous OAuth.
         "hermes/dashboard-basic-auth-hash" = {

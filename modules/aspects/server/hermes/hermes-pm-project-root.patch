@@ -1,6 +1,8 @@
+diff --git a/pm/packages.py b/pm/packages.py
+index d8691e0..d9f0f6a 100644
 --- a/pm/packages.py
 +++ b/pm/packages.py
-@@ -512,7 +512,11 @@
+@@ -513,7 +513,11 @@ class Venv(StatePackage):
          python = (lock.version("python"), target,
                    [artifact["sha256"] for artifact in lock.artifacts("python", target)])
          h = hashlib.sha256()
@@ -13,8 +15,8 @@
          h.update(_layout_digest(self.project_root()))
          h.update(",".join(sorted(extras)).encode())
          h.update(json.dumps(python).encode())
-@@ -538,6 +542,11 @@
-         from pm.workspace import build_member_dirs, lock_and_sync
+@@ -539,6 +543,11 @@ class Venv(StatePackage):
+         from pm.workspace import CORE_LOCK_RECORD, build_member_dirs, core_lock_upgrades, lock_and_sync
  
          project = self.project_root()
 +        # project_root() keys install_state_dir, so it must stay what upstream
@@ -25,22 +27,33 @@
          generation = install_state_dir(project) / "environments" / uuid.uuid4().hex
          candidate = generation / "venv"
          environment = managed_environment(candidate, env=source_build_environment(project),
-@@ -567,10 +576,10 @@
+@@ -568,16 +577,16 @@ class Venv(StatePackage):
                      raise InstallError(self.name, "recorded dependency lock is missing; refusing to drop plugins")
                  replay = recorded.parent
              seed = (Path(prior["resolved_lock"]) if members and prior.get("resolved_lock")
 -                    else project / "uv.lock")
+-            upgrade = (core_lock_upgrades(project / "uv.lock", seed, python=environment.python)
+-                       if seed != project / "uv.lock" else [])
 +                    else template / "uv.lock")
++            upgrade = (core_lock_upgrades(template / "uv.lock", seed, python=environment.python)
++                       if seed != template / "uv.lock" else [])
              lock_and_sync(members, extras, root=generation / "workspace",
                            seed_lock=seed, frozen=repair or not members, replay=replay,
--                          source=project, environment=environment)
-+                          source=template, environment=environment)
+-                          source=project, environment=environment, upgrade=upgrade)
++                          source=template, environment=environment, upgrade=upgrade)
              resolved_lock = generation / "workspace" / "uv.lock"
+             if replay is None:
+                 # What core's lock held for this build: the next one moves only the pins core moves.
+-                shutil.copyfile(project / "uv.lock", resolved_lock.with_name(CORE_LOCK_RECORD))
++                shutil.copyfile(template / "uv.lock", resolved_lock.with_name(CORE_LOCK_RECORD))
              environment.check(resolved_lock)
              if repair:
+                 from pm.environments import venv_command
+diff --git a/pm/workspace.py b/pm/workspace.py
+index 87b69af..9dbfc37 100644
 --- a/pm/workspace.py
 +++ b/pm/workspace.py
-@@ -178,6 +178,10 @@
+@@ -187,6 +187,10 @@ def _generate_pyproject(plugin_dirs: list[Path] | Mapping[Path, Path], root: Pat
      target = root / "pyproject.toml"
      text = _without_release_age(text)
      _copy_core_inputs(source, root)

@@ -87,12 +87,11 @@
       # apiPort: per-profile gateway API listener (each profile owns its own
       # port; default = 8642, first extra = 8643, ...).apiKeySecret: sops path
       # for that profile's API_SERVER_KEY.
-      # Salem lives on serenity only (2026-11-24). erebus used to run a second
-      # copy of her gateway, so both hosts polled the same bot token and
-      # Telegram killed one of them with telegram_polling_conflict. Gate the
-      # profile by host instead of shipping it to every host that includes
-      # this aspect.
-      salemOnHost = config.networking.hostName != "erebus";
+      # Salem lives on serenity only. Whitelist rather than blacklist: adding a
+      # host to the fleet must not silently clone her gateway, which is what
+      # happened on erebus — both hosts polled the same bot token and Telegram
+      # killed one of them with telegram_polling_conflict.
+      salemOnHost = config.networking.hostName == "serenity";
       extraHermesProfiles = lib.optionals salemOnHost [
         {
           name = "salem";

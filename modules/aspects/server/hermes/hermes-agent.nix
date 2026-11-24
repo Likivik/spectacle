@@ -87,7 +87,12 @@
       # apiPort: per-profile gateway API listener (each profile owns its own
       # port; default = 8642, first extra = 8643, ...).apiKeySecret: sops path
       # for that profile's API_SERVER_KEY.
-      extraHermesProfiles = [
+      # Salem lives on serenity only. Whitelist rather than blacklist: adding a
+      # host to the fleet must not silently clone her gateway, which is what
+      # happened on erebus — both hosts polled the same bot token and Telegram
+      # killed one of them with telegram_polling_conflict.
+      salemOnHost = config.networking.hostName == "serenity";
+      extraHermesProfiles = lib.optionals salemOnHost [
         {
           name = "salem";
           # Own OS user (2026-11-13): her own UID, home and credentials, so a
@@ -370,8 +375,8 @@
         # $HOME, separate credentials and separate gateway lock scope — the
         # granularity Hermes's own rendezvous code assumes. `maid = { }` for the
         # same reason as above: nix-maid ships the unit to every user host-wide.
-        users.groups.salem = { };
-        users.users.salem = {
+        users.groups.salem = lib.mkIf salemOnHost { };
+        users.users.salem = lib.mkIf salemOnHost {
           isSystemUser = true;
           group = "salem";
           home = "/var/lib/salem";
@@ -727,7 +732,7 @@ GITEOF
         # Salem's workspace (her terminal.cwd target). The one-shot home
         # migration that used to live here ran exactly once on 2026-11-13 and
         # is gone; her home is now just state.
-        system.activationScripts."hermes-salem-workspace" = ''
+        system.activationScripts."hermes-salem-workspace" = lib.mkIf salemOnHost ''
           mkdir -p /var/lib/salem/workspace
           chown salem:salem /var/lib/salem /var/lib/salem/workspace
           chmod 2770 /var/lib/salem /var/lib/salem/workspace 2>/dev/null || true
@@ -738,7 +743,7 @@ GITEOF
         # weekly and monthly. Retention 14/6/3. Offsite goes to poweredge under
         # the forgejo-backup key — that remote account is path-restricted to
         # /tank/backups/serenity/forgejo/, so the destination lives inside it.
-        systemd.services.hermes-salem-backup = {
+        systemd.services.hermes-salem-backup = lib.mkIf salemOnHost {
           description = "Backup salem's hermes profile (daily DBs, weekly/monthly full tar)";
           wants = [ "network-online.target" ];
           after = [ "network-online.target" ];
@@ -778,7 +783,7 @@ GITEOF
             done
           '';
         };
-        systemd.timers.hermes-salem-backup = {
+        systemd.timers.hermes-salem-backup = lib.mkIf salemOnHost {
           wantedBy = [ "timers.target" ];
           timerConfig = {
             OnCalendar = "*-*-* 04:30:00";

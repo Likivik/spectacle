@@ -193,9 +193,20 @@
         "HERMES_DASHBOARD_BASIC_AUTH_USERNAME=likivik"
       ];
 
+      # Telegram ownership: ONE bot token per fleet, owned by serenity's default
+      # profile. Hosts listed here render no TELEGRAM_BOT_TOKEN at all — the
+      # adapter then cannot enable itself from the environment (a disabled
+      # platform flag is not enough: the env key alone re-enables the adapter,
+      # which is how erebus hijacked serenity's getUpdates queue on 2026-11-24,
+      # see #158). Monitoring-only boxes need no chat presence.
+      telegramlessHosts = [ "erebus" ];
+
       mkSopsTemplate = { botTokenSecret, apiKeySecret, apiPort, secretEnv, owner ? "hermes", apiEnabled ? true, extraLiterals ? [ ] }: {
         content = lib.concatStringsSep "\n" (
-          [ "TELEGRAM_BOT_TOKEN=${config.sops.placeholder.${botTokenSecret}}" ]
+          # No token line for telegramless hosts — the template must carry NO
+          # TELEGRAM_BOT_TOKEN, not an empty one (see #158).
+          lib.optionals (!builtins.elem config.networking.hostName telegramlessHosts)
+            [ "TELEGRAM_BOT_TOKEN=${config.sops.placeholder.${botTokenSecret}}" ]
           ++ map (r: "${r.env}=${config.sops.placeholder.${r.secret}}") secretEnv
           # No listener => no key. Leaving a key behind invites the adapter to
           # enable itself from the environment alone.

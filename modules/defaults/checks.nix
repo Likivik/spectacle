@@ -49,45 +49,50 @@
         # Config still evaluates + builds (the "won't break Hermes on deploy" guard).
         erebus-build = inputs.self.nixosConfigurations.erebus.config.system.build.toplevel;
 
-        # Fleet invariant: one chat token, one owner. Two hosts polling the same
-        # bot token make Telegram answer 409 and drop both (2026-11-24: erebus
-        # hijacked serenity's getUpdates queue, and Salem's bot was live on two
-        # hosts at once). Read at eval time from the very template strings that
-        # get rendered, so no .nix parsing:
-        #   1. only a whitelisted host renders TELEGRAM_BOT_TOKEN at all;
-        #   2. no two hosts wire the same (sopsFile, key) pair to a bot token.
-        # It cannot look inside the encrypted files, so two *different* sops
-        # files holding the same token still pass. That case needs a runtime
-        # audit, which is deliberately not part of this check.
+        # Fleet invariant: one chat token, one owner. The rules live in
+        # lib/token-ownership.nix, the synthetic cases in
+        # tests/token-ownership-fixtures.nix; this attr only feeds it evaluated
+        # host config. Two hosts polling one token make Telegram answer 409 and
+        # drop both (2026-11-24: erebus hijacked serenity's getUpdates queue,
+        # and Salem's bot was live on two hosts at once).
+        #
+        # The whitelist is repeated here on purpose: this check pins the
+        # decision, it does not follow it. Moving the token owner must be a
+        # deliberate edit in two places.
         telegram-token-ownership =
           let
+            ownership = import ../../lib/token-ownership.nix { inherit lib; };
             sopsOf = h: lib.attrByPath [ "sops" ] { } inputs.self.nixosConfigurations.${h}.config;
-            hosts = builtins.filter (h: (templatesOf h) != { })
-              (builtins.attrNames inputs.self.nixosConfigurations);
             templatesOf = h: (sopsOf h).templates or { };
             secretsOf = h: (sopsOf h).secrets or { };
+            hosts = builtins.filter (h: (templatesOf h) != { })
+              (builtins.attrNames inputs.self.nixosConfigurations);
             rendersToken = h:
               builtins.hasAttr "hermes/sops-env" (templatesOf h)
               && lib.hasInfix "TELEGRAM_BOT_TOKEN=" (templatesOf h)."hermes/sops-env".content;
-            tokenHosts = builtins.filter rendersToken hosts;
-            botSecrets = lib.concatMap
-              (h:
-                lib.mapAttrsToList
-                  (name: v: {
-                    host = h;
-                    name = name;
-                    file = toString (v.sopsFile or "");
-                    key = if (v.key or null) == null then name else v.key;
-                  })
-                  (lib.filterAttrs (n: _: lib.hasInfix "bot-token" n) (secretsOf h)))
+            tokenSecretsOf = h:
+              lib.mapAttrsToList
+                (name: v: {
+                  file = toString (v.sopsFile or "");
+                  key = if (v.key or null) == null then name else v.key;
+                })
+                (lib.filterAttrs (n: _: lib.hasInfix "bot-token" n) (secretsOf h));
+            facts = map
+              (h: { host = h; rendersToken = rendersToken h; tokenSecrets = tokenSecretsOf h; })
               hosts;
-            dupes = lib.filterAttrs (_: v: builtins.length v > 1)
-              (lib.groupBy (s: "${s.file}:${s.key}") botSecrets);
+            fixtureFailures = import ../../tests/token-ownership-fixtures.nix {
+              inherit lib;
+              tokenOwnership = ownership;
+            };
+            problems = ownership.violations {
+              hosts = facts;
+              telegramHosts = [ "serenity" ];
+            };
           in
-          if tokenHosts != [ "serenity" ] then
-            throw "telegram-token-ownership: TELEGRAM_BOT_TOKEN must be rendered by serenity and nowhere else, got: ${builtins.toJSON tokenHosts}"
-          else if dupes != { } then
-            throw "telegram-token-ownership: two hosts share one bot-token secret: ${builtins.toJSON dupes}"
+          if fixtureFailures != [ ] then
+            throw "telegram-token-ownership fixtures failed: ${lib.concatStringsSep "; " fixtureFailures}"
+          else if problems != [ ] then
+            throw "telegram-token-ownership: ${lib.concatStringsSep "; " problems}"
           else
             pkgs.runCommand "telegram-token-ownership" { } "touch $out";
 

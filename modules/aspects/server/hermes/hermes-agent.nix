@@ -213,7 +213,13 @@
           # No token line for hosts outside the whitelist — the template must
           # carry NO TELEGRAM_BOT_TOKEN, not an empty one (see #158).
           lib.optionals (builtins.elem config.networking.hostName telegramHosts)
-            [ "TELEGRAM_BOT_TOKEN=${config.sops.placeholder.${botTokenSecret}}" ]
+            [
+              "TELEGRAM_BOT_TOKEN=${
+                config.sops.placeholder.${botTokenSecret} or (throw ''
+                  telegramHosts lists ${config.networking.hostName}, but that host declares no sops secret "${botTokenSecret}".
+                  Either add sops.secrets."${botTokenSecret}" to the host module, or drop the host from telegramHosts.'')
+              }"
+            ]
           ++ map (r: "${r.env}=${config.sops.placeholder.${r.secret}}") secretEnv
           # No listener => no key. Leaving a key behind invites the adapter to
           # enable itself from the environment alone.

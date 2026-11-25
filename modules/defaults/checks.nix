@@ -61,11 +61,11 @@
         # audit, which is deliberately not part of this check.
         telegram-token-ownership =
           let
-            sopsOf = h: builtins.tryEval inputs.self.nixosConfigurations.${h}.config.sops;
-            hosts = builtins.filter (h: (sopsOf h).success)
+            sopsOf = h: lib.attrByPath [ "sops" ] { } inputs.self.nixosConfigurations.${h}.config;
+            hosts = builtins.filter (h: (templatesOf h) != { })
               (builtins.attrNames inputs.self.nixosConfigurations);
-            templatesOf = h: (sopsOf h).value.templates or { };
-            secretsOf = h: (sopsOf h).value.secrets or { };
+            templatesOf = h: (sopsOf h).templates or { };
+            secretsOf = h: (sopsOf h).secrets or { };
             rendersToken = h:
               builtins.hasAttr "hermes/sops-env" (templatesOf h)
               && lib.hasInfix "TELEGRAM_BOT_TOKEN=" (templatesOf h)."hermes/sops-env".content;

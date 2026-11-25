@@ -51,8 +51,12 @@ stdenv.mkDerivation {
       # CryptoPro's bundled curl is a Windows/schannel build that shadows
       # system curl — skip it so nixpkgs curl stays authoritative.
       [ "$bname" = "curl" ] && continue
+      # librdrpcsc dlopens the unversioned "libpcsclite.so", which does not
+      # exist in a NixOS library path. Without this the CSP's PC/SC client
+      # cannot reach pcscd (SCardEstablishContext fails) even though plain
+      # pcsclite clients see the reader.
       makeWrapper "$bin" "$out/bin/$bname" \
-        --prefix LD_LIBRARY_PATH : "$out/opt/cprocsp/lib/amd64:$out/opt/cprocsp/openssl/lib"
+        --prefix LD_LIBRARY_PATH : "$out/opt/cprocsp/lib/amd64:$out/opt/cprocsp/openssl/lib:${lib.getLib pcsclite}/lib"
     done
 
     # Remove Apache SSL module (needs OpenSSL 1.0, not needed for browser signing)
@@ -77,19 +81,19 @@ exec ${bubblewrap}/bin/bwrap \
   --ro-bind /nix/store /nix/store \
   --ro-bind /opt/cprocsp /opt/cprocsp \
   --ro-bind /etc /etc \
-  --bind /run/pcscd /run/pcscd \
   --dev /dev \
   --dev-bind /dev/bus/usb /dev/bus/usb \
   --bind /dev/shm /dev/shm \
   --proc /proc \
   --tmpfs /run \
+  --bind /run/pcscd /run/pcscd \
   --tmpfs /home \
   --tmpfs /Storage \
   --tmpfs /tmp \
   --share-net \
   --setenv HOME /tmp \
   --setenv TMPDIR /tmp \
-  --setenv LD_LIBRARY_PATH /opt/cprocsp/lib/amd64:/opt/cprocsp/openssl/lib \
+  --setenv LD_LIBRARY_PATH /opt/cprocsp/lib/amd64:/opt/cprocsp/openssl/lib:${lib.getLib pcsclite}/lib \
   -- \
   /opt/cprocsp/bin/amd64/nmcades "$@"
 WRAPPER

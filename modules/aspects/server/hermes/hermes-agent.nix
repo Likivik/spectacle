@@ -215,9 +215,9 @@
         in
         {
           # Kept as a plain `if` around the whole content, not an `or (throw …)`
-          # inside the placeholder: test_env_shadowing.py scans this file for the
-          # literal `"KEY=${config.sops.placeholder` form, and a multi-line
-          # interpolation silently stops matching it.
+          # inside the placeholder: test_env_shadowing.py finds placeholder rows
+          # with a regex that expects the key and the interpolation on ONE line,
+          # so a multi-line interpolation silently stops matching it.
           content =
             if telegramHere && !tokenDeclared then
               throw "telegramHosts lists ${config.networking.hostName}, but that host declares no sops secret \"${botTokenSecret}\". Either add sops.secrets.\"${botTokenSecret}\" to the host module, or drop the host from telegramHosts."

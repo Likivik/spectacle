@@ -202,7 +202,32 @@
           })
         ];
 
+        # The CSP licence is a per-host serial, not part of the package. sops
+        # delivers it; the oneshot below hands it to cpconfig, which writes the
+        # activated licence to /etc/opt/cprocsp/license.ini. That path is inside
+        # the nmcades bwrap sandbox's read-only /etc bind, so the plugin sees it.
+        systemd.services.cprocsp-license = {
+          description = "Activate the CryptoPro CSP licence";
+          wantedBy = [ "multi-user.target" ];
+          after = [ "sops-install-secrets.service" ];
+          wants = [ "sops-install-secrets.service" ];
+          serviceConfig = {
+            Type = "oneshot";
+            RemainAfterExit = true;
+          };
+          script = ''
+            exec ${(pkgs.callPackage ../../../pkgs/cprocsp { })}/bin/cpconfig -license -set "$(cat ${config.sops.secrets."cryptopro/license".path})"
+          '';
+        };
+
         sops.secrets = {
+          # CryptoPro CSP licence serial (see cprocsp-license above).
+          "cryptopro/license" = {
+            sopsFile = ../../../secrets/serenity/cryptopro.yaml;
+            owner = "root";
+            group = "root";
+            mode = "0400";
+          };
           # PowerEdge T110 II BMC (IPMI over LAN), consumed by `poweredge-power`.
           # Readable by group users on purpose: the tool is run by hermes and by
           # likivik, not only by root. The BMC itself only accepts cipher suite 3

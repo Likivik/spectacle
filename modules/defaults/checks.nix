@@ -2,7 +2,7 @@
 { inputs, ... }:
 {
   perSystem =
-    { config, pkgs, ... }:
+    { config, pkgs, lib, ... }:
     {
       checks = {
         # CI entry point. This is the ONE attr CI builds
@@ -22,6 +22,9 @@
           pkgs.linkFarm "ci-checks" [
             { name = "hermes-tests"; path = config.checks.hermes-tests; }
             { name = "hr-bot-units"; path = config.checks.hr-bot-units; }
+            # One bot token, one owner — see the check's comment for the two
+            # invariants it asserts.
+            { name = "telegram-token-ownership"; path = config.checks.telegram-token-ownership; }
 
             # Package builds. CI previously evaluated the flake and ran the
             # config guards but never *built* the uv2nix or npm packages, so a
@@ -45,6 +48,48 @@
 
         # Config still evaluates + builds (the "won't break Hermes on deploy" guard).
         erebus-build = inputs.self.nixosConfigurations.erebus.config.system.build.toplevel;
+
+        # Fleet invariant: one chat token, one owner. Two hosts polling the same
+        # bot token make Telegram answer 409 and drop both (2026-11-24: erebus
+        # hijacked serenity's getUpdates queue, and Salem's bot was live on two
+        # hosts at once). Read at eval time from the very template strings that
+        # get rendered, so no .nix parsing:
+        #   1. only a whitelisted host renders TELEGRAM_BOT_TOKEN at all;
+        #   2. no two hosts wire the same (sopsFile, key) pair to a bot token.
+        # It cannot look inside the encrypted files, so two *different* sops
+        # files holding the same token still pass. That case needs a runtime
+        # audit, which is deliberately not part of this check.
+        telegram-token-ownership =
+          let
+            sopsOf = h: builtins.tryEval inputs.self.nixosConfigurations.${h}.config.sops;
+            hosts = builtins.filter (h: (sopsOf h).success)
+              (builtins.attrNames inputs.self.nixosConfigurations);
+            templatesOf = h: (sopsOf h).value.templates or { };
+            secretsOf = h: (sopsOf h).value.secrets or { };
+            rendersToken = h:
+              builtins.hasAttr "hermes/sops-env" (templatesOf h)
+              && lib.hasInfix "TELEGRAM_BOT_TOKEN=" (templatesOf h)."hermes/sops-env".content;
+            tokenHosts = builtins.filter rendersToken hosts;
+            botSecrets = lib.concatMap
+              (h:
+                lib.mapAttrsToList
+                  (name: v: {
+                    host = h;
+                    name = name;
+                    file = toString (v.sopsFile or "");
+                    key = if (v.key or null) == null then name else v.key;
+                  })
+                  (lib.filterAttrs (n: _: lib.hasInfix "bot-token" n) (secretsOf h)))
+              hosts;
+            dupes = lib.filterAttrs (_: v: builtins.length v > 1)
+              (lib.groupBy (s: "${s.file}:${s.key}") botSecrets);
+          in
+          if tokenHosts != [ "serenity" ] then
+            throw "telegram-token-ownership: TELEGRAM_BOT_TOKEN must be rendered by serenity and nowhere else, got: ${builtins.toJSON tokenHosts}"
+          else if dupes != { } then
+            throw "telegram-token-ownership: two hosts share one bot-token secret: ${builtins.toJSON dupes}"
+          else
+            pkgs.runCommand "telegram-token-ownership" { } "touch $out";
 
         # Serenity toplevel eval+build guard. Serenity hosts the agent and the
         # dev/build/CI load now, so a config that stops evaluating here costs

@@ -153,12 +153,6 @@ in
           group = "hermes";
           mode = "0600";
         };
-        "hermes/telegram-bot-token" = {
-          sopsFile = ../../../secrets/erebus/secrets.yaml;
-          owner = "hermes";
-          group = "hermes";
-          mode = "0600";
-        };
         "hermes/hr-bot-token" = {
           sopsFile = ../../../secrets/erebus/secrets.yaml;
           owner = "hermes";

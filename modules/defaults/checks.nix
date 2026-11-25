@@ -2,7 +2,7 @@
 { inputs, ... }:
 {
   perSystem =
-    { config, pkgs, ... }:
+    { config, pkgs, lib, ... }:
     {
       checks = {
         # CI entry point. This is the ONE attr CI builds
@@ -22,6 +22,9 @@
           pkgs.linkFarm "ci-checks" [
             { name = "hermes-tests"; path = config.checks.hermes-tests; }
             { name = "hr-bot-units"; path = config.checks.hr-bot-units; }
+            # One bot token, one owner — see the check's comment for the two
+            # invariants it asserts.
+            { name = "telegram-token-ownership"; path = config.checks.telegram-token-ownership; }
 
             # Package builds. CI previously evaluated the flake and ran the
             # config guards but never *built* the uv2nix or npm packages, so a
@@ -45,6 +48,53 @@
 
         # Config still evaluates + builds (the "won't break Hermes on deploy" guard).
         erebus-build = inputs.self.nixosConfigurations.erebus.config.system.build.toplevel;
+
+        # Fleet invariant: one chat token, one owner. The rules live in
+        # lib/token-ownership.nix, the synthetic cases in
+        # tests/token-ownership-fixtures.nix; this attr only feeds it evaluated
+        # host config. Two hosts polling one token make Telegram answer 409 and
+        # drop both (2026-11-24: erebus hijacked serenity's getUpdates queue,
+        # and Salem's bot was live on two hosts at once).
+        #
+        # The whitelist is repeated here on purpose: this check pins the
+        # decision, it does not follow it. Moving the token owner must be a
+        # deliberate edit in two places.
+        telegram-token-ownership =
+          let
+            ownership = import ../../lib/token-ownership.nix { inherit lib; };
+            sopsOf = h: lib.attrByPath [ "sops" ] { } inputs.self.nixosConfigurations.${h}.config;
+            templatesOf = h: (sopsOf h).templates or { };
+            secretsOf = h: (sopsOf h).secrets or { };
+            hosts = builtins.filter (h: (templatesOf h) != { })
+              (builtins.attrNames inputs.self.nixosConfigurations);
+            rendersToken = h:
+              builtins.hasAttr "hermes/sops-env" (templatesOf h)
+              && lib.hasInfix "TELEGRAM_BOT_TOKEN=" (templatesOf h)."hermes/sops-env".content;
+            tokenSecretsOf = h:
+              lib.mapAttrsToList
+                (name: v: {
+                  file = toString (v.sopsFile or "");
+                  key = if (v.key or null) == null then name else v.key;
+                })
+                (lib.filterAttrs (n: _: lib.hasInfix "bot-token" n) (secretsOf h));
+            facts = map
+              (h: { host = h; rendersToken = rendersToken h; tokenSecrets = tokenSecretsOf h; })
+              hosts;
+            fixtureFailures = import ../../tests/token-ownership-fixtures.nix {
+              inherit lib;
+              tokenOwnership = ownership;
+            };
+            problems = ownership.violations {
+              hosts = facts;
+              telegramHosts = [ "serenity" ];
+            };
+          in
+          if fixtureFailures != [ ] then
+            throw "telegram-token-ownership fixtures failed: ${lib.concatStringsSep "; " fixtureFailures}"
+          else if problems != [ ] then
+            throw "telegram-token-ownership: ${lib.concatStringsSep "; " problems}"
+          else
+            pkgs.runCommand "telegram-token-ownership" { } "touch $out";
 
         # Serenity toplevel eval+build guard. Serenity hosts the agent and the
         # dev/build/CI load now, so a config that stops evaluating here costs

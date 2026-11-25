@@ -208,28 +208,35 @@
       # platform flag is not enough: the env key alone re-enables the adapter).
       telegramHosts = [ "serenity" ];
 
-      mkSopsTemplate = { botTokenSecret, apiKeySecret, apiPort, secretEnv, owner ? "hermes", apiEnabled ? true, extraLiterals ? [ ] }: {
-        content = lib.concatStringsSep "\n" (
-          # No token line for hosts outside the whitelist — the template must
-          # carry NO TELEGRAM_BOT_TOKEN, not an empty one (see #158).
-          lib.optionals (builtins.elem config.networking.hostName telegramHosts)
-            [
-              "TELEGRAM_BOT_TOKEN=${
-                config.sops.placeholder.${botTokenSecret} or (throw ''
-                  telegramHosts lists ${config.networking.hostName}, but that host declares no sops secret "${botTokenSecret}".
-                  Either add sops.secrets."${botTokenSecret}" to the host module, or drop the host from telegramHosts.'')
-              }"
-            ]
-          ++ map (r: "${r.env}=${config.sops.placeholder.${r.secret}}") secretEnv
-          # No listener => no key. Leaving a key behind invites the adapter to
-          # enable itself from the environment alone.
-          ++ lib.optional apiEnabled "API_SERVER_KEY=${config.sops.placeholder.${apiKeySecret}}"
-          ++ commonLiteralEnv apiPort apiEnabled
-          ++ extraLiterals
-        ) + "\n";
-        inherit owner;
-        mode = "0600";
-      };
+      mkSopsTemplate = { botTokenSecret, apiKeySecret, apiPort, secretEnv, owner ? "hermes", apiEnabled ? true, extraLiterals ? [ ] }:
+        let
+          telegramHere = builtins.elem config.networking.hostName telegramHosts;
+          tokenDeclared = builtins.hasAttr botTokenSecret config.sops.placeholder;
+        in
+        {
+          # Kept as a plain `if` around the whole content, not an `or (throw …)`
+          # inside the placeholder: test_env_shadowing.py scans this file for the
+          # literal `"KEY=${config.sops.placeholder` form, and a multi-line
+          # interpolation silently stops matching it.
+          content =
+            if telegramHere && !tokenDeclared then
+              throw "telegramHosts lists ${config.networking.hostName}, but that host declares no sops secret \"${botTokenSecret}\". Either add sops.secrets.\"${botTokenSecret}\" to the host module, or drop the host from telegramHosts."
+            else
+              lib.concatStringsSep "\n" (
+                # No token line for hosts outside the whitelist — the template
+                # must carry NO TELEGRAM_BOT_TOKEN, not an empty one (see #158).
+                lib.optionals telegramHere
+                  [ "TELEGRAM_BOT_TOKEN=${config.sops.placeholder.${botTokenSecret}}" ]
+                ++ map (r: "${r.env}=${config.sops.placeholder.${r.secret}}") secretEnv
+                # No listener => no key. Leaving a key behind invites the adapter
+                # to enable itself from the environment alone.
+                ++ lib.optional apiEnabled "API_SERVER_KEY=${config.sops.placeholder.${apiKeySecret}}"
+                ++ commonLiteralEnv apiPort apiEnabled
+                ++ extraLiterals
+              ) + "\n";
+          inherit owner;
+          mode = "0600";
+        };
 
       # Template name -> rendered path. `/run/secrets/rendered/<name>`, inside
       # /run/secrets/ so the smoke gate's path discovery picks it up like any

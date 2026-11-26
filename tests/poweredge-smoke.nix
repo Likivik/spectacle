@@ -110,7 +110,9 @@ YAML
     (lib.concatStringsSep "\n" secretPaths + "\n");
 
   adminPassFile = config.sops.secrets."nextcloud/admin-password".path;
-  adminUser = config.services.nextcloud.config.adminuser or "admin";
+  # 26.11 removed config.adminuser as well as adminpassFile. The smoke owns
+  # this guest's bootstrap account, so its name is a constant here.
+  adminUser = "admin";
 
   # Nextcloud's password_policy app forbids "simple" passwords, so the shared dummy
   # (no digit, no uppercase) is rejected and the admin login is a 401. nixpkgs' own
@@ -149,8 +151,27 @@ in
   # secret still does (it is read from LoadCredential and must be accepted by the
   # app over OCS), and "every declared secret rendered non-empty" still covers the
   # sops pipeline itself.
-  services.nextcloud.config.adminpassFile = lib.mkForce "${smokeAdminPassFile}";
+  # 26.11 removed services.nextcloud.config.adminpassFile: the module no
+  # longer creates an initial admin. The smoke still needs one for its DAV
+  # checks, so create it through the documented occ path after setup.
   services.ocrflow.davPasswordFile = lib.mkForce "${smokeAdminPassFile}";
+
+  systemd.services.smoke-nextcloud-admin = {
+    description = "Create the poweredge smoke Nextcloud admin";
+    requires = [ "nextcloud-setup.service" ];
+    after = [ "nextcloud-setup.service" ];
+    wantedBy = [ "multi-user.target" ];
+    path = [ config.services.nextcloud.occ ];
+    # Dummy value only, never a host secret. Environment keeps it out of argv.
+    serviceConfig.Environment = [ "OC_PASS=+CVpTwaOEktxsFc6" ];
+    serviceConfig.Type = "oneshot";
+    script = ''
+      if ! nextcloud-occ user:info admin >/dev/null 2>&1; then
+        nextcloud-occ user:add --password-from-env admin
+        nextcloud-occ group:adduser admin admin
+      fi
+    '';
+  };
 
   # --- guest networking ---
   systemd.network.enable = lib.mkForce false;

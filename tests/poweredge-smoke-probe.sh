@@ -45,9 +45,21 @@ for i in $(seq 1 90); do
 done
 ST=$(timeout 10 systemctl is-system-running 2>/dev/null || echo probe-timeout)
 echo "system state: $ST"
+JOBS_OTHER=$(timeout 10 systemctl list-jobs --no-legend --plain 2>/dev/null \
+    | awk '{print $1}' | grep -v '^$' | grep -Ev "^($BENIGN)$" | wc -l)
 case "$ST" in
     running) ok "system state running" ;;
     degraded) ok "system state degraded (a unit failed; see below)" ;;
+    # The probe is itself a running oneshot, so `is-system-running` reports
+    # `starting` until this line exits. That is not a half-booted host when no
+    # other job is in flight; requiring `running` here is a self-deadlock.
+    starting)
+        if [ "$JOBS_OTHER" -eq 0 ]; then
+            ok "system state starting with only the probe in flight"
+        else
+            fail boot "system state is 'starting' with ${JOBS_OTHER} other job(s) in flight"
+        fi
+        ;;
     *)
         fail boot "system state is '$ST' after 120s"
         echo "--- jobs still in flight --"
